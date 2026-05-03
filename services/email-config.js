@@ -17,7 +17,7 @@ function normalizeEmailConfig(raw = {}, env = process.env) {
       ? { smtpHost: 'smtp.gmail.com', smtpPort: 587, smtpSecure: false }
       : { smtpHost: '', smtpPort: 587, smtpSecure: false };
 
-  const smtpUser = String(raw.smtpUser || env.EMAIL_USER || '').trim();
+  const smtpUser = String(raw.smtpUser || raw.fromEmail || env.EMAIL_USER || '').trim();
   const smtpPassword = raw.smtpPassword ?? env.EMAIL_PASS ?? '';
   const smtpHost = String(raw.smtpHost || defaults.smtpHost || '').trim();
   const smtpPort = Number(raw.smtpPort ?? defaults.smtpPort ?? 587);

@@ -501,36 +501,36 @@
           </div>
 
           <div>
-            <label for="emailReplyTo">Reply-To Email</label>
-            <input id="emailReplyTo" type="email" placeholder="reply@example.com">
-          </div>
-
-          <div>
-            <label for="emailSmtpHost">SMTP Host</label>
-            <input id="emailSmtpHost" type="text" placeholder="smtp.gmail.com">
-          </div>
-
-          <div>
-            <label for="emailSmtpPort">SMTP Port</label>
-            <input id="emailSmtpPort" type="number" min="1" max="65535" placeholder="587">
-          </div>
-
-          <div>
-            <label for="emailSmtpUser">SMTP Username</label>
-            <input id="emailSmtpUser" type="email" placeholder="sender@example.com">
-          </div>
-
-          <div>
             <label for="emailSmtpPassword">SMTP Password</label>
             <input id="emailSmtpPassword" type="password" placeholder="Leave blank to keep saved password">
           </div>
 
-          <div class="full-span">
-            <label class="email-settings-check">
-              <input id="emailSmtpSecure" type="checkbox">
-              Use secure SMTP / TLS
-            </label>
-          </div>
+          <details class="full-span" style="margin-top: 4px;">
+            <summary style="cursor:pointer; color: var(--accent); font-weight:700;">Advanced settings</summary>
+            <div class="email-settings-grid" style="margin-top: 12px;">
+              <div>
+                <label for="emailReplyTo">Reply-To Email</label>
+                <input id="emailReplyTo" type="email" placeholder="reply@example.com">
+              </div>
+
+              <div>
+                <label for="emailSmtpHost">SMTP Host</label>
+                <input id="emailSmtpHost" type="text" placeholder="Auto-filled for Gmail/Outlook">
+              </div>
+
+              <div>
+                <label for="emailSmtpPort">SMTP Port</label>
+                <input id="emailSmtpPort" type="number" min="1" max="65535" placeholder="Auto-filled">
+              </div>
+
+              <div class="full-span">
+                <label class="email-settings-check">
+                  <input id="emailSmtpSecure" type="checkbox">
+                  Use secure SMTP / TLS
+                </label>
+              </div>
+            </div>
+          </details>
         </div>
 
         <div class="email-settings-actions">

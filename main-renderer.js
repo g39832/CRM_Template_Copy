@@ -834,7 +834,6 @@ const emailFromEmailEl = document.getElementById("emailFromEmail");
 const emailReplyToEl = document.getElementById("emailReplyTo");
 const emailSmtpHostEl = document.getElementById("emailSmtpHost");
 const emailSmtpPortEl = document.getElementById("emailSmtpPort");
-const emailSmtpUserEl = document.getElementById("emailSmtpUser");
 const emailSmtpPasswordEl = document.getElementById("emailSmtpPassword");
 const emailSmtpSecureEl = document.getElementById("emailSmtpSecure");
 // Keep overlay only as a backdrop layer; do not close modal on backdrop click.
@@ -903,7 +902,7 @@ function collectEmailSettingsPayload() {
     replyToEmail: emailReplyToEl?.value || '',
     smtpHost: emailSmtpHostEl?.value || '',
     smtpPort: Number(emailSmtpPortEl?.value || 0),
-    smtpUser: emailSmtpUserEl?.value || '',
+    smtpUser: emailFromEmailEl?.value || '',
     smtpPassword: emailSmtpPasswordEl?.value || '',
     smtpSecure: Boolean(emailSmtpSecureEl?.checked)
   };
@@ -916,7 +915,6 @@ function setEmailSettingsFormValues(settings = {}) {
   if (emailReplyToEl) emailReplyToEl.value = settings.replyToEmail || '';
   if (emailSmtpHostEl) emailSmtpHostEl.value = settings.smtpHost || '';
   if (emailSmtpPortEl) emailSmtpPortEl.value = settings.smtpPort || '587';
-  if (emailSmtpUserEl) emailSmtpUserEl.value = settings.smtpUser || '';
   if (emailSmtpPasswordEl) emailSmtpPasswordEl.value = '';
   if (emailSmtpSecureEl) emailSmtpSecureEl.checked = Boolean(settings.smtpSecure);
 }

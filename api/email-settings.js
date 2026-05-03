@@ -41,10 +41,11 @@ router.post('/', asyncHandler(async (req, res) => {
       : { smtpHost: '', smtpPort: 587, smtpSecure: false };
 
   const smtpHost = String(req.body.smtpHost || '').trim() || defaults.smtpHost;
-  const smtpUser = String(req.body.smtpUser || stored?.smtpUser || envFallback.smtpUser || '').trim();
+  const fromEmailCandidate = String(req.body.fromEmail || '').trim();
+  const smtpUser = String(req.body.smtpUser || fromEmailCandidate || stored?.smtpUser || envFallback.smtpUser || '').trim();
   const smtpPassword = String(req.body.smtpPassword || '').trim() || String(stored?.smtpPassword || envFallback.smtpPassword || '');
   const fromName = String(req.body.fromName || '').trim() || envFallback.fromName || 'Your Company Name';
-  const fromEmail = String(req.body.fromEmail || '').trim() || smtpUser || String(stored?.fromEmail || envFallback.fromEmail || '');
+  const fromEmail = fromEmailCandidate || smtpUser || String(stored?.fromEmail || envFallback.fromEmail || '');
   const replyToEmail = String(req.body.replyToEmail || '').trim() || fromEmail || smtpUser || String(stored?.replyToEmail || envFallback.replyToEmail || '');
   const smtpPort = Number(req.body.smtpPort || defaults.smtpPort);
   const smtpSecure = req.body.smtpSecure === true
