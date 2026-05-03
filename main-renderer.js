@@ -529,6 +529,7 @@ function printClientWorkspace() {
     #closeBtn,
     #saveBtn,
     #delBtn,
+    #invoiceBtn,
     #printBtn,
     #reviewBtn,
     #undoFinanceBtn,
@@ -752,6 +753,25 @@ window.api = {
     });
     if (!res.ok) throw new Error("Failed to delete note");
     return res.json();
+  },
+
+  async sendInvoice(clientId) {
+    const res = await fetch(`/api/send-invoice/${clientId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    if (!res.ok) {
+      let message = "Failed to send invoice";
+      try {
+        const data = await res.json();
+        message = data?.error || data?.message || message;
+      } catch {
+        // Ignore non-JSON responses.
+      }
+      throw new Error(message);
+    }
+    return res.json();
   }
 };
 // ======================================================
@@ -778,6 +798,7 @@ const overlay = document.getElementById("projectOverlay");
 // Client panel should close via explicit actions (X button / Delete flow).
 
 let activeId = null;
+let activeClient = null;
 let searchTimeout = null;
 let searchRequestController = null;
 let isSaving = false;
@@ -1017,6 +1038,7 @@ async function openClient(id) {
     const clients = await window.api.searchClients("");
     const client = clients.find(c => c.id == id);
     if (!client) return;
+    activeClient = client;
 
     const [fName, ...rest] = (client.name || "").split(" ");
     const lName = rest.join(" ");
@@ -1126,6 +1148,7 @@ async function openClient(id) {
           </div>
 
           <div class="panel-actions panel-full-span">
+            <button id="invoiceBtn" class="btn-primary" style="background:linear-gradient(135deg,#1c92d2,#47a7f5); flex:2;">Send Invoice</button>
             <button id="reviewBtn" class="btn-primary" style="background:rgba(255,255,255,0.14); color:white; flex:2;">Send Google Review</button>
             <button id="saveBtn" class="btn-primary" style="background:linear-gradient(135deg,#2f80ed,#4f8dfd); flex:2;">Save Changes</button>
             <button id="delBtn" class="btn-primary" style="background:#4a5568; flex:1;">Delete</button>
@@ -1666,9 +1689,31 @@ if (target.id === "undoFinanceBtn") {
 
     if (target.id === "printBtn") printClientWorkspace();
 
+    if (target.id === "invoiceBtn") {
+      if (!activeClient?.email) {
+        showToast("Client needs an email before sending an invoice", "error");
+        return;
+      }
+
+      if (!confirm("Send this client an invoice by email?")) return;
+
+      try {
+        target.disabled = true;
+        target.textContent = "Sending...";
+        await window.api.sendInvoice(activeId);
+        showToast("Invoice sent", "success");
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || "Failed to send invoice", "error");
+      } finally {
+        target.disabled = false;
+        target.textContent = "Send Invoice";
+      }
+    }
+
     if (target.id === "reviewBtn") {
-      const googleLink = client?.address
-        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(client.address)}`
+      const googleLink = activeClient?.address
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(activeClient.address)}`
         : "https://www.google.com/maps/search/?api=1&query=CRM+Template";
       window.open(googleLink, "_blank");
     }
@@ -1905,6 +1950,7 @@ function closePanel() {
     projectPanel.innerHTML = '';
     projectPanel.style.display = "none";
     activeId = null;
+    activeClient = null;
   }, 250);
 
   // RESTORE MOBILE VIEW
