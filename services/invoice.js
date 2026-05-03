@@ -1,5 +1,6 @@
 const PDFDocument = require('pdfkit');
 const nodemailer = require('nodemailer');
+const { buildTransportOptions, formatFromAddress, normalizeEmailConfig } = require('./email-config');
 
 const BUSINESS_NAME = process.env.BUSINESS_NAME || 'Your Company Name';
 const BUSINESS_ADDRESS = process.env.BUSINESS_ADDRESS || 'Your Address';
@@ -61,21 +62,14 @@ function generateInvoicePDF(data) {
   });
 }
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
-
-async function sendInvoiceEmail(to, pdfBuffer) {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    throw new Error('EMAIL_USER and EMAIL_PASS must be configured');
-  }
+async function sendInvoiceEmail(to, pdfBuffer, emailConfig = {}) {
+  const normalized = normalizeEmailConfig(emailConfig);
+  const transportOptions = buildTransportOptions(normalized);
+  const transporter = nodemailer.createTransport(transportOptions);
 
   await transporter.sendMail({
-    from: process.env.EMAIL_USER,
+    from: formatFromAddress(normalized) || normalized.smtpUser,
+    replyTo: normalized.replyToEmail || normalized.fromEmail || normalized.smtpUser || undefined,
     to,
     subject: 'Your Invoice',
     text: 'Attached is your invoice. Thank you for your business.',

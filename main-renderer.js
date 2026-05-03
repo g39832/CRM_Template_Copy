@@ -772,6 +772,34 @@ window.api = {
       throw new Error(message);
     }
     return res.json();
+  },
+
+  async getEmailSettings() {
+    if (this._emailSettings) return this._emailSettings;
+    const res = await fetch('/api/email-settings');
+    if (!res.ok) throw new Error('Failed to load email settings');
+    this._emailSettings = await res.json();
+    return this._emailSettings;
+  },
+
+  async saveEmailSettings(payload) {
+    const res = await fetch('/api/email-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      let message = 'Failed to save email settings';
+      try {
+        const data = await res.json();
+        message = data?.error || data?.message || message;
+      } catch {
+        // Ignore non-JSON responses.
+      }
+      throw new Error(message);
+    }
+    this._emailSettings = await res.json();
+    return this._emailSettings;
   }
 };
 // ======================================================
@@ -794,6 +822,21 @@ const projectPanel = document.getElementById("projectPanel");
 const searchInput = document.getElementById("searchClients");
 const intakeFormEl = document.getElementById("clientIntakeForm");
 const overlay = document.getElementById("projectOverlay");
+const emailSettingsModal = document.getElementById("emailSettingsModal");
+const emailSettingsForm = document.getElementById("emailSettingsForm");
+const emailSettingsBtn = document.getElementById("emailSettingsBtn");
+const closeEmailSettingsBtn = document.getElementById("closeEmailSettings");
+const cancelEmailSettingsBtn = document.getElementById("cancelEmailSettings");
+const saveEmailSettingsBtn = document.getElementById("saveEmailSettings");
+const emailProviderEl = document.getElementById("emailProvider");
+const emailFromNameEl = document.getElementById("emailFromName");
+const emailFromEmailEl = document.getElementById("emailFromEmail");
+const emailReplyToEl = document.getElementById("emailReplyTo");
+const emailSmtpHostEl = document.getElementById("emailSmtpHost");
+const emailSmtpPortEl = document.getElementById("emailSmtpPort");
+const emailSmtpUserEl = document.getElementById("emailSmtpUser");
+const emailSmtpPasswordEl = document.getElementById("emailSmtpPassword");
+const emailSmtpSecureEl = document.getElementById("emailSmtpSecure");
 // Keep overlay only as a backdrop layer; do not close modal on backdrop click.
 // Client panel should close via explicit actions (X button / Delete flow).
 
@@ -812,6 +855,112 @@ const sidebarChunkSize = 60;
 const SEARCH_DEBOUNCE_MS = 300;
 let sidebarListContainer = null;
 let newNoteSaving = false;
+let emailSettingsLoading = false;
+let currentEmailSettings = null;
+
+function getEmailProviderDefaults(provider) {
+  if (provider === 'outlook') {
+    return {
+      smtpHost: 'smtp.office365.com',
+      smtpPort: '587',
+      smtpSecure: false
+    };
+  }
+
+  if (provider === 'gmail') {
+    return {
+      smtpHost: 'smtp.gmail.com',
+      smtpPort: '587',
+      smtpSecure: false
+    };
+  }
+
+  return {
+    smtpHost: '',
+    smtpPort: '587',
+    smtpSecure: false
+  };
+}
+
+function applyEmailProviderDefaults(provider, { force = false } = {}) {
+  const defaults = getEmailProviderDefaults(provider);
+  if (emailSmtpHostEl && (force || !emailSmtpHostEl.value.trim())) {
+    emailSmtpHostEl.value = defaults.smtpHost;
+  }
+  if (emailSmtpPortEl && (force || !emailSmtpPortEl.value.trim())) {
+    emailSmtpPortEl.value = defaults.smtpPort;
+  }
+  if (emailSmtpSecureEl && force) {
+    emailSmtpSecureEl.checked = defaults.smtpSecure;
+  }
+}
+
+function collectEmailSettingsPayload() {
+  return {
+    provider: emailProviderEl?.value || 'gmail',
+    fromName: emailFromNameEl?.value || '',
+    fromEmail: emailFromEmailEl?.value || '',
+    replyToEmail: emailReplyToEl?.value || '',
+    smtpHost: emailSmtpHostEl?.value || '',
+    smtpPort: Number(emailSmtpPortEl?.value || 0),
+    smtpUser: emailSmtpUserEl?.value || '',
+    smtpPassword: emailSmtpPasswordEl?.value || '',
+    smtpSecure: Boolean(emailSmtpSecureEl?.checked)
+  };
+}
+
+function setEmailSettingsFormValues(settings = {}) {
+  if (emailProviderEl) emailProviderEl.value = settings.provider || 'gmail';
+  if (emailFromNameEl) emailFromNameEl.value = settings.fromName || '';
+  if (emailFromEmailEl) emailFromEmailEl.value = settings.fromEmail || '';
+  if (emailReplyToEl) emailReplyToEl.value = settings.replyToEmail || '';
+  if (emailSmtpHostEl) emailSmtpHostEl.value = settings.smtpHost || '';
+  if (emailSmtpPortEl) emailSmtpPortEl.value = settings.smtpPort || '587';
+  if (emailSmtpUserEl) emailSmtpUserEl.value = settings.smtpUser || '';
+  if (emailSmtpPasswordEl) emailSmtpPasswordEl.value = '';
+  if (emailSmtpSecureEl) emailSmtpSecureEl.checked = Boolean(settings.smtpSecure);
+}
+
+async function openEmailSettingsModal() {
+  if (!emailSettingsModal) return;
+  if (emailSettingsLoading) return;
+
+  emailSettingsLoading = true;
+  try {
+    const response = await window.api.getEmailSettings();
+    currentEmailSettings = response?.settings || null;
+    setEmailSettingsFormValues(currentEmailSettings || {});
+    applyEmailProviderDefaults(emailProviderEl?.value || 'gmail', { force: false });
+    emailSettingsModal.classList.add('open');
+    emailSettingsModal.setAttribute('aria-hidden', 'false');
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || 'Failed to load email settings', 'error');
+  } finally {
+    emailSettingsLoading = false;
+  }
+}
+
+function closeEmailSettingsModal() {
+  if (!emailSettingsModal) return;
+  emailSettingsModal.classList.remove('open');
+  emailSettingsModal.setAttribute('aria-hidden', 'true');
+  if (emailSettingsForm) emailSettingsForm.reset();
+}
+
+async function ensureEmailSenderConfigured() {
+  try {
+    const response = await window.api.getEmailSettings();
+    const settings = response?.settings || {};
+    if (!settings.smtpUser || !settings.hasPassword) {
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error(err);
+    return false;
+  }
+}
 
 function isCenteredSidebarLayout() {
   const dashboard = document.querySelector(".crm-dashboard");
@@ -1695,6 +1844,13 @@ if (target.id === "undoFinanceBtn") {
         return;
       }
 
+      const senderReady = await ensureEmailSenderConfigured();
+      if (!senderReady) {
+        showToast("Set up an email sender before sending invoices", "error");
+        await openEmailSettingsModal();
+        return;
+      }
+
       if (!confirm("Send this client an invoice by email?")) return;
 
       try {
@@ -1734,6 +1890,76 @@ if (target.id === "undoFinanceBtn") {
     if (target.id === "closeBtn") {
       await savePanelChanges({ silent: true, force: true });
       closePanel();
+    }
+  });
+}
+
+if (emailSettingsBtn) {
+  emailSettingsBtn.addEventListener('click', () => {
+    openEmailSettingsModal();
+  });
+}
+
+if (closeEmailSettingsBtn) {
+  closeEmailSettingsBtn.addEventListener('click', closeEmailSettingsModal);
+}
+
+if (cancelEmailSettingsBtn) {
+  cancelEmailSettingsBtn.addEventListener('click', closeEmailSettingsModal);
+}
+
+if (emailSettingsModal) {
+  emailSettingsModal.addEventListener('click', (e) => {
+    if (e.target === emailSettingsModal) {
+      closeEmailSettingsModal();
+    }
+  });
+}
+
+if (emailProviderEl) {
+  emailProviderEl.addEventListener('change', () => {
+    applyEmailProviderDefaults(emailProviderEl.value, { force: true });
+  });
+}
+
+if (emailSettingsForm) {
+  emailSettingsForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const payload = collectEmailSettingsPayload();
+    if (!payload.smtpUser) {
+      showToast('SMTP username is required', 'error');
+      return;
+    }
+
+    if (!payload.smtpPassword && !currentEmailSettings?.hasPassword) {
+      showToast('Enter the SMTP password to save this sender', 'error');
+      return;
+    }
+
+    if (!payload.smtpPort || Number.isNaN(payload.smtpPort) || payload.smtpPort < 1) {
+      showToast('Enter a valid SMTP port', 'error');
+      return;
+    }
+
+    try {
+      if (saveEmailSettingsBtn) {
+        saveEmailSettingsBtn.disabled = true;
+        saveEmailSettingsBtn.textContent = 'Saving...';
+      }
+      const result = await window.api.saveEmailSettings(payload);
+      window.api._emailSettings = result;
+      currentEmailSettings = result?.settings || null;
+      showToast('Email setup saved', 'success');
+      closeEmailSettingsModal();
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Failed to save email setup', 'error');
+    } finally {
+      if (saveEmailSettingsBtn) {
+        saveEmailSettingsBtn.disabled = false;
+        saveEmailSettingsBtn.textContent = 'Save Email Setup';
+      }
     }
   });
 }
@@ -1984,6 +2210,11 @@ if (clientList) {
 // INITIAL LOAD
 // ======================================================
 document.addEventListener("keydown", async (e) => {
+  if (e.key === "Escape" && emailSettingsModal?.classList.contains('open')) {
+    closeEmailSettingsModal();
+    return;
+  }
+
   if (e.key === "Escape" && projectPanel && projectPanel.style.display === "block") {
     await savePanelChanges({ silent: true, force: true });
     closePanel();

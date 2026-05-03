@@ -230,6 +230,11 @@ async function query(text, params = []) {
     return makeResult([]);
   }
 
+  if (sql === 'insert into settings (key, value) values ($1, $2) on conflict (key) do update set value = excluded.value') {
+    await upsertSettingsRow(params[0], params[1]);
+    return makeResult([]);
+  }
+
   if (sql === 'update settings set value = $1 where key = \'admin_password\'') {
     await updateSettingsValue('admin_password', params[0]);
     return makeResult([]);
