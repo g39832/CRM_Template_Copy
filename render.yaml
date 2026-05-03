@@ -21,3 +21,7 @@ services:
         sync: false
       - key: SUPABASE_STORAGE_BUCKET
         value: crm-files
+      - key: ENABLE_DB_BACKUPS
+        value: false
+      - key: DISABLE_AUTH
+        value: false

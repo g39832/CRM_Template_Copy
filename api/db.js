@@ -1,12 +1,14 @@
 const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
-const isConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+const SUPABASE_ACCESS_KEY = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
+const isConfigured = Boolean(SUPABASE_URL && SUPABASE_ACCESS_KEY);
 
 function buildClient() {
   if (!isConfigured) return null;
-  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  return createClient(SUPABASE_URL, SUPABASE_ACCESS_KEY, {
     auth: { persistSession: false }
   });
 }
@@ -15,7 +17,7 @@ const supabase = buildClient();
 
 function ensureConfigured() {
   if (supabase) return;
-  throw new Error('SUPABASE_URL and SUPABASE_ANON_KEY environment variables are required');
+  throw new Error('SUPABASE_URL and either SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY are required');
 }
 
 function normalizeSql(sql) {
@@ -568,7 +570,7 @@ const pool = {
 
 const schemaReady = Promise.resolve().then(() => {
   if (!isConfigured) {
-    console.warn('Supabase environment variables are not set yet. The app will start, but data access will fail until SUPABASE_URL and SUPABASE_ANON_KEY are configured.');
+    console.warn('Supabase environment variables are not set yet. The app will start, but data access will fail until SUPABASE_URL and a Supabase key are configured.');
   }
   // TODO: If you want automatic provisioning, create a Supabase SQL migration for the tables used by this template.
 });

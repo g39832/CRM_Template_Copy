@@ -41,7 +41,7 @@ router.get('/', requireHealthSecret, asyncHandler(async (req, res) => {
     timestamp,
     environment: process.env.NODE_ENV || 'development',
     storageMode: isRemoteStorageEnabled() ? 'supabase' : 'local',
-    databaseConfigured: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY),
+    databaseConfigured: Boolean(process.env.SUPABASE_URL && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)),
     metrics: {
       totalClients: Number(clients.total_clients || 0),
       overdueClients: Number(overdue.overdue_clients || 0),
