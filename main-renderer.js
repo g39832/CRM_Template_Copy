@@ -762,7 +762,7 @@ window.api = {
       body: JSON.stringify({})
     });
     if (!res.ok) {
-      let message = "Failed to send invoice";
+      let message = "Failed to generate invoice";
       try {
         const data = await res.json();
         message = data?.error || data?.message || message;
@@ -771,7 +771,21 @@ window.api = {
       }
       throw new Error(message);
     }
-    return res.json();
+
+    const blob = await res.blob();
+    const contentDisposition = res.headers.get('content-disposition') || '';
+    const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
+    const filename = filenameMatch?.[1] || `invoice-${clientId}.pdf`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    return { success: true, filename };
   },
 
   async getEmailSettings() {
@@ -1295,7 +1309,7 @@ async function openClient(id) {
           </div>
 
           <div class="panel-actions panel-full-span">
-            <button id="invoiceBtn" class="btn-primary" style="background:linear-gradient(135deg,#1c92d2,#47a7f5); flex:2;">Send Invoice</button>
+            <button id="invoiceBtn" class="btn-primary" style="background:linear-gradient(135deg,#1c92d2,#47a7f5); flex:2;">Download Invoice</button>
             <button id="reviewBtn" class="btn-primary" style="background:rgba(255,255,255,0.14); color:white; flex:2;">Send Google Review</button>
             <button id="saveBtn" class="btn-primary" style="background:linear-gradient(135deg,#2f80ed,#4f8dfd); flex:2;">Save Changes</button>
             <button id="delBtn" class="btn-primary" style="background:#4a5568; flex:1;">Delete</button>
@@ -1837,31 +1851,19 @@ if (target.id === "undoFinanceBtn") {
     if (target.id === "printBtn") printClientWorkspace();
 
     if (target.id === "invoiceBtn") {
-      if (!activeClient?.email) {
-        showToast("Client needs an email before sending an invoice", "error");
-        return;
-      }
-
-      const senderReady = await ensureEmailSenderConfigured();
-      if (!senderReady) {
-        showToast("Set up an email sender before sending invoices", "error");
-        await openEmailSettingsModal();
-        return;
-      }
-
-      if (!confirm("Send this client an invoice by email?")) return;
+      if (!confirm("Download this client's invoice PDF?")) return;
 
       try {
         target.disabled = true;
-        target.textContent = "Sending...";
+        target.textContent = "Downloading...";
         await window.api.sendInvoice(activeId);
-        showToast("Invoice sent", "success");
+        showToast("Invoice downloaded", "success");
       } catch (err) {
         console.error(err);
-        showToast(err.message || "Failed to send invoice", "error");
+        showToast(err.message || "Failed to generate invoice", "error");
       } finally {
         target.disabled = false;
-        target.textContent = "Send Invoice";
+        target.textContent = "Download Invoice";
       }
     }
 

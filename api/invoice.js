@@ -1,9 +1,7 @@
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
-const db = require('./db');
 const { asyncHandler } = require('./request-utils');
-const { buildInvoiceData, generateInvoicePDF, sendInvoiceEmail } = require('../services/invoice');
-const { normalizeEmailConfig } = require('../services/email-config');
+const { buildInvoiceData, generateInvoicePDF } = require('../services/invoice');
 
 const router = express.Router();
 
@@ -11,20 +9,6 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-const EMAIL_SETTINGS_KEY = 'email_delivery_config';
-
-async function readStoredEmailConfig() {
-  await db.schemaReady;
-  const { rows } = await db.query('SELECT value FROM settings WHERE key = $1', [EMAIL_SETTINGS_KEY]);
-  const raw = rows[0]?.value;
-  if (!raw) return null;
-
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
 
 async function fetchLatestNote(clientId) {
   const { data, error } = await supabase
@@ -53,28 +37,25 @@ router.post('/send-invoice/:clientId', asyncHandler(async (req, res) => {
       return res.status(404).json({ error: 'Client not found' });
     }
 
-    if (!client.email) {
-      return res.status(400).json({
-        error: 'Client must have an email before sending invoice'
-      });
-    }
-
     const latestNote = await fetchLatestNote(clientId);
     const invoiceData = buildInvoiceData({ client, latestNote });
     const pdfBuffer = await generateInvoicePDF(invoiceData);
-    const storedEmailConfig = await readStoredEmailConfig();
-    const emailConfig = normalizeEmailConfig(storedEmailConfig || {});
-    await sendInvoiceEmail(client.email, pdfBuffer, emailConfig);
 
-    res.json({ success: true });
+    const safeClientName = String(client.name || 'client')
+      .trim()
+      .replace(/[^a-z0-9]+/gi, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase() || 'client';
+    const filename = `${safeClientName}-${invoiceData.invoiceNumber}.pdf`;
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`
+    });
+
+    return res.send(pdfBuffer);
   } catch (err) {
     console.error('Send invoice failed:', err);
-    const message = String(err?.message || '');
-    if (/email sender|smtp host|smtp password|smtp username/i.test(message)) {
-      return res.status(400).json({
-        error: 'Email sender is not configured. Open Email Setup and save a sender account.'
-      });
-    }
     res.status(500).json({ error: 'Failed to send invoice' });
   }
 }));

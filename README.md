@@ -73,7 +73,7 @@ If you are unsure about a field, keep the column names above and adjust the app 
    - `SESSION_SECRET`
    - `DEFAULT_ADMIN_PASSWORD`
    - `SUPABASE_SERVICE_ROLE_KEY` if you want server-side file upload support
-   - Email vars are optional because invoice sending can now be configured in-app under `Email Setup`
+   - Email vars are optional and only needed if you later re-enable outbound email sending
 6. Deploy the service.
 
 The included `render.yaml` can be used as a starting point for Infrastructure as Code.
@@ -84,7 +84,7 @@ The included `render.yaml` can be used as a starting point for Infrastructure as
 - Update the login logo or badge if you want custom branding.
 - Adjust the `settings` password workflow if you want Supabase Auth instead of an app password.
 - Update the storage bucket name in `.env` if you want a different file bucket.
-- Use the `Email Setup` button in the app to connect the sender account for invoice email delivery.
+- The invoice button now downloads a PDF directly, so no email setup is required for that workflow.
 - Add or refine Supabase Row Level Security policies before production use.
 
 ## Notes
