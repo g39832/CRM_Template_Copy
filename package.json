@@ -1,0 +1,26 @@
+{
+  "name": "crm-template",
+  "version": "1.0.0",
+  "main": "server.js",
+  "type": "commonjs",
+  "description": "CRM Template - Supabase-backed web application",
+  "scripts": {
+    "start": "node server.js",
+    "test:smoke": "node scripts/smoke-test.js",
+    "test:backup-restore": "node scripts/verify-backup-restore.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.22.1",
+    "express-session": "^1.19.0",
+    "multer": "^2.0.2",
+    "@supabase/supabase-js": "^2.39.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

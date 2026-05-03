@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - CRM Template</title>
+  <link rel="stylesheet" href="login.css">
+</head>
+<body>
+
+  <div class="login-shell">
+    <div class="login-orb orb-one"></div>
+    <div class="login-orb orb-two"></div>
+
+    <div class="container">
+      <div class="brand-block">
+        <div id="logo_login" aria-hidden="true">CRM</div>
+        <div class="brand-copy">
+          <div class="brand-kicker">CRM Template</div>
+          <h1>Welcome back</h1>
+          <p>Sign in to manage clients, finance, documents, and project details.</p>
+        </div>
+      </div>
+
+    <!-- LOGIN FORM -->
+    <form id="loginForm">
+      <label class="sr-only" for="password">Password</label>
+      <input type="password" id="password" placeholder="Enter Password" autocomplete="current-password" required>
+      
+      <div class="buttons">
+        <button type="submit" id="login-btn">Login</button>
+        <button type="button" id="showReset">Reset Password</button>
+      </div>
+    </form>
+
+    <!-- RESET PASSWORD SECTION -->
+    <div id="resetSection">
+      <h3>Change Password</h3>
+      <p class="section-copy">Use this if you need to update the current admin password.</p>
+      
+      <label class="sr-only" for="currentPassword">Current Password</label>
+      <input type="password" id="currentPassword" placeholder="Current Password" autocomplete="current-password" required>
+      <label class="sr-only" for="newPassword">New Password</label>
+      <input type="password" id="newPassword" placeholder="New Password" autocomplete="new-password" required>
+      
+      <button id="changePasswordBtn">Change Password</button>
+    </div>
+    </div>
+  </div>
+
+  <script src="login.js"></script>
+</body>
+</html>

@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRM Template - Clients</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 14px 20px;
+      background: linear-gradient(135deg, rgba(32, 58, 67, 0.96), rgba(15, 32, 39, 0.95));
+      border-bottom: 1px solid rgba(122, 183, 214, 0.18);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
+      color: var(--text-main);
+    }
+
+    .page-header-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .page-kicker {
+      font-size: 0.78rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .page-title {
+      font-size: 1.5rem;
+      font-weight: 800;
+      line-height: 1.1;
+      color: var(--text-main);
+    }
+
+    .page-subtitle {
+      margin: 0;
+      font-size: 0.92rem;
+      color: var(--text-muted);
+      max-width: 64ch;
+    }
+
+    .page-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    body.dashboard-body {
+      margin: 0;
+      overflow-x: hidden;
+      background: var(--bg-main);
+    }
+
+    @media (max-width: 768px) {
+      .page-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+        padding: 12px 14px;
+      }
+
+      .page-title {
+        font-size: 1.25rem;
+      }
+
+      .page-subtitle {
+        max-width: none;
+        font-size: 0.88rem;
+        line-height: 1.4;
+      }
+
+      .page-header-actions {
+        width: 100%;
+      }
+
+      .page-header-actions button {
+        width: 100%;
+      }
+
+      .page-header-copy {
+        gap: 6px;
+      }
+    }
+
+    @media (max-width: 768px) and (orientation: landscape) {
+      .page-header {
+        flex-direction: row;
+        align-items: center;
+        padding: 10px 14px;
+      }
+
+      .page-title {
+        font-size: 1.1rem;
+      }
+
+      .page-subtitle {
+        display: none;
+      }
+
+      .page-header-actions {
+        width: auto;
+      }
+
+      .page-header-actions button {
+        width: auto;
+      }
+    }
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+      animation: fadeIn 0.3s ease forwards;
+    }
+
+    #address {
+      flex: 1; /* Make it take full width on the right */
+    }
+
+    .close-x {
+      color: var(--accent);
+      font-size: 1.5rem;
+      border: none;
+      background: none;
+      cursor: pointer;
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      transition: transform 0.2s ease, color 0.2s ease;
+      opacity: 0;
+      animation: fadeIn 0.3s ease forwards 0.2s;
+    }
+
+    .close-x:hover {
+      color: #68b9fb;
+      transform: scale(1.2);
+    }
+
+    .sidebar h2 {
+      margin-bottom: 10px;
+      opacity: 0;
+      animation: fadeIn 0.3s ease forwards 0.1s;
+    }
+
+    .sidebar form input,
+    .sidebar form button {
+      padding: 8px;
+      font-size: 0.9rem;
+      opacity: 0;
+      animation: fadeIn 0.3s ease forwards 0.15s;
+    }
+
+    .sidebar .search-bar {
+      margin-top: 15px;
+      opacity: 0;
+      animation: fadeIn 0.3s ease forwards 0.2s;
+    }
+
+    .client-list {
+      margin-top: 10px;
+      max-height: 400px;
+      overflow-y: auto;
+      opacity: 0;
+      animation: fadeIn 0.3s ease forwards 0.25s;
+    }
+
+    .main-content {
+      opacity: 0;
+      animation: fadeIn 0.3s ease forwards 0.3s;
+    }
+
+    .pdf-list canvas {
+      cursor: pointer;
+      border: 1px solid rgba(122, 183, 214, 0.2);
+      border-radius: 8px;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+      background: rgba(32, 58, 67, 0.8);
+    }
+
+    .pdf-list canvas:hover {
+      transform: scale(1.05);
+      border-color: var(--accent);
+    }
+
+    #pdfModal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(5, 12, 16, 0.82);
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
+
+    #pdfModalContent {
+      position: relative;
+      width: 90%;
+      max-width: 900px;
+      height: 90%;
+      background: linear-gradient(180deg, rgba(44, 83, 100, 0.98), rgba(32, 58, 67, 0.98));
+      padding: 10px;
+      overflow: auto;
+      border-radius: 16px;
+      border: 1px solid rgba(122, 183, 214, 0.16);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+    }
+
+    #pdfModalClose {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      font-size: 1.5rem;
+      font-weight: bold;
+      cursor: pointer;
+      color: var(--text-main);
+    }
+
+    #pdfViewer canvas {
+      display: block;
+      margin: 0 auto 10px;
+      border: 1px solid rgba(122, 183, 214, 0.2);
+      border-radius: 8px;
+    }
+
+    @keyframes fadeIn {
+      to { opacity: 1; }
+    }
+
+    /* Top bar adjustments */
+    header#Main_header {
+      font-size: 1.5rem;
+    }
+
+    header#Main_header button {
+      padding: 10px 14px;
+      font-size: 0.92rem;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      color: white;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      box-shadow: 0 8px 18px rgba(28, 146, 210, 0.24);
+    }
+
+    header#Main_header button:hover {
+      transform: translateY(-1px);
+    }
+
+    @media (max-width: 768px) {
+      .input-row {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      .sidebar {
+        padding: 16px;
+      }
+
+      .sidebar h2 {
+        font-size: 1.05rem;
+      }
+    }
+
+    @media (max-width: 768px) and (orientation: landscape) {
+      .input-row {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+  </style>
+
+  <!-- PDF.js library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.225/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+</head>
+<body class="dashboard-body">
+
+  <!-- Top header with toggle button -->
+  <header id="Main_header" class="page-header">
+    <div class="page-header-copy">
+      <span class="page-kicker">CRM Template</span>
+      <span class="page-title">Clients</span>
+      <p class="page-subtitle">Track leads, notes, files, and project details from one workspace.</p>
+    </div>
+    <div class="page-header-actions">
+        <button id="toggleFinance">Finance Dashboard</button>
+    </div>
+  </header>
+
+  <div class="crm-dashboard">
+    <!-- Sidebar: Lead & Client Management -->
+    <aside class="sidebar">
+      <div class="clients-workspace">
+        <h2>Add New Lead</h2>
+        <form id="clientIntakeForm">
+          <div class="input-row">
+            <input type="text" id="fName" placeholder="First Name" required>
+            <input type="text" id="lName" placeholder="Last Name" required>
+            <input type="text" id="address" placeholder="Job Address">
+          </div>
+          <input type="email" id="email" placeholder="Email Address" required>
+          <input type="tel" id="phone" placeholder="Phone Number" required>
+          <button type="submit" class="btn-primary">Add Client</button>
+        </form>
+
+        <div class="search-bar">
+          <input type="text" id="searchClients" placeholder="Search name, phone, or email...">
+        </div>
+
+        <!-- Scrollable List of Clients -->
+        <ul id="clientList" class="client-list"></ul>
+      </div>
+    </aside>
+
+    <div class="main-content"></div>
+
+    <!-- Right panel: Interactive Project Details & PDF Drop Zone -->
+    
+  </div>
+
+  <div id="projectPanel"></div>
+
+  <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- PDF Preview Modal -->
+  <div id="pdfModal">
+    <div id="pdfModalContent">
+      <span id="pdfModalClose">&times;</span>
+      <div id="pdfViewer"></div>
+    </div>
+  </div>
+
+  <!-- Renderer script -->
+  <script src="main-renderer.js?v=2" defer></script>
+  <script>
+    // Toggle button to finance page
+    const toggleBtn = document.getElementById('toggleFinance');
+    toggleBtn.addEventListener('click', () => {
+        window.location.href = 'finance.html';
+    });
+
+    // PDF.js worker
+    if (typeof pdfjsLib !== 'undefined') {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.225/pdf.worker.min.js';
+    }
+
+    // Modal logic
+    const pdfModal = document.getElementById('pdfModal');
+    const pdfViewer = document.getElementById('pdfViewer');
+    const pdfModalClose = document.getElementById('pdfModalClose');
+
+    pdfModalClose.addEventListener('click', () => {
+      pdfModal.style.display = 'none';
+      pdfViewer.innerHTML = ''; // clear canvases
+    });
+
+    window.addEventListener('click', (e) => {
+      if (e.target === pdfModal) {
+        pdfModal.style.display = 'none';
+        pdfViewer.innerHTML = '';
+      }
+    });
+
+    // Function to open PDF in modal
+    function openPDFModal(urlOrFile) {
+      pdfViewer.innerHTML = '';
+      pdfModal.style.display = 'flex';
+
+      const loadPDF = async (data) => {
+        const pdf = await pdfjsLib.getDocument({ data }).promise;
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale: 1.5 });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          pdfViewer.appendChild(canvas);
+          const ctx = canvas.getContext('2d');
+          await page.render({ canvasContext: ctx, viewport }).promise;
+        }
+      };
+
+      if (typeof urlOrFile === 'string') {
+        fetch(urlOrFile).then(r => r.arrayBuffer()).then(loadPDF);
+      } else {
+        urlOrFile.arrayBuffer().then(loadPDF);
+      }
+    }
+
+    // Attach click to thumbnail canvases dynamically
+    document.addEventListener('click', (e) => {
+      if (e.target.tagName === 'CANVAS' && e.target.closest('.pdf-item')) {
+        const url = e.target.closest('.pdf-item').dataset.url;
+        if (url) openPDFModal(url);
+      }
+    });
+  </script>
+  <div id="projectOverlay"></div>
+</body>
+</html>
