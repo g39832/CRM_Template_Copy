@@ -814,6 +814,34 @@ window.api = {
     }
     this._emailSettings = await res.json();
     return this._emailSettings;
+  },
+
+  async getCompanyProfile() {
+    if (this._companyProfile) return this._companyProfile;
+    const res = await fetch('/api/company-profile');
+    if (!res.ok) throw new Error('Failed to load company profile');
+    this._companyProfile = await res.json();
+    return this._companyProfile;
+  },
+
+  async saveCompanyProfile(payload) {
+    const res = await fetch('/api/company-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      let message = 'Failed to save company profile';
+      try {
+        const data = await res.json();
+        message = data?.error || data?.message || message;
+      } catch {
+        // Ignore non-JSON responses.
+      }
+      throw new Error(message);
+    }
+    this._companyProfile = await res.json();
+    return this._companyProfile;
   }
 };
 // ======================================================
@@ -836,6 +864,16 @@ const projectPanel = document.getElementById("projectPanel");
 const searchInput = document.getElementById("searchClients");
 const intakeFormEl = document.getElementById("clientIntakeForm");
 const overlay = document.getElementById("projectOverlay");
+const companyProfileModal = document.getElementById("companyProfileModal");
+const companyProfileForm = document.getElementById("companyProfileForm");
+const companyProfileBtn = document.getElementById("companyProfileBtn");
+const closeCompanyProfileBtn = document.getElementById("closeCompanyProfile");
+const cancelCompanyProfileBtn = document.getElementById("cancelCompanyProfile");
+const saveCompanyProfileBtn = document.getElementById("saveCompanyProfile");
+const companyNameEl = document.getElementById("companyName");
+const companyAddressEl = document.getElementById("companyAddress");
+const companyPhoneEl = document.getElementById("companyPhone");
+const companyEmailEl = document.getElementById("companyEmail");
 const emailSettingsModal = document.getElementById("emailSettingsModal");
 const emailSettingsForm = document.getElementById("emailSettingsForm");
 const emailSettingsBtn = document.getElementById("emailSettingsBtn");
@@ -870,6 +908,49 @@ let sidebarListContainer = null;
 let newNoteSaving = false;
 let emailSettingsLoading = false;
 let currentEmailSettings = null;
+let companyProfileLoading = false;
+let currentCompanyProfile = null;
+
+function setCompanyProfileFormValues(profile = {}) {
+  if (companyNameEl) companyNameEl.value = profile.businessName || '';
+  if (companyAddressEl) companyAddressEl.value = profile.businessAddress || '';
+  if (companyPhoneEl) companyPhoneEl.value = profile.businessPhone || '';
+  if (companyEmailEl) companyEmailEl.value = profile.businessEmail || '';
+}
+
+function collectCompanyProfilePayload() {
+  return {
+    businessName: companyNameEl?.value || '',
+    businessAddress: companyAddressEl?.value || '',
+    businessPhone: companyPhoneEl?.value || '',
+    businessEmail: companyEmailEl?.value || ''
+  };
+}
+
+async function openCompanyProfileModal() {
+  if (!companyProfileModal || companyProfileLoading) return;
+
+  companyProfileLoading = true;
+  try {
+    const response = await window.api.getCompanyProfile();
+    currentCompanyProfile = response?.settings || null;
+    setCompanyProfileFormValues(currentCompanyProfile || {});
+    companyProfileModal.classList.add('open');
+    companyProfileModal.setAttribute('aria-hidden', 'false');
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || 'Failed to load company profile', 'error');
+  } finally {
+    companyProfileLoading = false;
+  }
+}
+
+function closeCompanyProfileModal() {
+  if (!companyProfileModal) return;
+  companyProfileModal.classList.remove('open');
+  companyProfileModal.setAttribute('aria-hidden', 'true');
+  if (companyProfileForm) companyProfileForm.reset();
+}
 
 function getEmailProviderDefaults(provider) {
   if (provider === 'outlook') {
@@ -1900,18 +1981,40 @@ if (emailSettingsBtn) {
   });
 }
 
+if (companyProfileBtn) {
+  companyProfileBtn.addEventListener('click', () => {
+    openCompanyProfileModal();
+  });
+}
+
 if (closeEmailSettingsBtn) {
   closeEmailSettingsBtn.addEventListener('click', closeEmailSettingsModal);
+}
+
+if (closeCompanyProfileBtn) {
+  closeCompanyProfileBtn.addEventListener('click', closeCompanyProfileModal);
 }
 
 if (cancelEmailSettingsBtn) {
   cancelEmailSettingsBtn.addEventListener('click', closeEmailSettingsModal);
 }
 
+if (cancelCompanyProfileBtn) {
+  cancelCompanyProfileBtn.addEventListener('click', closeCompanyProfileModal);
+}
+
 if (emailSettingsModal) {
   emailSettingsModal.addEventListener('click', (e) => {
     if (e.target === emailSettingsModal) {
       closeEmailSettingsModal();
+    }
+  });
+}
+
+if (companyProfileModal) {
+  companyProfileModal.addEventListener('click', (e) => {
+    if (e.target === companyProfileModal) {
+      closeCompanyProfileModal();
     }
   });
 }
@@ -1959,6 +2062,38 @@ if (emailSettingsForm) {
       if (saveEmailSettingsBtn) {
         saveEmailSettingsBtn.disabled = false;
         saveEmailSettingsBtn.textContent = 'Save Email Setup';
+      }
+    }
+  });
+}
+
+if (companyProfileForm) {
+  companyProfileForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const payload = collectCompanyProfilePayload();
+    if (!payload.businessName.trim()) {
+      showToast('Company name is required', 'error');
+      return;
+    }
+
+    try {
+      if (saveCompanyProfileBtn) {
+        saveCompanyProfileBtn.disabled = true;
+        saveCompanyProfileBtn.textContent = 'Saving...';
+      }
+      const result = await window.api.saveCompanyProfile(payload);
+      window.api._companyProfile = result;
+      currentCompanyProfile = result?.settings || null;
+      showToast('Company profile saved', 'success');
+      closeCompanyProfileModal();
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Failed to save company profile', 'error');
+    } finally {
+      if (saveCompanyProfileBtn) {
+        saveCompanyProfileBtn.disabled = false;
+        saveCompanyProfileBtn.textContent = 'Save Company Profile';
       }
     }
   });
@@ -2210,6 +2345,11 @@ if (clientList) {
 // INITIAL LOAD
 // ======================================================
 document.addEventListener("keydown", async (e) => {
+  if (e.key === "Escape" && companyProfileModal?.classList.contains('open')) {
+    closeCompanyProfileModal();
+    return;
+  }
+
   if (e.key === "Escape" && emailSettingsModal?.classList.contains('open')) {
     closeEmailSettingsModal();
     return;

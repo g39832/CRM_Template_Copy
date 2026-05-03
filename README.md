@@ -84,6 +84,7 @@ The included `render.yaml` can be used as a starting point for Infrastructure as
 - Update the login logo or badge if you want custom branding.
 - Adjust the `settings` password workflow if you want Supabase Auth instead of an app password.
 - Update the storage bucket name in `.env` if you want a different file bucket.
+- Use `Company Profile` in the app to change the company name, address, phone, and email that appear on invoices.
 - The invoice button now downloads a PDF directly, so no email setup is required for that workflow.
 - Add or refine Supabase Row Level Security policies before production use.
 

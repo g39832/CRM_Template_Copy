@@ -1,11 +1,7 @@
 const PDFDocument = require('pdfkit');
 const nodemailer = require('nodemailer');
 const { buildTransportOptions, formatFromAddress, normalizeEmailConfig } = require('./email-config');
-
-const BUSINESS_NAME = process.env.BUSINESS_NAME || 'Your Company Name';
-const BUSINESS_ADDRESS = process.env.BUSINESS_ADDRESS || 'Your Address';
-const BUSINESS_PHONE = process.env.BUSINESS_PHONE || 'Your Phone';
-const BUSINESS_EMAIL = process.env.BUSINESS_EMAIL || 'your@email.com';
+const { normalizeCompanyProfile } = require('./company-profile');
 
 function formatMoney(value) {
   const num = Number(value);
@@ -82,7 +78,7 @@ async function sendInvoiceEmail(to, pdfBuffer, emailConfig = {}) {
   });
 }
 
-function buildInvoiceData({ client, latestNote = null }) {
+function buildInvoiceData({ client, latestNote = null, companyProfile = {} }) {
   const workDescription =
     client.work_description ||
     client.job_description ||
@@ -90,12 +86,13 @@ function buildInvoiceData({ client, latestNote = null }) {
     latestNote?.content ||
     client.status ||
     'Work details not provided.';
+  const company = normalizeCompanyProfile(companyProfile, process.env);
 
   return {
-    businessName: BUSINESS_NAME,
-    businessAddress: BUSINESS_ADDRESS,
-    businessPhone: BUSINESS_PHONE,
-    businessEmail: BUSINESS_EMAIL,
+    businessName: company.businessName,
+    businessAddress: company.businessAddress,
+    businessPhone: company.businessPhone,
+    businessEmail: company.businessEmail,
     date: new Date().toLocaleDateString(),
     invoiceNumber: `INV-${client.id}-${Date.now()}`,
     clientName: client.name || '',

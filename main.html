@@ -184,6 +184,16 @@
       line-height: 1.5;
     }
 
+    .profile-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .profile-grid .full-span {
+      grid-column: 1 / -1;
+    }
+
     body.dashboard-body {
       margin: 0;
       overflow-x: hidden;
@@ -425,6 +435,7 @@
       <p class="page-subtitle">Track leads, notes, files, and project details from one workspace.</p>
     </div>
     <div class="page-header-actions">
+        <button id="companyProfileBtn" class="secondary">Company Profile</button>
         <button id="toggleFinance">Finance Dashboard</button>
     </div>
   </header>
@@ -540,6 +551,47 @@
 
       <div class="email-settings-note">
         Gmail and Microsoft 365 often require an app password or SMTP access enabled for third-party apps. If you already have a sender configured in the server environment, this screen will override it for this deployment.
+      </div>
+    </div>
+  </div>
+
+  <div id="companyProfileModal" class="email-settings-modal" aria-hidden="true">
+    <div class="email-settings-card">
+      <button id="closeCompanyProfile" class="email-settings-close" type="button">&times;</button>
+      <h2 class="email-settings-title">Company Profile</h2>
+      <p class="email-settings-subtitle">Set the company details that appear on every invoice.</p>
+
+      <form id="companyProfileForm">
+        <div class="profile-grid">
+          <div class="full-span">
+            <label for="companyName">Company Name</label>
+            <input id="companyName" type="text" placeholder="Your Company Name" required>
+          </div>
+
+          <div class="full-span">
+            <label for="companyAddress">Company Address</label>
+            <input id="companyAddress" type="text" placeholder="123 Main St, City, State">
+          </div>
+
+          <div>
+            <label for="companyPhone">Company Phone</label>
+            <input id="companyPhone" type="text" placeholder="(555) 123-4567">
+          </div>
+
+          <div>
+            <label for="companyEmail">Company Email</label>
+            <input id="companyEmail" type="email" placeholder="billing@company.com">
+          </div>
+        </div>
+
+        <div class="email-settings-actions">
+          <button id="cancelCompanyProfile" class="secondary" type="button">Cancel</button>
+          <button id="saveCompanyProfile" type="submit">Save Company Profile</button>
+        </div>
+      </form>
+
+      <div class="email-settings-note">
+        This replaces the placeholder company name and contact details that appear in the invoice PDF.
       </div>
     </div>
   </div>

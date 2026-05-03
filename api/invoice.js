@@ -1,7 +1,9 @@
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
+const db = require('./db');
 const { asyncHandler } = require('./request-utils');
 const { buildInvoiceData, generateInvoicePDF } = require('../services/invoice');
+const { normalizeCompanyProfile } = require('../services/company-profile');
 
 const router = express.Router();
 
@@ -9,6 +11,20 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+const COMPANY_PROFILE_KEY = 'company_profile';
+
+async function readStoredCompanyProfile() {
+  await db.schemaReady;
+  const { rows } = await db.query('SELECT value FROM settings WHERE key = $1', [COMPANY_PROFILE_KEY]);
+  const raw = rows[0]?.value;
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
 
 async function fetchLatestNote(clientId) {
   const { data, error } = await supabase
@@ -38,7 +54,12 @@ router.post('/send-invoice/:clientId', asyncHandler(async (req, res) => {
     }
 
     const latestNote = await fetchLatestNote(clientId);
-    const invoiceData = buildInvoiceData({ client, latestNote });
+    const storedCompanyProfile = await readStoredCompanyProfile();
+    const invoiceData = buildInvoiceData({
+      client,
+      latestNote,
+      companyProfile: normalizeCompanyProfile(storedCompanyProfile || {})
+    });
     const pdfBuffer = await generateInvoicePDF(invoiceData);
 
     const safeClientName = String(client.name || 'client')

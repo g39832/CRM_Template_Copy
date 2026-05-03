@@ -109,6 +109,7 @@ app.use('/api', (req, res, next) => {
 // ===== API ROUTES =====
 const authRoutes = require('./api/auth');
 const clientsRoutes = require('./api/clients');
+const companyProfileRoutes = require('./api/company-profile');
 const emailSettingsRoutes = require('./api/email-settings');
 const invoiceRoutes = require('./api/invoice');
 const pdfRoutes = require('./api/pdf');
@@ -118,6 +119,7 @@ const supabaseConfigRoutes = require('./api/supabase-config');
 // Mount routers under /api
 app.use('/api', authRoutes);       // /api/login, /api/change-password
 app.use('/api', clientsRoutes);    // /api/clients/...
+app.use('/api/company-profile', companyProfileRoutes); // /api/company-profile
 app.use('/api/email-settings', emailSettingsRoutes); // /api/email-settings
 app.use('/api', invoiceRoutes);    // /api/send-invoice/:clientId
 app.use('/api/pdf', pdfRoutes);    // /api/pdf/*
