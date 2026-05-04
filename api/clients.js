@@ -235,8 +235,9 @@ async function handleUpdateTotal(req, res) {
 
     await db.schemaReady;
     console.debug('[clients.total] fetching client row for id:', id);
-    const clientResult = await db.query('SELECT amount_paid, created_at FROM clients WHERE id = $1', [id]);
+    const clientResult = await db.query('SELECT total_due, amount_paid, created_at FROM clients WHERE id = $1', [id]);
     const clientRow = clientResult.rows[0];
+    console.debug('[clients.total] client row result:', clientRow);
     if (!clientRow) return res.status(404).json({ error: 'Client not found' });
 
     const newBalance = total - Number(clientRow.amount_paid || 0);
