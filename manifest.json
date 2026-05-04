@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "CRM Template Content Reporter",
+  "version": "1.0.0",
+  "description": "Chrome extension content script for reporting page info.",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content_reporter.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": ["<all_urls>"]
+}

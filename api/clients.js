@@ -222,22 +222,30 @@ async function handleUpdateTotal(req, res) {
     assertObject(req.body);
     const id = parseIntField(req.params.id, 'id', { min: 1 });
     const rawTotal = req.body.total ?? req.body.total_due;
+    console.debug('[clients.total] incoming body:', req.body);
     if (rawTotal === undefined || rawTotal === null || rawTotal === '') {
       return res.status(400).json({ error: 'total is required' });
     }
 
-    const total = parseNumberField(rawTotal, 'total', { required: true });
+    const total = Number(rawTotal);
+    console.debug('[clients.total] computed total:', total);
+    if (!Number.isFinite(total)) {
+      return res.status(400).json({ error: 'total must be a valid number' });
+    }
 
     await db.schemaReady;
+    console.debug('[clients.total] fetching client row for id:', id);
     const clientResult = await db.query('SELECT amount_paid, created_at FROM clients WHERE id = $1', [id]);
     const clientRow = clientResult.rows[0];
     if (!clientRow) return res.status(404).json({ error: 'Client not found' });
 
     const newBalance = total - Number(clientRow.amount_paid || 0);
+    console.debug('[clients.total] updating client row:', { id, total, newBalance });
 
     await db.query('UPDATE clients SET total_due = $1, balance = $2 WHERE id = $3', [total, newBalance, id]);
 
     const year = clientRow.created_at ? new Date(clientRow.created_at).getFullYear() : new Date().getFullYear();
+    console.debug('[clients.total] updating finance totals for year:', year);
     await updateFinanceTotalsSafe(year, 'client total');
 
     return res.json({ success: true, financeUpdated: true });
