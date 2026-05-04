@@ -73,6 +73,14 @@ async function updateFinanceTotals(year) {
   ]);
 }
 
+async function updateFinanceTotalsSafe(year, context = 'finance totals') {
+  try {
+    await updateFinanceTotals(year);
+  } catch (err) {
+    console.error(`Failed to update ${context} for year ${year}:`, err);
+  }
+}
+
 // ======================================================
 // SEARCH CLIENTS
 // ======================================================
@@ -223,8 +231,8 @@ router.put('/clients/:id/total', asyncHandler(async (req, res) => {
 
   await db.query('UPDATE clients SET total_due = $1, balance = $2 WHERE id = $3', [total, newBalance, id]);
 
-  const year = new Date(clientRow.created_at).getFullYear();
-  await updateFinanceTotals(year);
+  const year = clientRow.created_at ? new Date(clientRow.created_at).getFullYear() : new Date().getFullYear();
+  await updateFinanceTotalsSafe(year, 'client total');
 
   return res.json({ success: true, financeUpdated: true });
 }));
@@ -265,8 +273,8 @@ router.put('/clients/:id/payment', asyncHandler(async (req, res) => {
     conn.release();
   }
 
-  const year = new Date().getFullYear();
-  await updateFinanceTotals(year);
+  const year = clientRow.created_at ? new Date(clientRow.created_at).getFullYear() : new Date().getFullYear();
+  await updateFinanceTotalsSafe(year, 'client payment');
 
   return res.json({ success: true, financeUpdated: true });
 }));
@@ -303,8 +311,8 @@ router.put('/clients/:id/reset-paid', asyncHandler(async (req, res) => {
     conn.release();
   }
 
-  const year = new Date(clientRow.created_at).getFullYear();
-  await updateFinanceTotals(year);
+  const year = clientRow.created_at ? new Date(clientRow.created_at).getFullYear() : new Date().getFullYear();
+  await updateFinanceTotalsSafe(year, 'reset paid');
 
   const updatedClientResult = await db.query('SELECT total_due, amount_paid, balance FROM clients WHERE id = $1', [id]);
   return res.json({ success: true, client: updatedClientResult.rows[0], financeUpdated: true });
@@ -350,8 +358,8 @@ router.put('/clients/:id/finance-state', asyncHandler(async (req, res) => {
     conn.release();
   }
 
-  const year = new Date(clientRow.created_at).getFullYear();
-  await updateFinanceTotals(year);
+  const year = clientRow.created_at ? new Date(clientRow.created_at).getFullYear() : new Date().getFullYear();
+  await updateFinanceTotalsSafe(year, 'finance state restore');
 
   const updatedClientResult = await db.query('SELECT total_due, amount_paid, balance FROM clients WHERE id = $1', [id]);
   return res.json({ success: true, client: updatedClientResult.rows[0], financeUpdated: true });

@@ -154,7 +154,18 @@ app.use(express.static(path.join(__dirname), {
   etag: true,
   lastModified: true,
   setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
+    if (filePath.endsWith('.css')) {
+      res.type('text/css');
+      res.setHeader('Cache-Control', 'no-cache');
+      return;
+    }
+    if (filePath.endsWith('.js')) {
+      res.type('application/javascript');
+      res.setHeader('Cache-Control', 'no-cache');
+      return;
+    }
+    if (filePath.endsWith('.html')) {
+      res.type('text/html');
       res.setHeader('Cache-Control', 'no-cache');
       return;
     }

@@ -550,6 +550,21 @@ function printClientWorkspace() {
 // API WRAPPER
 // ======================================================
 window.api = {
+  async _readResponseError(res, fallbackMessage) {
+    try {
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        return data?.error || data?.message || fallbackMessage;
+      }
+      const text = await res.text();
+      return text.trim() || fallbackMessage;
+    } catch (err) {
+      console.warn('Failed to parse error response:', err);
+      return fallbackMessage;
+    }
+  },
+
   async searchClients(term = '', options = {}) {
     const { signal } = options;
     const res = await fetch(`/api/search?q=${encodeURIComponent(term)}`, { signal });
@@ -681,7 +696,9 @@ window.api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ total_due })
     });
-    if (!res.ok) throw new Error("Total update failed");
+    if (!res.ok) {
+      throw new Error(await this._readResponseError(res, "Total update failed"));
+    }
     return res.json();
   },
 
@@ -691,7 +708,9 @@ window.api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ payment })
     });
-    if (!res.ok) throw new Error("Payment failed");
+    if (!res.ok) {
+      throw new Error(await this._readResponseError(res, "Payment failed"));
+    }
     return res.json();
   },
 
@@ -721,7 +740,9 @@ window.api = {
   // ==========================
   async listNotes(clientId) {
     const res = await fetch(`/api/notes/list/${clientId}`);
-    if (!res.ok) throw new Error("Failed to list notes");
+    if (!res.ok) {
+      throw new Error(await this._readResponseError(res, "Failed to list notes"));
+    }
     return res.json();
   },
 
@@ -1453,7 +1474,9 @@ function setupFinancialSection(client) {
   // SAVE TOTAL
   // ==============================
   saveTotalBtn.onclick = async () => {
+    if (saveTotalBtn.disabled) return;
     try {
+      saveTotalBtn.disabled = true;
       const newTotal = parseMoney(totalDueInput?.value) || 0;
 
       // 🧠 Save PREVIOUS state to undo stack
@@ -1474,7 +1497,9 @@ function setupFinancialSection(client) {
       showToast("Total updated", "success");
     } catch (err) {
       console.error(err);
-      showToast("Failed to update total", "error");
+      showToast(err?.message || "Failed to update total", "error");
+    } finally {
+      saveTotalBtn.disabled = false;
     }
   };
 
@@ -1482,7 +1507,9 @@ function setupFinancialSection(client) {
   // ADD PAYMENT
   // ==============================
   addPaymentBtn.onclick = async () => {
+    if (addPaymentBtn.disabled) return;
     try {
+      addPaymentBtn.disabled = true;
       const payment = parseMoney(paymentInput?.value) || 0;
       if (payment <= 0) {
         showToast("Enter a valid payment", "error");
@@ -1507,7 +1534,9 @@ function setupFinancialSection(client) {
       showToast("Payment added", "success");
     } catch (err) {
       console.error(err);
-      showToast("Failed to add payment", "error");
+      showToast(err?.message || "Failed to add payment", "error");
+    } finally {
+      addPaymentBtn.disabled = false;
     }
   };
 }
