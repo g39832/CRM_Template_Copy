@@ -217,25 +217,41 @@ router.post('/delete-client', asyncHandler(async (req, res) => {
 // ======================================================
 // UPDATE TOTAL DUE
 // ======================================================
-router.put('/clients/:id/total', asyncHandler(async (req, res) => {
-  assertObject(req.body);
-  const id = parseIntField(req.params.id, 'id', { min: 1 });
-  const total = parseNumberField(req.body.total_due, 'total_due', { required: false, defaultValue: 0 });
+async function handleUpdateTotal(req, res) {
+  try {
+    assertObject(req.body);
+    const id = parseIntField(req.params.id, 'id', { min: 1 });
+    const rawTotal = req.body.total ?? req.body.total_due;
+    if (rawTotal === undefined || rawTotal === null || rawTotal === '') {
+      return res.status(400).json({ error: 'total is required' });
+    }
 
-  await db.schemaReady;
-  const clientResult = await db.query('SELECT amount_paid, created_at FROM clients WHERE id = $1', [id]);
-  const clientRow = clientResult.rows[0];
-  if (!clientRow) return res.status(404).json({ error: 'Client not found' });
+    const total = parseNumberField(rawTotal, 'total', { required: true });
 
-  const newBalance = total - Number(clientRow.amount_paid || 0);
+    await db.schemaReady;
+    const clientResult = await db.query('SELECT amount_paid, created_at FROM clients WHERE id = $1', [id]);
+    const clientRow = clientResult.rows[0];
+    if (!clientRow) return res.status(404).json({ error: 'Client not found' });
 
-  await db.query('UPDATE clients SET total_due = $1, balance = $2 WHERE id = $3', [total, newBalance, id]);
+    const newBalance = total - Number(clientRow.amount_paid || 0);
 
-  const year = clientRow.created_at ? new Date(clientRow.created_at).getFullYear() : new Date().getFullYear();
-  await updateFinanceTotalsSafe(year, 'client total');
+    await db.query('UPDATE clients SET total_due = $1, balance = $2 WHERE id = $3', [total, newBalance, id]);
 
-  return res.json({ success: true, financeUpdated: true });
-}));
+    const year = clientRow.created_at ? new Date(clientRow.created_at).getFullYear() : new Date().getFullYear();
+    await updateFinanceTotalsSafe(year, 'client total');
+
+    return res.json({ success: true, financeUpdated: true });
+  } catch (err) {
+    console.error('Failed to update client total:', err);
+    if (err && err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+router.put('/clients/:id/total', asyncHandler(handleUpdateTotal));
+router.post('/clients/:id/total', asyncHandler(handleUpdateTotal));
 
 // ======================================================
 // RECORD PAYMENT
