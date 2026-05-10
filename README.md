@@ -49,6 +49,7 @@ Create a Supabase project, then create these tables:
 - `payments`
 - `notes`
 - `finance_overrides`
+- `finance_margin_entries`
 
 Minimum recommended columns:
 
@@ -57,6 +58,7 @@ Minimum recommended columns:
 - `payments`: `id bigint identity primary key`, `client_id bigint`, `amount numeric`, `payment_date timestamptz`
 - `notes`: `id bigint identity primary key`, `client_id bigint`, `content text`, `created_at timestamptz`
 - `finance_overrides`: `year int unique`, `total_expected numeric`, `total_received numeric`, `total_remaining numeric`, `total_clients int`, `notes text`, `updated_at timestamptz`
+- `finance_margin_entries`: `id bigint identity primary key`, `client_id bigint null`, `client_name text`, `category text`, `project text`, `invoice_status text`, `amount numeric`, `expense_type text`, `recurring boolean`, `expense_date timestamptz`, `notes text`, `attachment_url text`, `created_at timestamptz`, `updated_at timestamptz`
 
 If you are unsure about a field, keep the column names above and adjust the app later through the TODOs in the code.
 

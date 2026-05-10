@@ -32,9 +32,28 @@ function asNumber(value) {
   return Number.isFinite(num) ? num : 0;
 }
 
+function asBoolean(value) {
+  return value === true || value === 'true' || value === 1 || value === '1';
+}
+
 function toDateValue(value) {
   if (!value) return null;
   return value instanceof Date ? value.toISOString() : String(value);
+}
+
+function isOfflineOrMissingTableError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toUpperCase();
+  return (
+    message.includes('fetch failed') ||
+    message.includes('eacces') ||
+    message.includes('econnreset') ||
+    message.includes('eai_again') ||
+    message.includes('enetunreach') ||
+    message.includes('does not exist') ||
+    message.includes('relation') ||
+    code === '42P01'
+  );
 }
 
 function makeResult(rows) {
@@ -58,9 +77,17 @@ function rowMatchesSearch(row, term) {
 
 async function fetchAll(table) {
   ensureConfigured();
-  const { data, error } = await supabase.from(table).select('*');
-  if (error) throw error;
-  return Array.isArray(data) ? data : [];
+  try {
+    const { data, error } = await supabase.from(table).select('*');
+    if (error) throw error;
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) {
+      console.warn(`[db] Falling back to empty data for ${table}:`, error.message || error);
+      return [];
+    }
+    throw error;
+  }
 }
 
 async function fetchClients() {
@@ -96,6 +123,27 @@ async function fetchFinanceOverrides() {
   }));
 }
 
+async function fetchMarginEntries() {
+  try {
+    const rows = await fetchAll('finance_margin_entries');
+    return rows.map((row) => ({
+      ...row,
+      client_id: row.client_id === null || row.client_id === undefined || row.client_id === '' ? null : Number(row.client_id),
+      amount: asNumber(row.amount),
+      recurring: asBoolean(row.recurring),
+      expense_date: toDateValue(row.expense_date) || new Date().toISOString(),
+      created_at: toDateValue(row.created_at) || new Date().toISOString(),
+      updated_at: toDateValue(row.updated_at) || new Date().toISOString()
+    }));
+  } catch (err) {
+    const message = String(err?.message || '').toLowerCase();
+    if (message.includes('finance_margin_entries') || message.includes('does not exist') || err?.code === '42P01') {
+      return [];
+    }
+    throw err;
+  }
+}
+
 async function getSettingsRow(key) {
   ensureConfigured();
   const { data, error } = await supabase
@@ -109,19 +157,29 @@ async function getSettingsRow(key) {
 
 async function upsertSettingsRow(key, value) {
   ensureConfigured();
-  const { error } = await supabase
-    .from('settings')
-    .upsert({ key, value }, { onConflict: 'key' });
-  if (error) throw error;
+  try {
+    const { error } = await supabase
+      .from('settings')
+      .upsert({ key, value }, { onConflict: 'key' });
+    if (error) throw error;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return;
+    throw error;
+  }
 }
 
 async function updateSettingsValue(key, value) {
   ensureConfigured();
-  const { error } = await supabase
-    .from('settings')
-    .update({ value })
-    .eq('key', key);
-  if (error) throw error;
+  try {
+    const { error } = await supabase
+      .from('settings')
+      .update({ value })
+      .eq('key', key);
+    if (error) throw error;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return;
+    throw error;
+  }
 }
 
 async function insertClient(row) {
@@ -137,20 +195,35 @@ async function insertClient(row) {
     balance: asNumber(row.balance),
     created_at: toDateValue(row.created_at) || new Date().toISOString()
   };
-  const { error } = await supabase.from('clients').insert(payload);
-  if (error) throw error;
+  try {
+    const { error } = await supabase.from('clients').insert(payload);
+    if (error) throw error;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return;
+    throw error;
+  }
 }
 
 async function updateClientById(id, values) {
   ensureConfigured();
-  const { error } = await supabase.from('clients').update(values).eq('id', id);
-  if (error) throw error;
+  try {
+    const { error } = await supabase.from('clients').update(values).eq('id', id);
+    if (error) throw error;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return;
+    throw error;
+  }
 }
 
 async function deleteClientById(id) {
   ensureConfigured();
-  const { error } = await supabase.from('clients').delete().eq('id', id);
-  if (error) throw error;
+  try {
+    const { error } = await supabase.from('clients').delete().eq('id', id);
+    if (error) throw error;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return;
+    throw error;
+  }
 }
 
 async function insertPayment(row) {
@@ -160,8 +233,13 @@ async function insertPayment(row) {
     amount: asNumber(row.amount),
     payment_date: toDateValue(row.payment_date) || new Date().toISOString()
   };
-  const { error } = await supabase.from('payments').insert(payload);
-  if (error) throw error;
+  try {
+    const { error } = await supabase.from('payments').insert(payload);
+    if (error) throw error;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return;
+    throw error;
+  }
 }
 
 async function insertNote(row) {
@@ -171,28 +249,43 @@ async function insertNote(row) {
     content: row.content,
     created_at: toDateValue(row.created_at) || new Date().toISOString()
   };
-  const { error } = await supabase.from('notes').insert(payload);
-  if (error) throw error;
+  try {
+    const { error } = await supabase.from('notes').insert(payload);
+    if (error) throw error;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return;
+    throw error;
+  }
 }
 
 async function updateNoteById(noteId, clientId, content) {
   ensureConfigured();
-  const { error } = await supabase
-    .from('notes')
-    .update({ content })
-    .eq('id', noteId)
-    .eq('client_id', clientId);
-  if (error) throw error;
+  try {
+    const { error } = await supabase
+      .from('notes')
+      .update({ content })
+      .eq('id', noteId)
+      .eq('client_id', clientId);
+    if (error) throw error;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return;
+    throw error;
+  }
 }
 
 async function deleteNoteById(noteId, clientId) {
   ensureConfigured();
-  const { error } = await supabase
-    .from('notes')
-    .delete()
-    .eq('id', noteId)
-    .eq('client_id', clientId);
-  if (error) throw error;
+  try {
+    const { error } = await supabase
+      .from('notes')
+      .delete()
+      .eq('id', noteId)
+      .eq('client_id', clientId);
+    if (error) throw error;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return;
+    throw error;
+  }
 }
 
 async function upsertFinanceOverride(row) {
@@ -206,8 +299,75 @@ async function upsertFinanceOverride(row) {
     notes: row.notes ?? null,
     updated_at: toDateValue(row.updated_at) || new Date().toISOString()
   };
-  const { error } = await supabase.from('finance_overrides').upsert(payload, { onConflict: 'year' });
-  if (error) throw error;
+  try {
+    const { error } = await supabase.from('finance_overrides').upsert(payload, { onConflict: 'year' });
+    if (error) throw error;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return;
+    throw error;
+  }
+}
+
+async function insertMarginEntry(row) {
+  ensureConfigured();
+  const payload = {
+    client_id: row.client_id === null || row.client_id === undefined || row.client_id === '' ? null : row.client_id,
+    client_name: row.client_name || '',
+    category: row.category || 'Misc',
+    project: row.project || '',
+    invoice_status: row.invoice_status || 'Pending',
+    amount: asNumber(row.amount),
+    expense_type: row.expense_type || 'one-time',
+    recurring: asBoolean(row.recurring),
+    expense_date: toDateValue(row.expense_date) || new Date().toISOString(),
+    notes: row.notes || '',
+    attachment_url: row.attachment_url || '',
+    created_at: toDateValue(row.created_at) || new Date().toISOString(),
+    updated_at: toDateValue(row.updated_at) || new Date().toISOString()
+  };
+  try {
+    const { error } = await supabase.from('finance_margin_entries').insert(payload);
+    if (error) throw error;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return;
+    throw error;
+  }
+}
+
+async function updateMarginEntryById(id, values) {
+  ensureConfigured();
+  const payload = {
+    client_id: values.client_id === null || values.client_id === undefined || values.client_id === '' ? null : values.client_id,
+    client_name: values.client_name || '',
+    category: values.category || 'Misc',
+    project: values.project || '',
+    invoice_status: values.invoice_status || 'Pending',
+    amount: asNumber(values.amount),
+    expense_type: values.expense_type || 'one-time',
+    recurring: asBoolean(values.recurring),
+    expense_date: toDateValue(values.expense_date) || new Date().toISOString(),
+    notes: values.notes || '',
+    attachment_url: values.attachment_url || '',
+    updated_at: toDateValue(values.updated_at) || new Date().toISOString()
+  };
+  try {
+    const { error } = await supabase.from('finance_margin_entries').update(payload).eq('id', id);
+    if (error) throw error;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return;
+    throw error;
+  }
+}
+
+async function deleteMarginEntryById(id) {
+  ensureConfigured();
+  try {
+    const { error } = await supabase.from('finance_margin_entries').delete().eq('id', id);
+    if (error) throw error;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return;
+    throw error;
+  }
 }
 
 async function countRows(table, filterFn = null) {
@@ -548,6 +708,54 @@ async function query(text, params = []) {
   if (sql === 'select * from finance_overrides') {
     const rows = await fetchFinanceOverrides();
     return makeResult(rows);
+  }
+
+  if (sql === 'select * from finance_margin_entries') {
+    const rows = await fetchMarginEntries();
+    rows.sort((a, b) => new Date(b.expense_date) - new Date(a.expense_date) || new Date(b.created_at) - new Date(a.created_at));
+    return makeResult(rows);
+  }
+
+  if (sql === 'insert into finance_margin_entries (client_id, client_name, category, project, invoice_status, amount, expense_type, recurring, expense_date, notes, attachment_url, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)') {
+    await insertMarginEntry({
+      client_id: params[0],
+      client_name: params[1],
+      category: params[2],
+      project: params[3],
+      invoice_status: params[4],
+      amount: params[5],
+      expense_type: params[6],
+      recurring: params[7],
+      expense_date: params[8],
+      notes: params[9],
+      attachment_url: params[10],
+      created_at: params[11],
+      updated_at: params[12]
+    });
+    return makeResult([]);
+  }
+
+  if (sql === 'update finance_margin_entries set client_id = $1, client_name = $2, category = $3, project = $4, invoice_status = $5, amount = $6, expense_type = $7, recurring = $8, expense_date = $9, notes = $10, attachment_url = $11, updated_at = current_timestamp where id = $12') {
+    await updateMarginEntryById(params[11], {
+      client_id: params[0],
+      client_name: params[1],
+      category: params[2],
+      project: params[3],
+      invoice_status: params[4],
+      amount: params[5],
+      expense_type: params[6],
+      recurring: params[7],
+      expense_date: params[8],
+      notes: params[9],
+      attachment_url: params[10],
+      updated_at: new Date().toISOString()
+    });
+    return makeResult([]);
+  }
+
+  if (sql === 'delete from finance_margin_entries where id = $1') {
+    await deleteMarginEntryById(params[0]);
+    return makeResult([]);
   }
 
   if (sql === 'select count(*)::int as total_clients from clients where balance > 0') {

@@ -515,6 +515,193 @@ router.get('/finance/cash-summary', asyncHandler(async (req, res) => {
 }));
 
 // ======================================================
+// MARGIN TRACKER DATA
+// ======================================================
+const MARGIN_CATEGORIES = ['Labor', 'Marketing', 'Software', 'Contractors', 'Operations', 'Taxes', 'Misc'];
+const MARGIN_INVOICE_STATUSES = ['Pending', 'Billed', 'Partially Paid', 'Paid', 'Overdue'];
+
+function normalizeDateInput(value, fallback = new Date().toISOString()) {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : fallback;
+}
+
+function parseBooleanish(value) {
+  return value === true || value === 1 || value === '1' || String(value).toLowerCase() === 'true';
+}
+
+function normalizeMarginEntryRow(row, clientNameLookup = new Map()) {
+  const clientId = row.client_id === null || row.client_id === undefined || row.client_id === '' ? null : Number(row.client_id);
+  const resolvedClientName = row.client_name || (clientId !== null ? clientNameLookup.get(clientId) : '') || '';
+  return {
+    id: Number(row.id),
+    client_id: clientId,
+    client_name: resolvedClientName,
+    category: row.category || 'Misc',
+    project: row.project || '',
+    invoice_status: row.invoice_status || 'Pending',
+    amount: Number(row.amount || 0),
+    expense_type: row.expense_type || 'one-time',
+    recurring: parseBooleanish(row.recurring),
+    expense_date: normalizeDateInput(row.expense_date),
+    notes: row.notes || '',
+    attachment_url: row.attachment_url || '',
+    created_at: normalizeDateInput(row.created_at),
+    updated_at: normalizeDateInput(row.updated_at)
+  };
+}
+
+async function getMarginBaseData() {
+  await db.schemaReady;
+  const [clientsResult, paymentsResult] = await Promise.all([
+    db.query('SELECT * FROM clients'),
+    db.query('SELECT * FROM payments')
+  ]);
+
+  let entriesResult = { rows: [] };
+  try {
+    entriesResult = await db.query('SELECT * FROM finance_margin_entries');
+  } catch (err) {
+    const message = String(err?.message || '').toLowerCase();
+    if (!message.includes('finance_margin_entries') && !message.includes('does not exist') && err?.code !== '42P01') {
+      throw err;
+    }
+    entriesResult = { rows: [] };
+  }
+
+  return {
+    clients: clientsResult.rows || [],
+    payments: paymentsResult.rows || [],
+    expenses: entriesResult.rows || []
+  };
+}
+
+async function resolveClientName(clientId) {
+  if (clientId === null || clientId === undefined || clientId === '') return '';
+  const { rows } = await db.query('SELECT * FROM clients');
+  const client = rows.find((row) => Number(row.id) === Number(clientId));
+  return client?.name || '';
+}
+
+router.get('/finance/margin/dashboard', asyncHandler(async (req, res) => {
+  const year = req.query.year ? parseYear(req.query.year, 'year') : getValidYear(req.query.year);
+
+  try {
+    const baseData = await getMarginBaseData();
+    const clientNameLookup = new Map(baseData.clients.map((client) => [Number(client.id), client.name || '']));
+    const expenses = baseData.expenses.map((row) => normalizeMarginEntryRow(row, clientNameLookup));
+
+    return res.json({
+      year,
+      previousYear: year - 1,
+      categories: MARGIN_CATEGORIES,
+      invoiceStatuses: MARGIN_INVOICE_STATUSES,
+      clients: baseData.clients,
+      payments: baseData.payments,
+      expenses
+    });
+  } catch (err) {
+    console.error('Margin dashboard error:', err);
+    return res.status(500).json({ error: 'Failed to fetch margin dashboard data' });
+  }
+}));
+
+router.post('/finance/margin/entries', asyncHandler(async (req, res) => {
+  assertObject(req.body);
+
+  const clientId = req.body.client_id ?? req.body.clientId ?? null;
+  const parsedClientId = clientId === null || clientId === undefined || clientId === '' ? null : parseIntField(clientId, 'client_id', { min: 1, required: false });
+  const clientNameInput = parseStringField(req.body.client_name ?? req.body.clientName ?? '', 'client_name', { required: false, maxLength: 260, defaultValue: '' });
+  const category = parseStringField(req.body.category ?? 'Misc', 'category', { required: false, maxLength: 80, defaultValue: 'Misc' });
+  const project = parseStringField(req.body.project ?? '', 'project', { required: false, maxLength: 120, defaultValue: '' });
+  const invoiceStatus = parseStringField(req.body.invoice_status ?? req.body.invoiceStatus ?? 'Pending', 'invoice_status', { required: false, maxLength: 80, defaultValue: 'Pending' });
+  const amount = parseNumberField(req.body.amount ?? 0, 'amount', { required: false, defaultValue: 0, min: 0 });
+  const expenseType = parseStringField(req.body.expense_type ?? req.body.expenseType ?? 'one-time', 'expense_type', { required: false, maxLength: 40, defaultValue: 'one-time' });
+  const recurring = parseBooleanish(req.body.recurring ?? false);
+  const expenseDate = normalizeDateInput(req.body.expense_date ?? req.body.expenseDate, new Date().toISOString());
+  const notes = parseStringField(req.body.notes ?? '', 'notes', { required: false, maxLength: 5000, defaultValue: '' });
+  const attachmentUrl = parseStringField(req.body.attachment_url ?? req.body.attachmentUrl ?? '', 'attachment_url', { required: false, maxLength: 2000, defaultValue: '' });
+
+  const resolvedClientName = clientNameInput || (parsedClientId ? await resolveClientName(parsedClientId) : '');
+
+  await db.schemaReady;
+  await db.query(`
+    INSERT INTO finance_margin_entries (
+      client_id, client_name, category, project, invoice_status,
+      amount, expense_type, recurring, expense_date, notes, attachment_url,
+      created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+  `, [
+    parsedClientId,
+    resolvedClientName,
+    category,
+    project,
+    invoiceStatus,
+    amount,
+    expenseType,
+    recurring,
+    expenseDate,
+    notes,
+    attachmentUrl,
+    new Date().toISOString(),
+    new Date().toISOString()
+  ]);
+
+  return res.json({ success: true, marginUpdated: true });
+}));
+
+router.put('/finance/margin/entries/:id', asyncHandler(async (req, res) => {
+  assertObject(req.body);
+  const id = parseIntField(req.params.id, 'id', { min: 1 });
+
+  const clientId = req.body.client_id ?? req.body.clientId ?? null;
+  const parsedClientId = clientId === null || clientId === undefined || clientId === '' ? null : parseIntField(clientId, 'client_id', { min: 1, required: false });
+  const clientNameInput = parseStringField(req.body.client_name ?? req.body.clientName ?? '', 'client_name', { required: false, maxLength: 260, defaultValue: '' });
+  const category = parseStringField(req.body.category ?? 'Misc', 'category', { required: false, maxLength: 80, defaultValue: 'Misc' });
+  const project = parseStringField(req.body.project ?? '', 'project', { required: false, maxLength: 120, defaultValue: '' });
+  const invoiceStatus = parseStringField(req.body.invoice_status ?? req.body.invoiceStatus ?? 'Pending', 'invoice_status', { required: false, maxLength: 80, defaultValue: 'Pending' });
+  const amount = parseNumberField(req.body.amount ?? 0, 'amount', { required: false, defaultValue: 0, min: 0 });
+  const expenseType = parseStringField(req.body.expense_type ?? req.body.expenseType ?? 'one-time', 'expense_type', { required: false, maxLength: 40, defaultValue: 'one-time' });
+  const recurring = parseBooleanish(req.body.recurring ?? false);
+  const expenseDate = normalizeDateInput(req.body.expense_date ?? req.body.expenseDate, new Date().toISOString());
+  const notes = parseStringField(req.body.notes ?? '', 'notes', { required: false, maxLength: 5000, defaultValue: '' });
+  const attachmentUrl = parseStringField(req.body.attachment_url ?? req.body.attachmentUrl ?? '', 'attachment_url', { required: false, maxLength: 2000, defaultValue: '' });
+
+  const resolvedClientName = clientNameInput || (parsedClientId ? await resolveClientName(parsedClientId) : '');
+
+  await db.schemaReady;
+  await db.query(`
+    UPDATE finance_margin_entries
+    SET client_id = $1, client_name = $2, category = $3, project = $4, invoice_status = $5,
+        amount = $6, expense_type = $7, recurring = $8, expense_date = $9,
+        notes = $10, attachment_url = $11, updated_at = CURRENT_TIMESTAMP
+    WHERE id = $12
+  `, [
+    parsedClientId,
+    resolvedClientName,
+    category,
+    project,
+    invoiceStatus,
+    amount,
+    expenseType,
+    recurring,
+    expenseDate,
+    notes,
+    attachmentUrl,
+    id
+  ]);
+
+  return res.json({ success: true, marginUpdated: true });
+}));
+
+router.delete('/finance/margin/entries/:id', asyncHandler(async (req, res) => {
+  const id = parseIntField(req.params.id, 'id', { min: 1 });
+  await db.schemaReady;
+  await db.query('DELETE FROM finance_margin_entries WHERE id = $1', [id]);
+  return res.json({ success: true, marginUpdated: true });
+}));
+
+// ======================================================
 // NOTES ROUTES
 // ======================================================
 router.get('/clients/:id/notes', asyncHandler(async (req, res) => {
