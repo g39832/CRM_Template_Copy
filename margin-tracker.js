@@ -244,10 +244,43 @@
       recurring: Boolean(row.recurring === true || row.recurring === 'true' || row.recurring === 1 || row.recurring === '1'),
       expense_date: row.expense_date || null,
       notes: normalizeText(row.notes || ''),
+      marginSnapshot: parseMarginSnapshot(row.notes),
       attachment_url: normalizeText(row.attachment_url || ''),
       created_at: row.created_at || null,
       updated_at: row.updated_at || null
     };
+  }
+
+  function parseMarginSnapshot(notes) {
+    // Margin snapshot data is stored inside notes so we can keep the database schema unchanged.
+    if (!notes) return null;
+    const raw = String(notes).trim();
+    if (!raw.startsWith('{') || !raw.endsWith('}')) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      const jobTotal = toNumber(parsed.jobTotal ?? parsed.job_total);
+      const moneyReceived = toNumber(parsed.moneyReceived ?? parsed.money_received);
+      const jobCost = toNumber(parsed.jobCost ?? parsed.job_cost);
+      const marginPct = toNumber(parsed.marginPct ?? parsed.margin_pct);
+      if (!Number.isFinite(marginPct) && (!Number.isFinite(jobTotal) || jobTotal <= 0)) return null;
+      return {
+        kind: parsed.kind || 'quick-margin',
+        jobTotal,
+        moneyReceived,
+        jobCost,
+        marginPct: Number.isFinite(marginPct) ? marginPct : computeMarginPct(jobTotal, jobCost),
+        noteText: normalizeText(parsed.noteText ?? parsed.note_text ?? '')
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function computeMarginPct(jobTotal, jobCost) {
+    const total = toNumber(jobTotal);
+    const cost = toNumber(jobCost);
+    if (!Number.isFinite(total) || total === 0) return 0;
+    return ((total - cost) / total) * 100;
   }
 
   function filterDateRange(value, start, end) {
@@ -441,6 +474,42 @@
     const totalOperatingExpenses = periodExpenses.reduce((sum, expense) => sum + (expense.category.toLowerCase() === 'taxes' ? 0 : expense.amount), 0);
     const totalTaxExpenses = periodExpenses.reduce((sum, expense) => sum + (expense.category.toLowerCase() === 'taxes' ? expense.amount : 0), 0);
     const totalExpenses = totalOperatingExpenses + totalTaxExpenses;
+    const savedMarginValues = periodExpenses
+      .map((expense) => expense.marginSnapshot?.marginPct)
+      .filter((value) => Number.isFinite(value));
+    const previousSavedMarginValues = previousExpenses
+      .map((expense) => expense.marginSnapshot?.marginPct)
+      .filter((value) => Number.isFinite(value));
+    const savedJobTotals = periodExpenses
+      .map((expense) => expense.marginSnapshot?.jobTotal)
+      .filter((value) => Number.isFinite(value));
+    const savedMoneyReceivedTotals = periodExpenses
+      .map((expense) => expense.marginSnapshot?.moneyReceived)
+      .filter((value) => Number.isFinite(value));
+    const savedJobCostTotals = periodExpenses
+      .map((expense) => expense.marginSnapshot?.jobCost)
+      .filter((value) => Number.isFinite(value));
+    const previousSavedJobTotals = previousExpenses
+      .map((expense) => expense.marginSnapshot?.jobTotal)
+      .filter((value) => Number.isFinite(value));
+    const previousSavedMoneyReceivedTotals = previousExpenses
+      .map((expense) => expense.marginSnapshot?.moneyReceived)
+      .filter((value) => Number.isFinite(value));
+    const previousSavedJobCostTotals = previousExpenses
+      .map((expense) => expense.marginSnapshot?.jobCost)
+      .filter((value) => Number.isFinite(value));
+    const averageSavedMargin = savedMarginValues.length
+      ? savedMarginValues.reduce((sum, value) => sum + value, 0) / savedMarginValues.length
+      : 0;
+    const previousAverageSavedMargin = previousSavedMarginValues.length
+      ? previousSavedMarginValues.reduce((sum, value) => sum + value, 0) / previousSavedMarginValues.length
+      : 0;
+    const savedJobTotalTotal = savedJobTotals.reduce((sum, value) => sum + value, 0);
+    const savedMoneyReceivedTotal = savedMoneyReceivedTotals.reduce((sum, value) => sum + value, 0);
+    const savedJobCostTotal = savedJobCostTotals.reduce((sum, value) => sum + value, 0);
+    const previousSavedJobTotalTotal = previousSavedJobTotals.reduce((sum, value) => sum + value, 0);
+    const previousSavedMoneyReceivedTotal = previousSavedMoneyReceivedTotals.reduce((sum, value) => sum + value, 0);
+    const previousSavedJobCostTotal = previousSavedJobCostTotals.reduce((sum, value) => sum + value, 0);
 
     const revenueAllocationBase = Math.max(totalRevenue, 0);
 
@@ -581,6 +650,10 @@
       totalRevenue: currentSeriesTotal,
       totalExpenses: currentExpenseTotal,
       currentMarginPct,
+      averageSavedMargin,
+      savedJobTotalTotal,
+      savedMoneyReceivedTotal,
+      savedJobCostTotal,
       totalClientMargin,
       filteredClients,
       topProfitClients,
@@ -589,6 +662,10 @@
       previousExpenseTotal,
       previousProfitTotal,
       previousMarginPctSeries,
+      previousAverageSavedMargin,
+      previousSavedJobTotalTotal,
+      previousSavedMoneyReceivedTotal,
+      previousSavedJobCostTotal,
       projected
     });
     const alerts = buildAlerts({
@@ -629,6 +706,14 @@
       previousExpenseTotal,
       previousProfitTotal,
       previousMarginPctSeries,
+      averageSavedMargin,
+      previousAverageSavedMargin,
+      savedJobTotalTotal,
+      savedMoneyReceivedTotal,
+      savedJobCostTotal,
+      previousSavedJobTotalTotal,
+      previousSavedMoneyReceivedTotal,
+      previousSavedJobCostTotal,
       totalClientMargin,
       previousClientMargin,
       highestMarginClient,
@@ -686,7 +771,7 @@
   }
 
   function buildInsights(context) {
-    const { totalRevenue, totalExpenses, currentMarginPct, totalClientMargin, filteredClients, topProfitClients, previousSeriesTotal, previousExpenseTotal, previousProfitTotal, previousMarginPctSeries, projected } = context;
+    const { totalRevenue, totalExpenses, currentMarginPct, averageSavedMargin, totalClientMargin, filteredClients, topProfitClients, previousSeriesTotal, previousExpenseTotal, previousProfitTotal, previousMarginPctSeries, previousAverageSavedMargin, projected } = context;
     const profitConcentration = topProfitClients.length && totalRevenue > 0
       ? (topProfitClients.reduce((sum, row) => sum + row.netProfit, 0) / Math.max(context.filteredClients.reduce((sum, row) => sum + row.netProfit, 0), 1)) * 100
       : 0;
@@ -715,7 +800,7 @@
     insights.push({
       tone: currentMarginPct < 20 ? 'critical' : 'good',
       title: 'Margin health',
-      text: `Net margin is ${formatDelta(currentMarginPct, 'percent')} with an average client margin of ${formatDelta(totalClientMargin, 'percent')}.`,
+      text: `Net margin is ${formatDelta(currentMarginPct, 'percent')} with an average saved margin of ${formatDelta(averageSavedMargin, 'percent')}.`,
       detail: `Revenue ${formatMoney(totalRevenue)}`
     });
 
@@ -732,7 +817,7 @@
         tone: profitChange >= 0 ? 'good' : 'critical',
         title: 'Profit delta',
         text: `Profit ${profitChange >= 0 ? 'improved' : 'declined'} ${formatDelta(Math.abs(profitChange))} against the comparison period.`,
-        detail: `Margin trend ${formatDelta(currentMarginPct - previousMarginPctSeries, 'points')}`
+        detail: `Margin trend ${formatDelta(currentMarginPct - previousMarginPctSeries, 'points')} | Saved margin ${formatDelta(averageSavedMargin - previousAverageSavedMargin, 'points')}`
       });
     }
 
@@ -862,7 +947,7 @@
         <div class="mt-toolbar">
           <div class="mt-toolbar-copy">
             <div class="mt-title">Margin Tracker</div>
-            <p class="mt-subtitle">Selected period: <strong>${escapeHtml(periodText)}</strong>. Revenue, expenses, and client profitability are computed from live client and payment records plus the new expense ledger.</p>
+            <p class="mt-subtitle">Selected period: <strong>${escapeHtml(periodText)}</strong>. Enter the four fields first, then review charts only if you want extra context.</p>
           </div>
           <div class="mt-toolbar-actions">
             <div class="mt-view-toggle" role="tablist" aria-label="Margin view">
@@ -878,12 +963,17 @@
           </div>
         </div>
 
-        ${renderFilterPanel(model)}
+        ${renderExpenseForm(model)}
         ${renderKpiGrid(model)}
         ${renderChartGrid(model)}
+        <details class="mt-panel" style="padding:0; overflow:hidden;">
+          <summary style="list-style:none; cursor:pointer; padding:18px 18px 0; font-weight:800; color: var(--text-main);">Advanced Filters</summary>
+          <div style="padding:0 0 18px;">
+            ${renderFilterPanel(model)}
+          </div>
+        </details>
         ${renderSmartPanels(model)}
         ${renderClientTable(model)}
-        ${renderExpenseForm(model)}
       </div>
     `;
 
@@ -913,8 +1003,8 @@
       <div class="mt-panel">
         <div class="mt-panel-header">
           <div>
-            <h4 class="mt-panel-title">Finance filters</h4>
-            <p class="mt-panel-copy">Search, segment, and isolate margin patterns without touching the underlying summary totals.</p>
+            <h4 class="mt-panel-title">Advanced Filters</h4>
+            <p class="mt-panel-copy">Optional tools for narrowing the data after the quick margin entry.</p>
           </div>
           <div class="mt-chip-row">
             <span class="mt-chip"><strong>${escapeHtml(String(model.totalClients))}</strong> clients</span>
@@ -980,14 +1070,10 @@
 
   function renderKpiGrid(model) {
     const cards = [
-      metricCard('Total Revenue', model.currentSeriesTotal, model.previousSeriesTotal, 'revenue', 'Revenue captured in the active period'),
-      metricCard('Total Expenses', model.currentExpenseTotal, model.previousExpenseTotal, 'expenses', 'Operating + tax expense ledger'),
-      metricCard('Gross Profit', model.currentSeriesTotal - model.buckets.reduce((sum, bucket) => sum + bucket.operatingExpenses, 0), model.previousSeriesTotal - model.previousBuckets.reduce((sum, bucket) => sum + bucket.operatingExpenses, 0), 'gross', 'Revenue minus non-tax operating expenses'),
-      metricCard('Net Profit', model.currentProfitTotal, model.previousProfitTotal, 'profit', 'Revenue minus all tracked expenses'),
-      metricCard('Margin %', model.currentMarginPct, model.previousMarginPctSeries, 'margin', 'Net profit margin for the active period', true),
-      metricCard('Average Client Margin', model.totalClientMargin, model.previousClientMargin, 'avg', 'Mean margin across visible clients', true),
-      metricCard('Highest Margin Client', model.highestMarginClient?.marginPct || 0, model.highestMarginClient?.previousMarginPct || 0, 'high', model.highestMarginClient ? model.highestMarginClient.name : 'No client data', true, model.highestMarginClient?.name),
-      metricCard('Lowest Margin Client', model.lowestMarginClient?.marginPct || 0, model.lowestMarginClient?.previousMarginPct || 0, 'low', model.lowestMarginClient ? model.lowestMarginClient.name : 'No client data', true, model.lowestMarginClient?.name)
+      metricCard('Job Total', model.savedJobTotalTotal, model.previousSavedJobTotalTotal, 'revenue', 'Total of saved job totals'),
+      metricCard('Money Received', model.savedMoneyReceivedTotal, model.previousSavedMoneyReceivedTotal, 'profit', 'Total money received on saved jobs'),
+      metricCard('Job Cost', model.savedJobCostTotal, model.previousSavedJobCostTotal, 'expenses', 'Total job costs entered'),
+      metricCard('Average Margin', model.averageSavedMargin, model.previousAverageSavedMargin, 'margin', 'Average of saved margin percentages', true)
     ];
 
     return `
@@ -1000,6 +1086,11 @@
         </div>
         <div class="mt-panel-body">
           <div class="mt-kpi-grid">${cards.join('')}</div>
+          <div class="mt-chip-row" style="margin-top:14px;">
+            <span class="mt-chip"><strong>${escapeHtml(model.highestMarginClient?.name || 'N/A')}</strong> highest margin</span>
+            <span class="mt-chip"><strong>${escapeHtml(model.lowestMarginClient?.name || 'N/A')}</strong> lowest margin</span>
+            <span class="mt-chip"><strong>${escapeHtml(String(model.expenses?.filter((entry) => entry.marginSnapshot).length || 0))}</strong> saved entries</span>
+          </div>
         </div>
       </div>
     `;
@@ -1075,8 +1166,8 @@
         <div class="mt-panel">
           <div class="mt-panel-header">
             <div>
-              <h4 class="mt-panel-title">Revenue vs Expenses</h4>
-              <p class="mt-panel-copy">Interactive trend comparison for the active period.</p>
+              <h4 class="mt-panel-title">Visual Insights: Revenue vs Expenses</h4>
+              <p class="mt-panel-copy">Secondary analytics for reviewing trends after the quick entry is saved.</p>
             </div>
           </div>
           <div class="mt-panel-body">
@@ -1091,7 +1182,7 @@
           <div class="mt-panel-header">
             <div>
               <h4 class="mt-panel-title">Margin Trends</h4>
-              <p class="mt-panel-copy">Net margin movement through the selected period.</p>
+              <p class="mt-panel-copy">A supporting view of margin movement through the selected period.</p>
             </div>
           </div>
           <div class="mt-panel-body">
@@ -1109,7 +1200,7 @@
           <div class="mt-panel-header">
             <div>
               <h4 class="mt-panel-title">Client Profitability Rankings</h4>
-              <p class="mt-panel-copy">Largest net-profit contributors in the current filtered view.</p>
+              <p class="mt-panel-copy">Helpful context, not part of the primary input flow.</p>
             </div>
           </div>
           <div class="mt-panel-body">
@@ -1120,7 +1211,7 @@
           <div class="mt-panel-header">
             <div>
               <h4 class="mt-panel-title">Expense Breakdown</h4>
-              <p class="mt-panel-copy">Category mix for the selected period.</p>
+              <p class="mt-panel-copy">A compact category breakdown for reference.</p>
             </div>
           </div>
           <div class="mt-panel-body">
@@ -1139,7 +1230,7 @@
           <div class="mt-panel-header">
             <div>
               <h4 class="mt-panel-title">Forecast Projections</h4>
-              <p class="mt-panel-copy">Moving-average projection for the next period.</p>
+              <p class="mt-panel-copy">Optional forward-looking context from the same dataset.</p>
             </div>
           </div>
           <div class="mt-panel-body">
@@ -1150,7 +1241,7 @@
           <div class="mt-panel-header">
             <div>
               <h4 class="mt-panel-title">Profitability Heatmap</h4>
-              <p class="mt-panel-copy">Client margin intensity across the selected year.</p>
+              <p class="mt-panel-copy">A secondary visual layer for spotting patterns quickly.</p>
             </div>
           </div>
           <div class="mt-panel-body">
@@ -1161,7 +1252,7 @@
           <div class="mt-panel-header">
             <div>
               <h4 class="mt-panel-title">Smart Insights</h4>
-              <p class="mt-panel-copy">Live narrative highlights and risk signals.</p>
+              <p class="mt-panel-copy">Simple narrative highlights pulled from the live data.</p>
             </div>
           </div>
           <div class="mt-panel-body">
@@ -1182,7 +1273,7 @@
         <div class="mt-panel-header">
           <div>
             <h4 class="mt-panel-title">Smart Alerts</h4>
-            <p class="mt-panel-copy">Operational and profitability warnings surfaced from the live data set.</p>
+            <p class="mt-panel-copy">Lightweight warnings that stay out of the way unless something needs attention.</p>
           </div>
         </div>
         <div class="mt-panel-body">
@@ -1539,7 +1630,7 @@
       <div class="mt-list-item">
         <div>
           <strong>${escapeHtml(expense.category)}</strong>
-          <small>${escapeHtml(expense.project || expense.notes || expense.invoice_status)}</small>
+          <small>${escapeHtml(formatExpenseSummary(expense))}</small>
         </div>
         <div>${escapeHtml(formatMoney(expense.amount))}</div>
       </div>
@@ -1589,83 +1680,92 @@
     })), 'revenue', 'expenses', ['#72edc7', '#7ab7d6']);
   }
 
+  function formatExpenseSummary(expense) {
+    const snapshot = expense.marginSnapshot;
+    if (snapshot) {
+      return `Job ${formatMoney(snapshot.jobTotal)} | Received ${formatMoney(snapshot.moneyReceived)} | Cost ${formatMoney(snapshot.jobCost)} | Margin ${percentFmt.format(snapshot.marginPct)}%`;
+    }
+    return expense.project || expense.notes || expense.invoice_status || 'Saved entry';
+  }
+
   function renderExpenseForm(model) {
-    const clientOptions = ['<option value="">Unassigned</option>']
-      .concat((state.data?.clients || []).map((client) => `<option value="${escapeHtml(client.id)}">${escapeHtml(client.name)}</option>`))
-      .join('');
-
-    const categoryOptions = categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join('');
-
-    const statusOptions = invoiceStatuses.map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`).join('');
-
     return `
       <div class="mt-panel">
         <div class="mt-panel-header">
           <div>
-            <h4 class="mt-panel-title">Quick expense entry</h4>
-            <p class="mt-panel-copy">Add recurring or one-time expenses without altering the existing finance summary workflow.</p>
+            <h4 class="mt-panel-title">Quick Margin Entry</h4>
+            <p class="mt-panel-copy">Enter four values, save once, and move on. Everything else stays optional.</p>
+          </div>
+          <div class="mt-chip-row">
+            <span class="mt-chip"><strong>${escapeHtml(String(model.averageSavedMargin.toFixed(1)))}</strong>% average margin</span>
+            <span class="mt-chip"><strong>${escapeHtml(String(model.expenses.filter((entry) => entry.marginSnapshot).length))}</strong> saved margins</span>
           </div>
         </div>
         <div class="mt-panel-body">
           <form data-form="expense" class="mt-form-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
             <div class="mt-field">
-              <label>Client</label>
-              <select name="clientId">${clientOptions}</select>
+              <label>Job Total</label>
+              <input name="jobTotal" data-margin-field="jobTotal" type="text" inputmode="decimal" placeholder="10000">
             </div>
             <div class="mt-field">
-              <label>Client Name</label>
-              <input name="clientName" type="text" placeholder="Optional if client selected">
+              <label>Money Received</label>
+              <input name="moneyReceived" data-margin-field="moneyReceived" type="text" inputmode="decimal" placeholder="10000">
             </div>
             <div class="mt-field">
-              <label>Category</label>
-              <select name="category">${categoryOptions}</select>
+              <label>Job Cost</label>
+              <input name="jobCost" data-margin-field="jobCost" type="text" inputmode="decimal" placeholder="7000">
             </div>
             <div class="mt-field">
-              <label>Invoice Status</label>
-              <select name="invoiceStatus">${statusOptions}</select>
+              <label>Margin %</label>
+              <input name="marginPct" data-margin-field="marginPct" type="text" readonly placeholder="30.0%" aria-label="Calculated margin percentage">
             </div>
-            <div class="mt-field">
-              <label>Project</label>
-              <input name="project" type="text" placeholder="Project or engagement">
+            <div class="mt-field" style="grid-column: 1 / -1; display:flex; align-items:flex-end;">
+              <button type="submit" class="mt-action-btn" style="width:100%;">Save margin</button>
             </div>
-            <div class="mt-field">
-              <label>Amount</label>
-              <input name="amount" type="text" inputmode="decimal" placeholder="0.00" required>
-            </div>
-            <div class="mt-field">
-              <label>Expense Type</label>
-              <select name="expenseType">
-                <option value="one-time">One-time</option>
-                <option value="recurring">Recurring</option>
-              </select>
-            </div>
-            <div class="mt-field">
-              <label>Expense Date</label>
-              <input name="expenseDate" type="date" value="${escapeHtml(new Date().toISOString().slice(0, 10))}">
-            </div>
-            <div class="mt-field">
-              <label>Attachment URL</label>
-              <input name="attachmentUrl" type="url" placeholder="Optional receipt link">
-            </div>
-            <div class="mt-field" style="grid-column: span 2;">
-              <label>Notes</label>
-              <textarea name="notes" placeholder="Internal notes, receipts, context"></textarea>
-            </div>
-            <div class="mt-field">
-              <label>Recurring</label>
-              <select name="recurring">
-                <option value="false">No</option>
-                <option value="true">Yes</option>
-              </select>
-            </div>
-            <div class="mt-field" style="justify-content:end;">
-              <label>&nbsp;</label>
-              <button type="submit" class="mt-action-btn">Save expense</button>
-            </div>
+            <details class="full-span" style="grid-column: 1 / -1; margin-top: 4px;">
+              <summary style="cursor:pointer; color: var(--text-muted); font-weight:700;">Optional details</summary>
+              <div class="mt-form-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px;">
+                <div class="mt-field">
+                  <label>Client Name</label>
+                  <input name="clientName" type="text" placeholder="Optional">
+                </div>
+                <div class="mt-field">
+                  <label>Project</label>
+                  <input name="project" type="text" placeholder="Optional">
+                </div>
+                <div class="mt-field">
+                  <label>Category</label>
+                  <select name="category">
+                    <option value="Misc">Misc</option>
+                    <option value="Labor">Labor</option>
+                    <option value="Marketing">Marketing</option>
+                    <option value="Software">Software</option>
+                    <option value="Contractors">Contractors</option>
+                    <option value="Operations">Operations</option>
+                    <option value="Taxes">Taxes</option>
+                  </select>
+                </div>
+                <div class="mt-field">
+                  <label>Notes</label>
+                  <input name="notes" type="text" placeholder="Optional note">
+                </div>
+              </div>
+            </details>
           </form>
         </div>
       </div>
     `;
+  }
+
+  function updateQuickMarginPreview(form) {
+    if (!form) return;
+    const marginInput = form.querySelector('[name="marginPct"]');
+    const jobTotal = toNumber(form.querySelector('[name="jobTotal"]')?.value);
+    const jobCost = toNumber(form.querySelector('[name="jobCost"]')?.value);
+    if (!marginInput) return;
+    // Keep the calculator forgiving: invalid, empty, or zero totals show a blank state instead of NaN.
+    const computed = computeMarginPct(jobTotal, jobCost);
+    marginInput.value = Number.isFinite(computed) && jobTotal !== 0 ? `${percentFmt.format(computed)}%` : '';
   }
 
   function animateCounters() {
@@ -1771,6 +1871,12 @@
       }
     }
 
+    const marginField = event.target.closest('[data-margin-field]');
+    if (marginField && root.contains(marginField)) {
+      updateQuickMarginPreview(event.target.closest('[data-form="expense"]'));
+      return;
+    }
+
     const form = event.target.closest('[data-form="expense"]');
     if (form && event.type === 'submit') {
       event.preventDefault();
@@ -1804,18 +1910,30 @@
   }
 
   async function saveExpense(form) {
+    const jobTotal = toNumber(form.jobTotal?.value);
+    const moneyReceived = toNumber(form.moneyReceived?.value);
+    const jobCost = toNumber(form.jobCost?.value);
+    const marginPct = computeMarginPct(jobTotal, jobCost);
+    const noteText = normalizeText(form.notes?.value || '');
+
     const payload = {
-      clientId: form.clientId.value || '',
-      clientName: form.clientName.value || '',
-      category: form.category.value || 'Misc',
-      project: form.project.value || '',
-      invoiceStatus: form.invoiceStatus.value || 'Pending',
-      amount: String(form.amount.value || '0').replace(/[^0-9.-]/g, ''),
-      expenseType: form.expenseType.value || 'one-time',
-      recurring: form.recurring.value === 'true',
-      expenseDate: form.expenseDate.value || new Date().toISOString().slice(0, 10),
-      attachmentUrl: form.attachmentUrl.value || '',
-      notes: form.notes.value || ''
+      clientName: form.clientName?.value || '',
+      category: form.category?.value || 'Misc',
+      project: form.project?.value || '',
+      invoiceStatus: 'Paid',
+      amount: String(Math.max(0, jobCost) || 0),
+      expenseType: 'one-time',
+      recurring: false,
+      expenseDate: new Date().toISOString().slice(0, 10),
+      attachmentUrl: '',
+      notes: JSON.stringify({
+        kind: 'quick-margin',
+        jobTotal,
+        moneyReceived,
+        jobCost,
+        marginPct,
+        noteText
+      })
     };
 
     try {
@@ -1826,7 +1944,7 @@
       });
       if (!res.ok) throw new Error('Failed to save expense');
       form.reset();
-      form.expenseDate.value = new Date().toISOString().slice(0, 10);
+      updateQuickMarginPreview(form);
       await refreshDashboard();
       document.dispatchEvent(new Event('financeUpdated'));
     } catch (err) {
