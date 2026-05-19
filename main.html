@@ -582,6 +582,20 @@
             <label for="companyEmail">Company Email</label>
             <input id="companyEmail" type="email" placeholder="billing@company.com">
           </div>
+
+          <div class="full-span">
+            <label for="companyLogo">Company Logo</label>
+            <input id="companyLogo" type="file" accept="image/png,image/jpeg,image/gif,image/webp"
+              style="padding:8px; background:rgba(255,255,255,0.07); border-radius:10px; border:1px solid rgba(122,183,214,0.2); color:var(--text-main); width:100%; box-sizing:border-box;">
+            <div id="companyLogoPreview" style="margin-top:8px; display:none;">
+              <img id="companyLogoImg" src="" alt="Logo preview"
+                style="max-height:60px; max-width:180px; border-radius:6px; border:1px solid rgba(122,183,214,0.2);">
+              <button type="button" id="removeLogoBtn"
+                style="margin-left:10px; background:rgba(255,255,255,0.1); border:1px solid rgba(122,183,214,0.2); color:var(--text-main); padding:4px 10px; border-radius:6px; cursor:pointer; font-size:0.85rem;">
+                Remove
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="email-settings-actions">

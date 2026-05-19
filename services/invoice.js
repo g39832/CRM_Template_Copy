@@ -9,92 +9,137 @@ function formatMoney(value) {
   return num.toFixed(2);
 }
 
-function generateInvoicePDF(data) {
+// ======================================================
+// GENERATE INVOICE OR ESTIMATE PDF
+// mode: 'invoice' | 'estimate'
+// ======================================================
+function generateInvoicePDF(data, mode = 'invoice') {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 48, size: 'LETTER' });
     const buffers = [];
 
     doc.on('data', buffers.push.bind(buffers));
-    doc.on('end', () => {
-      resolve(Buffer.concat(buffers));
-    });
+    doc.on('end', () => resolve(Buffer.concat(buffers)));
     doc.on('error', reject);
 
-    doc.fontSize(20).fillColor('#111827').text(data.businessName);
-    doc.fontSize(10).fillColor('#4b5563').text(data.businessAddress);
-    doc.text(data.businessPhone);
-    doc.text(data.businessEmail);
+    const isEstimate = mode === 'estimate';
+    const docTitle = isEstimate ? 'ESTIMATE' : 'INVOICE';
+    const totalLabel = isEstimate ? 'Estimated Total' : 'Total';
+    const paidLabel = isEstimate ? 'Deposit / Down Payment' : 'Amount Paid';
+    const balanceLabel = isEstimate ? 'Balance Due' : 'Balance Due';
 
-    doc.moveDown(1.2);
-    doc.fontSize(12).fillColor('#111827').text(`Date: ${data.date}`);
-    doc.text(`Invoice #: ${data.invoiceNumber}`);
+    // ---- Logo ----
+    let logoDrawn = false;
+    if (data.logoBase64) {
+      try {
+        const logoBuffer = Buffer.from(data.logoBase64, 'base64');
+        doc.image(logoBuffer, 48, 48, { width: 100, height: 60, fit: [100, 60] });
+        logoDrawn = true;
+      } catch (e) {
+        // Logo failed to render — skip it
+      }
+    }
 
+    // ---- Company header ----
+    const headerX = logoDrawn ? 160 : 48;
+    doc.fontSize(20).fillColor('#111827').text(data.businessName, headerX, 48);
+    doc.fontSize(10).fillColor('#4b5563')
+      .text(data.businessAddress, headerX)
+      .text(data.businessPhone, headerX)
+      .text(data.businessEmail, headerX);
+
+    // ---- Document title ----
+    doc.moveDown(logoDrawn ? 0.5 : 1.2);
+    doc.fontSize(18).fillColor('#111827').text(docTitle, { align: 'right' });
+    doc.moveDown(0.3);
+    doc.fontSize(12).fillColor('#111827')
+      .text(`Date: ${data.date}`)
+      .text(`${docTitle} #: ${data.invoiceNumber}`);
+
+    // ---- Customer info ----
     doc.moveDown(1);
     doc.fontSize(14).fillColor('#111827').text('Customer Information', { underline: true });
     doc.moveDown(0.4);
-    doc.fontSize(11).fillColor('#111827');
-    doc.text(`Name: ${data.clientName}`);
-    doc.text(`Address: ${data.clientAddress}`);
-    doc.text(`Phone: ${data.clientPhone}`);
-    doc.text(`Email: ${data.clientEmail}`);
+    doc.fontSize(11).fillColor('#111827')
+      .text(`Name: ${data.clientName}`)
+      .text(`Address: ${data.clientAddress}`)
+      .text(`Phone: ${data.clientPhone}`)
+      .text(`Email: ${data.clientEmail}`);
 
+    // ---- Scope of work ----
     doc.moveDown(1);
-    doc.fontSize(14).fillColor('#111827').text('Work Completed', { underline: true });
+    const workHeading = isEstimate ? 'Scope of Work' : 'Work Completed';
+    doc.fontSize(14).fillColor('#111827').text(workHeading, { underline: true });
     doc.moveDown(0.4);
-    doc.fontSize(11).fillColor('#111827').text(data.workDescription || 'No work description provided.');
+    doc.fontSize(11).fillColor('#111827')
+      .text(data.workDescription || 'No scope of work provided.');
 
+    // ---- Summary ----
     doc.moveDown(1);
-    doc.fontSize(14).fillColor('#111827').text('Invoice Summary', { underline: true });
+    const summaryHeading = isEstimate ? 'Estimate Summary' : 'Invoice Summary';
+    doc.fontSize(14).fillColor('#111827').text(summaryHeading, { underline: true });
     doc.moveDown(0.4);
-    doc.fontSize(11).fillColor('#111827');
-    doc.text(`Total: $${formatMoney(data.total)}`);
-    doc.text(`Amount Paid: $${formatMoney(data.paid)}`);
-    doc.text(`Balance Due: $${formatMoney(data.balance)}`);
+    doc.fontSize(11).fillColor('#111827')
+      .text(`${totalLabel}: $${formatMoney(data.total)}`)
+      .text(`${paidLabel}: $${formatMoney(data.paid)}`)
+      .text(`${balanceLabel}: $${formatMoney(data.balance)}`);
 
     doc.moveDown(1.2);
-    doc.fontSize(11).fillColor('#374151').text('Thank you for your business!');
+    const closing = isEstimate
+      ? 'Thank you for considering us. This estimate is valid for 30 days.'
+      : 'Thank you for your business!';
+    doc.fontSize(11).fillColor('#374151').text(closing);
 
     doc.end();
   });
 }
 
-async function sendInvoiceEmail(to, pdfBuffer, emailConfig = {}) {
+async function sendInvoiceEmail(to, pdfBuffer, emailConfig = {}, mode = 'invoice') {
   const normalized = normalizeEmailConfig(emailConfig);
   const transportOptions = buildTransportOptions(normalized);
   const transporter = nodemailer.createTransport(transportOptions);
+  const isEstimate = mode === 'estimate';
 
   await transporter.sendMail({
     from: formatFromAddress(normalized) || normalized.smtpUser,
     replyTo: normalized.replyToEmail || normalized.fromEmail || normalized.smtpUser || undefined,
     to,
-    subject: 'Your Invoice',
-    text: 'Attached is your invoice. Thank you for your business.',
+    subject: isEstimate ? 'Your Estimate' : 'Your Invoice',
+    text: isEstimate
+      ? 'Attached is your estimate. Thank you for considering us.'
+      : 'Attached is your invoice. Thank you for your business.',
     attachments: [
       {
-        filename: 'invoice.pdf',
+        filename: isEstimate ? 'estimate.pdf' : 'invoice.pdf',
         content: pdfBuffer
       }
     ]
   });
 }
 
-function buildInvoiceData({ client, latestNote = null, companyProfile = {} }) {
+function buildInvoiceData({ client, latestNote = null, companyProfile = {}, mode = 'invoice' }) {
+  // Scope of work: dedicated field first, then latest note, then fallback
   const workDescription =
+    client.scope_of_work ||
     client.work_description ||
     client.job_description ||
     client.description ||
     latestNote?.content ||
     client.status ||
     'Work details not provided.';
+
   const company = normalizeCompanyProfile(companyProfile, process.env);
+  const isEstimate = mode === 'estimate';
+  const prefix = isEstimate ? 'EST' : 'INV';
 
   return {
     businessName: company.businessName,
     businessAddress: company.businessAddress,
     businessPhone: company.businessPhone,
     businessEmail: company.businessEmail,
+    logoBase64: company.logoBase64 || null,
     date: new Date().toLocaleDateString(),
-    invoiceNumber: `INV-${client.id}-${Date.now()}`,
+    invoiceNumber: `${prefix}-${client.id}-${Date.now()}`,
     clientName: client.name || '',
     clientAddress: client.address || '',
     clientPhone: client.phone || '',

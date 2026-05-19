@@ -137,6 +137,8 @@ router.post('/save-client', asyncHandler(async (req, res) => {
   const address = parseStringField(req.body.address ?? '', 'address', { required: false, maxLength: 500, defaultValue: '' });
   const status = parseStringField(req.body.status ?? 'Lead', 'status', { required: false, maxLength: 30, defaultValue: 'Lead' });
   const totalDueInput = req.body.total_due;
+  const scopeOfWork = parseStringField(req.body.scope_of_work ?? '', 'scope_of_work', { required: false, maxLength: 5000, defaultValue: '' });
+  const jobCost = parseNumberField(req.body.job_cost ?? 0, 'job_cost', { required: false, defaultValue: 0 });
   const finalName = name || `${fName} ${lName}`.trim();
   if (!finalName) return res.status(400).json({ error: 'Name required' });
 
@@ -145,9 +147,9 @@ router.post('/save-client', asyncHandler(async (req, res) => {
 
   await db.schemaReady;
   await db.query(`
-    INSERT INTO clients (name, phone, email, address, status, total_due, amount_paid, balance, created_at)
-    VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8)
-  `, [finalName, phone, email, address, status || 'Lead', total, total, createdAt]);
+    INSERT INTO clients (name, phone, email, address, status, total_due, amount_paid, balance, scope_of_work, job_cost, created_at)
+    VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9, $10)
+  `, [finalName, phone, email, address, status || 'Lead', total, total, scopeOfWork, jobCost, createdAt]);
 
   const year = new Date(createdAt).getFullYear();
   await updateFinanceTotals(year);
@@ -169,10 +171,12 @@ router.post('/update-project', asyncHandler(async (req, res) => {
   const address = parseStringField(req.body.address ?? '', 'address', { required: false, maxLength: 500, defaultValue: '' });
   const status = parseStringField(req.body.status ?? '', 'status', { required: false, maxLength: 30, defaultValue: '' });
   const totalDueInput = req.body.total_due;
+  const scopeOfWork = parseStringField(req.body.scope_of_work ?? '', 'scope_of_work', { required: false, maxLength: 5000, defaultValue: '' });
+  const jobCostInput = req.body.job_cost;
   const finalName = name || `${fName} ${lName}`.trim();
 
   await db.schemaReady;
-  const clientResult = await db.query('SELECT amount_paid, total_due, created_at FROM clients WHERE id = $1', [id]);
+  const clientResult = await db.query('SELECT amount_paid, total_due, job_cost, created_at FROM clients WHERE id = $1', [id]);
   const clientRow = clientResult.rows[0];
   if (!clientRow) return res.status(404).json({ error: 'Client not found' });
 
@@ -180,12 +184,16 @@ router.post('/update-project', asyncHandler(async (req, res) => {
     ? parseNumberField(totalDueInput, 'total_due', { required: false, defaultValue: Number(clientRow.total_due || 0) })
     : Number(clientRow.total_due || 0);
   const newBalance = (newTotal || 0) - Number(clientRow.amount_paid || 0);
+  const newJobCost = typeof jobCostInput !== 'undefined'
+    ? parseNumberField(jobCostInput, 'job_cost', { required: false, defaultValue: Number(clientRow.job_cost || 0) })
+    : Number(clientRow.job_cost || 0);
 
   await db.query(`
     UPDATE clients
-    SET name = $1, phone = $2, email = $3, address = $4, status = $5, total_due = $6, balance = $7
-    WHERE id = $8
-  `, [finalName, phone, email, address, status, newTotal || 0, newBalance, id]);
+    SET name = $1, phone = $2, email = $3, address = $4, status = $5, total_due = $6, balance = $7,
+        scope_of_work = $8, job_cost = $9
+    WHERE id = $10
+  `, [finalName, phone, email, address, status, newTotal || 0, newBalance, scopeOfWork, newJobCost, id]);
 
   const year = new Date(clientRow.created_at).getFullYear();
   await updateFinanceTotals(year);
@@ -471,13 +479,33 @@ router.get('/finance/summary', asyncHandler(async (req, res) => {
       total_remaining: yearSummary.total_remaining
     };
 
+    // Compute average margin % for clients created in this year
+    // margin = (total_due - job_cost) / total_due * 100, only where total_due > 0
+    let avgMarginPct = null;
+    try {
+      const marginResult = await db.query(`
+        SELECT AVG(((total_due - job_cost) / NULLIF(total_due, 0)) * 100) AS avg_margin
+        FROM clients
+        WHERE EXTRACT(YEAR FROM created_at)::int = $1
+          AND total_due > 0
+          AND job_cost IS NOT NULL
+          AND job_cost > 0
+      `, [year]);
+      const raw = marginResult.rows[0]?.avg_margin;
+      avgMarginPct = raw !== null && raw !== undefined ? Number(raw) : null;
+    } catch (e) {
+      // job_cost column may not exist yet on older DBs — gracefully skip
+      avgMarginPct = null;
+    }
+
     return res.json({
       mode: 'project',
       year,
       totalClients: Number(finalSummary.total_clients || finalSummary.totalClients || 0),
       totalExpected: Number(finalSummary.total_expected || finalSummary.totalExpected || 0),
       totalReceived: Number(finalSummary.total_received || finalSummary.totalReceived || 0),
-      totalRemaining: Number(finalSummary.total_remaining || finalSummary.totalRemaining || 0)
+      totalRemaining: Number(finalSummary.total_remaining || finalSummary.totalRemaining || 0),
+      avgMarginPct: avgMarginPct !== null ? Math.round(avgMarginPct * 10) / 10 : null
     });
   } catch (err) {
     console.error('Finance summary error:', err);

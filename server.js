@@ -28,6 +28,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const session = require('express-session');
 const multer = require('multer');
+const rateLimit = require('express-rate-limit');
 const { AppError } = require('./api/request-utils');
 const { startBackupScheduler } = require('./services/db-backup');
 
@@ -36,8 +37,18 @@ app.set('trust proxy', 1);
 const disableAuth = process.env.NODE_ENV !== 'production' || process.env.DISABLE_AUTH === 'true';
 
 // ===== BODY PARSING =====
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+
+// ===== RATE LIMITING =====
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,                   // 20 attempts per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many login attempts. Try again in 15 minutes.' }
+});
+app.use('/api/login', loginLimiter);
 
 // ===== SESSION =====
 const sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');

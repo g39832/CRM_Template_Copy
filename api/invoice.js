@@ -39,7 +39,8 @@ async function fetchLatestNote(clientId) {
   return data || null;
 }
 
-router.post('/send-invoice/:clientId', asyncHandler(async (req, res) => {
+// Shared handler for both invoice and estimate generation
+async function handleDocumentGeneration(req, res, mode) {
   try {
     const { clientId } = req.params;
 
@@ -55,18 +56,32 @@ router.post('/send-invoice/:clientId', asyncHandler(async (req, res) => {
 
     const latestNote = await fetchLatestNote(clientId);
     const storedCompanyProfile = await readStoredCompanyProfile();
+    const normalizedProfile = normalizeCompanyProfile(storedCompanyProfile || {});
+
+    // Attach base64 logo if stored (logoUrl is a data URL like "data:image/png;base64,...")
+    if (storedCompanyProfile?.logoUrl) {
+      const dataUrl = storedCompanyProfile.logoUrl;
+      const match = dataUrl.match(/^data:image\/[^;]+;base64,(.+)$/);
+      if (match) {
+        normalizedProfile.logoBase64 = match[1];
+      }
+    }
+
     const invoiceData = buildInvoiceData({
       client,
       latestNote,
-      companyProfile: normalizeCompanyProfile(storedCompanyProfile || {})
+      companyProfile: normalizedProfile,
+      mode
     });
-    const pdfBuffer = await generateInvoicePDF(invoiceData);
+
+    const pdfBuffer = await generateInvoicePDF(invoiceData, mode);
 
     const safeClientName = String(client.name || 'client')
       .trim()
       .replace(/[^a-z0-9]+/gi, '-')
       .replace(/^-+|-+$/g, '')
       .toLowerCase() || 'client';
+
     const filename = `${safeClientName}-${invoiceData.invoiceNumber}.pdf`;
 
     res.set({
@@ -76,9 +91,17 @@ router.post('/send-invoice/:clientId', asyncHandler(async (req, res) => {
 
     return res.send(pdfBuffer);
   } catch (err) {
-    console.error('Send invoice failed:', err);
-    res.status(500).json({ error: 'Failed to send invoice' });
+    console.error(`${mode} generation failed:`, err);
+    res.status(500).json({ error: `Failed to generate ${mode}` });
   }
-}));
+}
+
+router.post('/send-invoice/:clientId', asyncHandler((req, res) =>
+  handleDocumentGeneration(req, res, 'invoice')
+));
+
+router.post('/send-estimate/:clientId', asyncHandler((req, res) =>
+  handleDocumentGeneration(req, res, 'estimate')
+));
 
 module.exports = router;

@@ -29,3 +29,5 @@ services:
         value: false
       - key: DISABLE_AUTH
         value: false
+      - key: NODE_ENV
+        value: production

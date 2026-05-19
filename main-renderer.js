@@ -1,4 +1,16 @@
- // ======================================================
+// ======================================================
+// HTML ESCAPE UTILITY
+// ======================================================
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/`/g, '&#96;');
+}
+
+// ======================================================
 // STATUS CONFIG
 // ======================================================
 const STATUS_ORDER = [
@@ -529,6 +541,7 @@ function printClientWorkspace() {
     #closeBtn,
     #saveBtn,
     #delBtn,
+    #estimateBtn,
     #invoiceBtn,
     #printBtn,
     #reviewBtn,
@@ -777,26 +790,35 @@ window.api = {
   },
 
   async sendInvoice(clientId) {
-    const res = await fetch(`/api/send-invoice/${clientId}`, {
+    return this._downloadDocument(clientId, 'invoice');
+  },
+
+  async sendEstimate(clientId) {
+    return this._downloadDocument(clientId, 'estimate');
+  },
+
+  async _downloadDocument(clientId, mode) {
+    const endpoint = mode === 'estimate'
+      ? `/api/send-estimate/${clientId}`
+      : `/api/send-invoice/${clientId}`;
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({})
     });
     if (!res.ok) {
-      let message = "Failed to generate invoice";
+      let message = `Failed to generate ${mode}`;
       try {
         const data = await res.json();
         message = data?.error || data?.message || message;
-      } catch {
-        // Ignore non-JSON responses.
-      }
+      } catch { /* ignore */ }
       throw new Error(message);
     }
 
     const blob = await res.blob();
     const contentDisposition = res.headers.get('content-disposition') || '';
     const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
-    const filename = filenameMatch?.[1] || `invoice-${clientId}.pdf`;
+    const filename = filenameMatch?.[1] || `${mode}-${clientId}.pdf`;
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -937,6 +959,20 @@ function setCompanyProfileFormValues(profile = {}) {
   if (companyAddressEl) companyAddressEl.value = profile.businessAddress || '';
   if (companyPhoneEl) companyPhoneEl.value = profile.businessPhone || '';
   if (companyEmailEl) companyEmailEl.value = profile.businessEmail || '';
+
+  // Show existing logo preview if one is saved
+  const preview = document.getElementById('companyLogoPreview');
+  const img = document.getElementById('companyLogoImg');
+  if (preview && img) {
+    if (profile.logoUrl) {
+      img.src = profile.logoUrl;
+      preview.style.display = 'flex';
+      preview.style.alignItems = 'center';
+    } else {
+      preview.style.display = 'none';
+      img.src = '';
+    }
+  }
 }
 
 function collectCompanyProfilePayload() {
@@ -944,7 +980,10 @@ function collectCompanyProfilePayload() {
     businessName: companyNameEl?.value || '',
     businessAddress: companyAddressEl?.value || '',
     businessPhone: companyPhoneEl?.value || '',
-    businessEmail: companyEmailEl?.value || ''
+    businessEmail: companyEmailEl?.value || '',
+    logoUrl: window._pendingLogoBase64 !== undefined
+      ? window._pendingLogoBase64
+      : (currentCompanyProfile?.logoUrl || '')
   };
 }
 
@@ -952,12 +991,51 @@ async function openCompanyProfileModal() {
   if (!companyProfileModal || companyProfileLoading) return;
 
   companyProfileLoading = true;
+  window._pendingLogoBase64 = undefined; // reset pending logo on open
   try {
     const response = await window.api.getCompanyProfile();
     currentCompanyProfile = response?.settings || null;
     setCompanyProfileFormValues(currentCompanyProfile || {});
     companyProfileModal.classList.add('open');
     companyProfileModal.setAttribute('aria-hidden', 'false');
+
+    // Wire up logo file input
+    const logoInput = document.getElementById('companyLogo');
+    const preview = document.getElementById('companyLogoPreview');
+    const img = document.getElementById('companyLogoImg');
+    const removeBtn = document.getElementById('removeLogoBtn');
+
+    if (logoInput) {
+      logoInput.value = '';
+      logoInput.onchange = () => {
+        const file = logoInput.files?.[0];
+        if (!file) return;
+        // Warn if file is large — base64 encoding adds ~33% overhead, server limit is 5mb
+        if (file.size > 3 * 1024 * 1024) {
+          showToast('Logo is too large. Please use an image under 3MB.', 'error');
+          logoInput.value = '';
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const dataUrl = e.target.result;
+          // Store as base64 string (strip data URL prefix for server storage)
+          window._pendingLogoBase64 = dataUrl;
+          if (img) img.src = dataUrl;
+          if (preview) { preview.style.display = 'flex'; preview.style.alignItems = 'center'; }
+        };
+        reader.readAsDataURL(file);
+      };
+    }
+
+    if (removeBtn) {
+      removeBtn.onclick = () => {
+        window._pendingLogoBase64 = '';
+        if (img) img.src = '';
+        if (preview) preview.style.display = 'none';
+        if (logoInput) logoInput.value = '';
+      };
+    }
   } catch (err) {
     console.error(err);
     showToast(err.message || 'Failed to load company profile', 'error');
@@ -1380,6 +1458,53 @@ async function openClient(id) {
             </div>
           </div>
 
+          <!-- ===== JOB COST & MARGIN ===== -->
+          <div class="panel-section panel-full-span">
+            <div class="panel-section-header">
+              <h3>Job Cost &amp; Margin</h3>
+              <span class="panel-section-note">Total price minus job cost equals your margin.</span>
+            </div>
+            <div class="panel-inline-row">
+              <input type="text" id="jobCostInput" placeholder="Job Cost"
+                inputmode="decimal" class="panel-money-input"
+              value="${client.job_cost ? formatMoney(client.job_cost) : ''}">
+            </div>
+            <div class="panel-balance-row">
+              <div class="panel-metric">
+                <span>Job Cost</span>
+                <strong id="jobCostDisplay">$${formatMoney(client.job_cost || 0)}</strong>
+              </div>
+              <div class="panel-metric">
+                <span>Margin $</span>
+                <strong id="marginDollarDisplay">${(function() {
+                  const t = Number(client.total_due || 0);
+                  const c2 = Number(client.job_cost || 0);
+                  return '$' + formatMoney(t - c2);
+                })()}</strong>
+              </div>
+              <div class="panel-metric">
+                <span>Margin %</span>
+                <strong id="marginPctDisplay">${(function() {
+                  const t = Number(client.total_due || 0);
+                  const c2 = Number(client.job_cost || 0);
+                  if (t <= 0) return '—';
+                  return Math.round(((t - c2) / t) * 100) + '%';
+                })()}</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== SCOPE OF WORK ===== -->
+          <div class="panel-section panel-full-span">
+            <div class="panel-section-header">
+              <h3>Scope of Work</h3>
+              <span class="panel-section-note">Pulled onto invoices and estimates. Edit per job — independent from notes.</span>
+            </div>
+            <textarea id="p-scope" rows="5"
+              style="width:100%; padding:12px; border-radius:12px; border:1px solid rgba(122,183,214,0.22); background:rgba(32,58,67,0.96); color:var(--text-main); font-size:0.95rem; resize:vertical; box-sizing:border-box;"
+              placeholder="Describe the work to be done...">${escapeHtml(client.scope_of_work)}</textarea>
+          </div>
+
           <div id="pdf-drop-zone" class="drop-zone"
             style="grid-column: span 2;">📄 Drop Client PDFs Here</div>
 
@@ -1411,6 +1536,7 @@ async function openClient(id) {
           </div>
 
           <div class="panel-actions panel-full-span">
+            <button id="estimateBtn" class="btn-primary" style="background:linear-gradient(135deg,#0f9b58,#27c97a); flex:2;">Download Estimate</button>
             <button id="invoiceBtn" class="btn-primary" style="background:linear-gradient(135deg,#1c92d2,#47a7f5); flex:2;">Download Invoice</button>
             <button id="reviewBtn" class="btn-primary" style="background:rgba(255,255,255,0.14); color:white; flex:2;">Send Google Review</button>
             <button id="saveBtn" class="btn-primary" style="background:linear-gradient(135deg,#2f80ed,#4f8dfd); flex:2;">Save Changes</button>
@@ -1582,12 +1708,39 @@ function setupDirtyTracking() {
   const emailEl = document.getElementById("p-email");
   const totalDueEl = document.getElementById("totalDueInput");
   const newNoteInput = document.getElementById("new-note-input");
+  const scopeEl = document.getElementById("p-scope");
+  const jobCostEl = document.getElementById("jobCostInput");
 
-  [statusEl, addrEl, phoneEl, emailEl, totalDueEl, newNoteInput].forEach(el => {
+  [statusEl, addrEl, phoneEl, emailEl, totalDueEl, newNoteInput, scopeEl, jobCostEl].forEach(el => {
     if (!el) return;
     el.addEventListener("input", markDirty);
     el.addEventListener("change", markDirty);
   });
+
+  // Live margin calculation when job cost changes
+  if (jobCostEl) {
+    const updateMargin = () => {
+      const totalInput = document.getElementById("totalDueInput");
+      const total = parseMoney(totalInput?.value) || Number(activeClient?.total_due || 0);
+      const cost = parseMoney(jobCostEl.value) || 0;
+      const marginDollar = total - cost;
+      const marginPct = total > 0 ? Math.round((marginDollar / total) * 100) : null;
+
+      const dollarEl = document.getElementById("marginDollarDisplay");
+      const pctEl = document.getElementById("marginPctDisplay");
+      const costDisplay = document.getElementById("jobCostDisplay");
+
+      if (dollarEl) dollarEl.textContent = "$" + formatMoney(marginDollar);
+      if (pctEl) pctEl.textContent = marginPct !== null ? marginPct + "%" : "—";
+      if (costDisplay) costDisplay.textContent = "$" + formatMoney(cost);
+    };
+
+    jobCostEl.addEventListener("input", updateMargin);
+
+    // Also update margin when total due changes
+    const totalDueEl2 = document.getElementById("totalDueInput");
+    if (totalDueEl2) totalDueEl2.addEventListener("input", updateMargin);
+  }
 }
 
 // ======================================================
@@ -1960,6 +2113,23 @@ if (target.id === "undoFinanceBtn") {
 
     if (target.id === "printBtn") printClientWorkspace();
 
+    if (target.id === "estimateBtn") {
+      if (!confirm("Download this client's estimate PDF?")) return;
+
+      try {
+        target.disabled = true;
+        target.textContent = "Downloading...";
+        await window.api.sendEstimate(activeId);
+        showToast("Estimate downloaded", "success");
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || "Failed to generate estimate", "error");
+      } finally {
+        target.disabled = false;
+        target.textContent = "Download Estimate";
+      }
+    }
+
     if (target.id === "invoiceBtn") {
       if (!confirm("Download this client's invoice PDF?")) return;
 
@@ -2266,6 +2436,8 @@ async function savePendingNotes({ silent = false } = {}) {
 }
 
 function collectPanelData() {
+  const jobCostRaw = document.getElementById("jobCostInput")?.value || "0";
+  const jobCost = parseMoney(jobCostRaw) || 0;
   return {
     id: activeId,
     fName: getPanelFName(),
@@ -2273,7 +2445,9 @@ function collectPanelData() {
     address: document.getElementById("p-address")?.value || "",
     status: document.getElementById("p-status")?.value || "",
     phone: document.getElementById("p-phone")?.value || "",
-    email: document.getElementById("p-email")?.value || ""
+    email: document.getElementById("p-email")?.value || "",
+    scope_of_work: document.getElementById("p-scope")?.value || "",
+    job_cost: jobCost
   };
 }
 
