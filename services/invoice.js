@@ -130,7 +130,7 @@ function buildInvoiceData({ client, latestNote = null, companyProfile = {}, mode
     businessAddress: company.businessAddress,
     businessPhone: company.businessPhone,
     businessEmail: company.businessEmail,
-    logoBase64: company.logoBase64 || null,
+    logoBase64: companyProfile.logoBase64 || company.logoBase64 || null,
     date: new Date().toLocaleDateString(),
     invoiceNumber: `${prefix}-${client.id}-${Date.now()}`,
     clientName: client.name || '',

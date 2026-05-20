@@ -58,10 +58,10 @@ async function handleDocumentGeneration(req, res, mode) {
     const storedCompanyProfile = await readStoredCompanyProfile();
     const normalizedProfile = normalizeCompanyProfile(storedCompanyProfile || {});
 
-    // Attach base64 logo if stored (logoUrl is a data URL like "data:image/png;base64,...")
+    // Extract base64 from the stored data URL and attach it to the profile
+    // so buildInvoiceData can pass it through to generateInvoicePDF
     if (storedCompanyProfile?.logoUrl) {
-      const dataUrl = storedCompanyProfile.logoUrl;
-      const match = dataUrl.match(/^data:image\/[^;]+;base64,(.+)$/);
+      const match = storedCompanyProfile.logoUrl.match(/^data:image\/[^;]+;base64,(.+)$/);
       if (match) {
         normalizedProfile.logoBase64 = match[1];
       }
