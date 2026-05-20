@@ -1225,6 +1225,20 @@
       .addEventListener('click', () => {
         window.location.href = 'main.html';
       });
+
+    // Set page title from company profile
+    (async () => {
+      try {
+        const res = await fetch('/api/company-profile');
+        const data = await res.json();
+        const name = data?.settings?.businessName;
+        if (name && name !== 'Your Company Name') {
+          document.title = `${name} — Finance`;
+          const kicker = document.querySelector('.page-kicker');
+          if (kicker) kicker.textContent = name;
+        }
+      } catch (e) { /* silently skip */ }
+    })();
   </script>
 
 </body>

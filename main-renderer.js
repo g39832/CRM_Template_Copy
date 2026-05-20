@@ -960,6 +960,9 @@ function setCompanyProfileFormValues(profile = {}) {
   if (companyPhoneEl) companyPhoneEl.value = profile.businessPhone || '';
   if (companyEmailEl) companyEmailEl.value = profile.businessEmail || '';
 
+  const scopeEl = document.getElementById('defaultScopeOfWork');
+  if (scopeEl) scopeEl.value = profile.defaultScopeOfWork || '';
+
   // Show existing logo preview if one is saved
   const preview = document.getElementById('companyLogoPreview');
   const img = document.getElementById('companyLogoImg');
@@ -981,6 +984,7 @@ function collectCompanyProfilePayload() {
     businessAddress: companyAddressEl?.value || '',
     businessPhone: companyPhoneEl?.value || '',
     businessEmail: companyEmailEl?.value || '',
+    defaultScopeOfWork: document.getElementById('defaultScopeOfWork')?.value || '',
     logoUrl: window._pendingLogoBase64 !== undefined
       ? window._pendingLogoBase64
       : (currentCompanyProfile?.logoUrl || '')
@@ -1276,7 +1280,11 @@ async function refreshList() {
     }
     const clients = await window.api.searchClients("");
     if (!clients || clients.length === 0) {
-      clientList.innerHTML = `<li class="empty-state">No clients found.</li>`;
+      clientList.innerHTML = `<li class="empty-state" style="text-align:center; padding:24px 16px;">
+        <div style="font-size:2rem; margin-bottom:8px;">👤</div>
+        <div style="font-weight:700; color:var(--text-main); margin-bottom:4px;">No clients yet</div>
+        <div style="font-size:0.85rem; color:var(--text-muted);">Add your first lead using the form above.</div>
+      </li>`;
       return;
     }
     renderSidebar(clients);
@@ -1348,6 +1356,8 @@ function buildClientCard(c, term = "") {
         📞 ${phoneHighlighted}
       </div>
 
+      ${c.email ? `<div class="client-meta" style="font-size:0.82rem; opacity:0.8;">✉️ ${c.email}</div>` : ''}
+
       <div class="client-status" style="color:${color};">
         ${c.status || "Lead"}
       </div>
@@ -1387,13 +1397,31 @@ async function openClient(id) {
       ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(client.address)}`
       : "";
 
+    // Pre-fill scope from company default if client has none saved yet
+    let initialScope = client.scope_of_work || "";
+    if (!initialScope) {
+      try {
+        const profile = await window.api.getCompanyProfile();
+        initialScope = profile?.settings?.defaultScopeOfWork || "";
+      } catch (e) { /* silently skip */ }
+    }
+
     projectPanel.innerHTML = `
       <div class="detail-card animate-panel panel-shell" style="opacity:0; transform:translateY(-20px); transition:0.25s ease;">
         <button id="closeBtn" class="close-x">&times;</button>
         <header class="detail-header panel-header">
           <div class="panel-title-block">
             <div class="panel-kicker">Client Workspace</div>
-            <h2>${fName || ""} ${lName || ""}</h2>
+            <h2 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              ${fName || ""} ${lName || ""}
+              <span style="
+                font-size:0.7rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase;
+                padding:4px 10px; border-radius:999px; white-space:nowrap;
+                background:${STATUS_COLORS[client.status] || '#007bff'}22;
+                color:${STATUS_COLORS[client.status] || '#007bff'};
+                border:1px solid ${STATUS_COLORS[client.status] || '#007bff'}55;
+              ">${client.status || 'Lead'}</span>
+            </h2>
             <div class="panel-subtitle">Core contact, financial, and document details stay in one place.</div>
           </div>
           <div class="contact-quick-links panel-contact-links">
@@ -1502,7 +1530,7 @@ async function openClient(id) {
             </div>
             <textarea id="p-scope" rows="5"
               style="width:100%; padding:12px; border-radius:12px; border:1px solid rgba(122,183,214,0.22); background:rgba(32,58,67,0.96); color:var(--text-main); font-size:0.95rem; resize:vertical; box-sizing:border-box;"
-              placeholder="Describe the work to be done...">${escapeHtml(client.scope_of_work)}</textarea>
+              placeholder="Describe the work to be done...">${escapeHtml(initialScope)}</textarea>
           </div>
 
           <div id="pdf-drop-zone" class="drop-zone"
@@ -1566,7 +1594,10 @@ async function openClient(id) {
     setSaveStatus("saved");
     // SHOW MODAL
     projectPanel.style.display = "block";
-    if (overlay) overlay.style.display = "none";
+    if (overlay) {
+      overlay.style.display = "block";
+      overlay.style.zIndex = "9999";
+    }
     // ==============================
     // MOBILE VIEW SWITCH
     // ==============================
@@ -2568,3 +2599,16 @@ document.addEventListener("keydown", async (e) => {
 // Ensure latest edits are sent before leaving the page
 
 refreshList();
+
+// Set page title from company profile
+(async () => {
+  try {
+    const response = await window.api.getCompanyProfile();
+    const name = response?.settings?.businessName;
+    if (name && name !== 'Your Company Name') {
+      document.title = `${name} — Clients`;
+      const kicker = document.querySelector('.page-kicker');
+      if (kicker) kicker.textContent = name;
+    }
+  } catch (e) { /* silently skip */ }
+})();

@@ -37,7 +37,8 @@ router.post('/', asyncHandler(async (req, res) => {
     businessAddress: String(req.body.businessAddress || current?.businessAddress || '').trim(),
     businessPhone: String(req.body.businessPhone || current?.businessPhone || '').trim(),
     businessEmail: String(req.body.businessEmail || current?.businessEmail || '').trim(),
-    logoUrl: String(req.body.logoUrl !== undefined ? req.body.logoUrl : (current?.logoUrl || '')).trim()
+    logoUrl: String(req.body.logoUrl !== undefined ? req.body.logoUrl : (current?.logoUrl || '')).trim(),
+    defaultScopeOfWork: String(req.body.defaultScopeOfWork !== undefined ? req.body.defaultScopeOfWork : (current?.defaultScopeOfWork || '')).trim()
   });
 
   if (!profile.businessName) {

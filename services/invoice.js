@@ -118,15 +118,8 @@ async function sendInvoiceEmail(to, pdfBuffer, emailConfig = {}, mode = 'invoice
 }
 
 function buildInvoiceData({ client, latestNote = null, companyProfile = {}, mode = 'invoice' }) {
-  // Scope of work: dedicated field first, then latest note, then fallback
-  const workDescription =
-    client.scope_of_work ||
-    client.work_description ||
-    client.job_description ||
-    client.description ||
-    latestNote?.content ||
-    client.status ||
-    'Work details not provided.';
+  // Only use the client's scope_of_work — notes never appear on invoices/estimates
+  const workDescription = client.scope_of_work || 'No scope of work provided.';
 
   const company = normalizeCompanyProfile(companyProfile, process.env);
   const isEstimate = mode === 'estimate';
