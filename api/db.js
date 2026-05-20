@@ -96,8 +96,13 @@ async function fetchClients() {
     ...row,
     total_due: asNumber(row.total_due),
     amount_paid: asNumber(row.amount_paid),
-    balance: asNumber(row.balance)
+    balance: asNumber(row.balance),
+    job_cost: asNumber(row.job_cost)
   }));
+}
+
+function getClientRowById(id) {
+  return fetchClients().then((clients) => clients.find((item) => Number(item.id) === Number(id)) || null);
 }
 
 async function fetchPayments() {
@@ -518,9 +523,14 @@ async function query(text, params = []) {
     return makeResult(sliced);
   }
 
-  if (sql === 'select amount_paid, total_due, created_at from clients where id = $1' || sql === 'select total_due, amount_paid, created_at from clients where id = $1' || sql === 'select total_due, amount_paid, balance from clients where id = $1') {
-    const clients = await fetchClients();
-    const row = clients.find((item) => Number(item.id) === Number(params[0]));
+  if (
+    sql === 'select amount_paid, total_due, created_at from clients where id = $1' ||
+    sql === 'select total_due, amount_paid, created_at from clients where id = $1' ||
+    sql === 'select total_due, amount_paid, balance from clients where id = $1' ||
+    sql === 'select amount_paid, total_due, job_cost, created_at from clients where id = $1' ||
+    /^select\s+.+\s+from\s+clients\s+where\s+id\s*=\s*\$1$/.test(sql)
+  ) {
+    const row = await getClientRowById(params[0]);
     if (!row) return makeResult([]);
     return makeResult([row]);
   }
