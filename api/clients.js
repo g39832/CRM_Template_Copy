@@ -146,10 +146,23 @@ router.post('/save-client', asyncHandler(async (req, res) => {
   const createdAt = new Date().toISOString();
 
   await db.schemaReady;
-  await db.query(`
-    INSERT INTO clients (name, phone, email, address, status, total_due, amount_paid, balance, scope_of_work, job_cost, created_at)
-    VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9, $10)
-  `, [finalName, phone, email, address, status || 'Lead', total, total, scopeOfWork, jobCost, createdAt]);
+  // Try to insert with new columns — gracefully fall back if they don't exist yet
+  try {
+    await db.query(`
+      INSERT INTO clients (name, phone, email, address, status, total_due, amount_paid, balance, scope_of_work, job_cost, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9, $10)
+    `, [finalName, phone, email, address, status || 'Lead', total, total, scopeOfWork, jobCost, createdAt]);
+  } catch (colErr) {
+    if (String(colErr?.message || '').toLowerCase().includes('column') ||
+        String(colErr?.message || '').toLowerCase().includes('unsupported')) {
+      await db.query(`
+        INSERT INTO clients (name, phone, email, address, status, total_due, amount_paid, balance, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8)
+      `, [finalName, phone, email, address, status || 'Lead', total, total, createdAt]);
+    } else {
+      throw colErr;
+    }
+  }
 
   const year = new Date(createdAt).getFullYear();
   await updateFinanceTotals(year);
@@ -176,7 +189,8 @@ router.post('/update-project', asyncHandler(async (req, res) => {
   const finalName = name || `${fName} ${lName}`.trim();
 
   await db.schemaReady;
-  const clientResult = await db.query('SELECT amount_paid, total_due, job_cost, created_at FROM clients WHERE id = $1', [id]);
+  // Fetch existing client — use * to avoid errors if new columns don't exist yet in Supabase
+  const clientResult = await db.query('SELECT * FROM clients WHERE id = $1', [id]);
   const clientRow = clientResult.rows[0];
   if (!clientRow) return res.status(404).json({ error: 'Client not found' });
 
@@ -188,12 +202,27 @@ router.post('/update-project', asyncHandler(async (req, res) => {
     ? parseNumberField(jobCostInput, 'job_cost', { required: false, defaultValue: Number(clientRow.job_cost || 0) })
     : Number(clientRow.job_cost || 0);
 
-  await db.query(`
-    UPDATE clients
-    SET name = $1, phone = $2, email = $3, address = $4, status = $5, total_due = $6, balance = $7,
-        scope_of_work = $8, job_cost = $9
-    WHERE id = $10
-  `, [finalName, phone, email, address, status, newTotal || 0, newBalance, scopeOfWork, newJobCost, id]);
+  // Try to save scope_of_work and job_cost — gracefully skip if columns don't exist yet
+  try {
+    await db.query(`
+      UPDATE clients
+      SET name = $1, phone = $2, email = $3, address = $4, status = $5, total_due = $6, balance = $7,
+          scope_of_work = $8, job_cost = $9
+      WHERE id = $10
+    `, [finalName, phone, email, address, status, newTotal || 0, newBalance, scopeOfWork, newJobCost, id]);
+  } catch (colErr) {
+    // Fallback: save without new columns if they don't exist in DB yet
+    if (String(colErr?.message || '').toLowerCase().includes('column') ||
+        String(colErr?.message || '').toLowerCase().includes('unsupported')) {
+      await db.query(`
+        UPDATE clients
+        SET name = $1, phone = $2, email = $3, address = $4, status = $5, total_due = $6, balance = $7
+        WHERE id = $8
+      `, [finalName, phone, email, address, status, newTotal || 0, newBalance, id]);
+    } else {
+      throw colErr;
+    }
+  }
 
   const year = new Date(clientRow.created_at).getFullYear();
   await updateFinanceTotals(year);

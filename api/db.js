@@ -198,6 +198,8 @@ async function insertClient(row) {
     total_due: asNumber(row.total_due),
     amount_paid: asNumber(row.amount_paid),
     balance: asNumber(row.balance),
+    scope_of_work: row.scope_of_work || '',
+    job_cost: asNumber(row.job_cost),
     created_at: toDateValue(row.created_at) || new Date().toISOString()
   };
   try {
@@ -556,6 +558,23 @@ async function query(text, params = []) {
     return makeResult([]);
   }
 
+  if (sql === 'insert into clients (name, phone, email, address, status, total_due, amount_paid, balance, scope_of_work, job_cost, created_at) values ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9, $10)') {
+    await insertClient({
+      name: params[0],
+      phone: params[1],
+      email: params[2],
+      address: params[3],
+      status: params[4],
+      total_due: params[5],
+      amount_paid: 0,
+      balance: params[6],
+      scope_of_work: params[7],
+      job_cost: params[8],
+      created_at: params[9]
+    });
+    return makeResult([]);
+  }
+
   if (sql === 'update clients set name = $1, phone = $2, email = $3, address = $4, status = $5, total_due = $6, balance = $7 where id = $8') {
     await updateClientById(params[7], {
       name: params[0],
@@ -565,6 +584,21 @@ async function query(text, params = []) {
       status: params[4],
       total_due: params[5],
       balance: params[6]
+    });
+    return makeResult([]);
+  }
+
+  if (sql === 'update clients set name = $1, phone = $2, email = $3, address = $4, status = $5, total_due = $6, balance = $7, scope_of_work = $8, job_cost = $9 where id = $10') {
+    await updateClientById(params[9], {
+      name: params[0],
+      phone: params[1],
+      email: params[2],
+      address: params[3],
+      status: params[4],
+      total_due: params[5],
+      balance: params[6],
+      scope_of_work: params[7],
+      job_cost: params[8]
     });
     return makeResult([]);
   }
