@@ -39,6 +39,13 @@ async function fetchLatestNote(clientId) {
   return data || null;
 }
 
+function extractLogoBase64(logoUrl) {
+  if (!logoUrl) return null;
+  const raw = String(logoUrl).trim();
+  const match = raw.match(/^data:image\/[^;]+;base64,(.+)$/);
+  return match ? match[1] : raw;
+}
+
 // Shared handler for both invoice and estimate generation
 async function handleDocumentGeneration(req, res, mode) {
   try {
@@ -58,13 +65,10 @@ async function handleDocumentGeneration(req, res, mode) {
     const storedCompanyProfile = await readStoredCompanyProfile();
     const normalizedProfile = normalizeCompanyProfile(storedCompanyProfile || {});
 
-    // Extract base64 from the stored data URL and attach it to the profile
-    // so buildInvoiceData can pass it through to generateInvoicePDF
-    if (storedCompanyProfile?.logoUrl) {
-      const match = storedCompanyProfile.logoUrl.match(/^data:image\/[^;]+;base64,(.+)$/);
-      if (match) {
-        normalizedProfile.logoBase64 = match[1];
-      }
+    // Attach the stored logo in a PDF-friendly form.
+    const logoBase64 = extractLogoBase64(storedCompanyProfile?.logoUrl);
+    if (logoBase64) {
+      normalizedProfile.logoBase64 = logoBase64;
     }
 
     const invoiceData = buildInvoiceData({
