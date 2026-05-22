@@ -953,6 +953,49 @@ let emailSettingsLoading = false;
 let currentEmailSettings = null;
 let companyProfileLoading = false;
 let currentCompanyProfile = null;
+let mainDashboardRefreshTimer = null;
+let mainDashboardRefreshInFlight = false;
+
+function isClientPanelOpen() {
+  return projectPanel?.style.display === "block";
+}
+
+function hasUnsavedClientPanelChanges() {
+  const statusText = document.getElementById("saveStatus")?.textContent || "";
+  return /unsaved/i.test(statusText);
+}
+
+async function refreshMainDashboard({ refreshOpenClient = true } = {}) {
+  if (mainDashboardRefreshInFlight) return;
+  mainDashboardRefreshInFlight = true;
+  try {
+    await refreshList();
+
+    if (
+      refreshOpenClient &&
+      activeId &&
+      isClientPanelOpen() &&
+      !hasUnsavedClientPanelChanges()
+    ) {
+      await openClient(activeId);
+    }
+  } finally {
+    mainDashboardRefreshInFlight = false;
+  }
+}
+
+function scheduleMainDashboardRefresh(options = {}) {
+  if (mainDashboardRefreshTimer) {
+    clearTimeout(mainDashboardRefreshTimer);
+  }
+
+  mainDashboardRefreshTimer = setTimeout(() => {
+    mainDashboardRefreshTimer = null;
+    refreshMainDashboard(options).catch((err) => {
+      console.error("Main dashboard refresh failed:", err);
+    });
+  }, 150);
+}
 
 function setCompanyProfileFormValues(profile = {}) {
   if (companyNameEl) companyNameEl.value = profile.businessName || '';
@@ -2582,6 +2625,20 @@ if (clientList) {
 // ======================================================
 // INITIAL LOAD
 // ======================================================
+document.addEventListener("financeUpdated", () => {
+  scheduleMainDashboardRefresh();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    scheduleMainDashboardRefresh();
+  }
+});
+
+window.addEventListener("focus", () => {
+  scheduleMainDashboardRefresh();
+});
+
 document.addEventListener("keydown", async (e) => {
   if (e.key === "Escape" && companyProfileModal?.classList.contains('open')) {
     closeCompanyProfileModal();

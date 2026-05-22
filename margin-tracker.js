@@ -44,6 +44,8 @@
     refreshCounter: 0,
     currentModel: null
   };
+  let refreshDebounceTimer = null;
+  let refreshIntervalId = null;
 
   function getYearFromInput() {
     const parsed = Number.parseInt(yearInput?.value, 10);
@@ -1980,15 +1982,43 @@
     }
   }
 
+  function scheduleRefreshDashboard() {
+    if (refreshDebounceTimer) {
+      clearTimeout(refreshDebounceTimer);
+    }
+    refreshDebounceTimer = setTimeout(() => {
+      refreshDebounceTimer = null;
+      refreshDashboard();
+    }, 150);
+  }
+
   document.addEventListener('financeUpdated', () => {
-    refreshDashboard();
+    scheduleRefreshDashboard();
   });
 
   yearInput?.addEventListener('change', () => {
     state.year = getYearFromInput();
     state.page = 1;
-    refreshDashboard();
+    scheduleRefreshDashboard();
   });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      scheduleRefreshDashboard();
+    }
+  });
+
+  window.addEventListener('focus', () => {
+    scheduleRefreshDashboard();
+  });
+
+  if (refreshIntervalId === null) {
+    refreshIntervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && !state.loading) {
+        refreshDashboard();
+      }
+    }, 60000);
+  }
 
   root.addEventListener('click', handleInteraction);
   root.addEventListener('change', handleInteraction);
