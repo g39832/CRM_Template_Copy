@@ -26,16 +26,30 @@ function resolveLogoBuffer(data) {
   }
 }
 
+const STATUS_VALUES = ['Prospect', 'Approved', 'Completed', 'Invoice', 'Closed', 'Lead'];
+
+function sanitizeAddress(value) {
+  const statusSet = new Set(STATUS_VALUES.map((status) => status.toLowerCase()));
+  return safeText(value)
+    .split(/\r?\n/)
+    .filter((line) => {
+      const normalized = line.trim().toLowerCase();
+      return normalized && !statusSet.has(normalized);
+    })
+    .join('\n')
+    .trim();
+}
+
 function normalizeWorkLines(workDescription) {
   const lines = String(workDescription || '')
     .split(/\r?\n/)
-    .map((l) => l.trim())
+    .map((line) => line.trim())
     .filter(Boolean)
-    .map((l) => l.replace(/^[•\-*]\s*/, ''));
+    .map((line) => line.replace(/^[•\-*]\s*/, ''));
+
   return lines.length ? lines : ['No scope of work provided.'];
 }
 
-// Safe page-aware text writer — advances cursorY and adds a new page if needed
 function writeText(doc, text, x, y, options, pageBottom) {
   const h = doc.heightOfString(text, options);
   if (y + h > pageBottom) {
@@ -46,13 +60,11 @@ function writeText(doc, text, x, y, options, pageBottom) {
   return y + h + (options.lineGap || 0);
 }
 
-// Draw a horizontal rule
 function drawRule(doc, x, y, width, color = '#d1d5db') {
   doc.moveTo(x, y).lineTo(x + width, y)
     .lineWidth(0.5).strokeColor(color).stroke();
 }
 
-// Draw a two-column summary row (label left, value right) — no overlap
 function drawSummaryRow(doc, label, value, x, y, contentWidth, bold) {
   const labelW = contentWidth * 0.65;
   const valueX = x + labelW;
@@ -73,9 +85,6 @@ function drawSummaryRow(doc, label, value, x, y, contentWidth, bold) {
   return y + (bold ? 28 : 22);
 }
 
-// ======================================================
-// GENERATE INVOICE OR ESTIMATE PDF
-// ======================================================
 function generateInvoicePDF(data, mode = 'invoice') {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 52, size: 'LETTER' });
@@ -91,9 +100,6 @@ function generateInvoicePDF(data, mode = 'invoice') {
     const contentWidth = pageWidth - M * 2;
     const pageBottom = doc.page.height - doc.page.margins.bottom - 20;
 
-    // ============================================================
-    // LOGO (centered, above header)
-    // ============================================================
     const logoBuffer = resolveLogoBuffer(data);
     let startY = M;
 
@@ -105,22 +111,17 @@ function generateInvoicePDF(data, mode = 'invoice') {
         doc.image(logoBuffer, logoX, startY, { fit: [logoW, logoH] });
         startY += logoH + 16;
       } catch {
-        // skip logo on error
+        // Skip logo on error.
       }
     }
 
-    // ============================================================
-    // HEADER: company info left, doc title right
-    // ============================================================
     const leftW = contentWidth * 0.55;
     const rightW = contentWidth * 0.42;
     const rightX = M + contentWidth - rightW;
 
-    // Company name
     doc.fontSize(16).fillColor('#111827')
-      .text(safeText(data.businessName, 'Your Company'), M, startY, { width: leftW });
+      .text(safeText(data.businessName, 'Your Company Name'), M, startY, { width: leftW });
 
-    // Company details — stacked below name
     let companyY = startY + 22;
     const companyLines = [
       safeText(data.businessAddress),
@@ -134,7 +135,6 @@ function generateInvoicePDF(data, mode = 'invoice') {
       companyY += 13;
     });
 
-    // Document title block — right aligned
     doc.fontSize(24).fillColor('#111827')
       .text(docTitle, rightX, startY, { width: rightW, align: 'right' });
     doc.fontSize(9).fillColor('#6b7280')
@@ -142,49 +142,38 @@ function generateInvoicePDF(data, mode = 'invoice') {
     doc.fontSize(9).fillColor('#6b7280')
       .text(`Date: ${safeText(data.date)}`, rightX, startY + 46, { width: rightW, align: 'right' });
 
-    // Advance past whichever column is taller
     let cursorY = Math.max(companyY, startY + 62) + 16;
 
-    // ============================================================
-    // DIVIDER
-    // ============================================================
     drawRule(doc, M, cursorY, contentWidth);
     cursorY += 16;
 
-    // ============================================================
-    // BILL TO
-    // ============================================================
     doc.fontSize(8).fillColor('#9ca3af')
       .text('BILL TO', M, cursorY, { width: contentWidth });
     cursorY += 14;
 
+    const clientName = safeText(data.clientName, '-');
     doc.fontSize(11).fillColor('#111827')
-      .text(safeText(data.clientName, '—'), M, cursorY, { width: contentWidth });
-    cursorY += 15;
+      .text(clientName, M, cursorY, { width: contentWidth });
+    cursorY += doc.heightOfString(clientName, { width: contentWidth }) + 4;
 
     const clientLines = [
-      safeText(data.clientAddress),
+      sanitizeAddress(data.clientAddress),
       safeText(data.clientPhone),
       safeText(data.clientEmail)
     ].filter(Boolean);
 
     clientLines.forEach((line) => {
+      const lineHeight = doc.heightOfString(line, { width: contentWidth });
       doc.fontSize(9).fillColor('#4b5563')
         .text(line, M, cursorY, { width: contentWidth });
-      cursorY += 13;
+      cursorY += lineHeight + 2;
     });
 
     cursorY += 16;
 
-    // ============================================================
-    // DIVIDER
-    // ============================================================
     drawRule(doc, M, cursorY, contentWidth);
     cursorY += 16;
 
-    // ============================================================
-    // SCOPE OF WORK
-    // ============================================================
     const workHeading = isEstimate ? 'SCOPE OF WORK' : 'WORK COMPLETED';
     doc.fontSize(8).fillColor('#9ca3af')
       .text(workHeading, M, cursorY, { width: contentWidth });
@@ -192,10 +181,9 @@ function generateInvoicePDF(data, mode = 'invoice') {
 
     const workLines = normalizeWorkLines(data.workDescription);
     workLines.forEach((line) => {
-      const lineText = `\u2022  ${line}`;
+      const lineText = `- ${line}`;
       const lineH = doc.heightOfString(lineText, { width: contentWidth - 12, lineGap: 2 });
 
-      // Add new page if this line won't fit
       if (cursorY + lineH > pageBottom) {
         doc.addPage();
         cursorY = doc.page.margins.top;
@@ -208,22 +196,18 @@ function generateInvoicePDF(data, mode = 'invoice') {
 
     cursorY += 16;
 
-    // ============================================================
-    // DIVIDER
-    // ============================================================
-    if (cursorY + 20 > pageBottom) { doc.addPage(); cursorY = doc.page.margins.top; }
+    if (cursorY + 20 > pageBottom) {
+      doc.addPage();
+      cursorY = doc.page.margins.top;
+    }
     drawRule(doc, M, cursorY, contentWidth);
     cursorY += 16;
 
-    // ============================================================
-    // SUMMARY
-    // ============================================================
     const summaryTotal = Number(data.total ?? 0);
     const summaryPaid = Number(data.paid ?? 0);
     const summaryBalance = Number(data.balance ?? 0);
 
     if (isEstimate) {
-      // ---- Estimate: total only ----
       doc.fontSize(8).fillColor('#9ca3af')
         .text('ESTIMATE TOTAL', M, cursorY, { width: contentWidth });
       cursorY += 14;
@@ -236,8 +220,10 @@ function generateInvoicePDF(data, mode = 'invoice') {
         .text('This estimate is valid for 30 days. Prices subject to change based on final inspection.', M, cursorY, { width: contentWidth });
       cursorY += 20;
 
-      // Terms & Acceptance
-      if (cursorY + 80 > pageBottom) { doc.addPage(); cursorY = doc.page.margins.top; }
+      if (cursorY + 80 > pageBottom) {
+        doc.addPage();
+        cursorY = doc.page.margins.top;
+      }
       drawRule(doc, M, cursorY, contentWidth);
       cursorY += 16;
 
@@ -249,8 +235,10 @@ function generateInvoicePDF(data, mode = 'invoice') {
         .text('By signing below, you authorize the work described above at the stated price.', M, cursorY, { width: contentWidth });
       cursorY += 28;
 
-      // Signature lines — ensure they fit
-      if (cursorY + 30 > pageBottom) { doc.addPage(); cursorY = doc.page.margins.top; }
+      if (cursorY + 30 > pageBottom) {
+        doc.addPage();
+        cursorY = doc.page.margins.top;
+      }
 
       doc.moveTo(M, cursorY).lineTo(M + 220, cursorY)
         .lineWidth(0.8).strokeColor('#aaaaaa').stroke();
@@ -263,14 +251,15 @@ function generateInvoicePDF(data, mode = 'invoice') {
         .text('Date', M + 260, cursorY + 5, { width: 120 });
 
       cursorY += 30;
-
     } else {
-      // ---- Invoice: Contract Price, Amount Paid, Balance Due ----
       doc.fontSize(8).fillColor('#9ca3af')
         .text('INVOICE SUMMARY', M, cursorY, { width: contentWidth });
       cursorY += 14;
 
-      if (cursorY + 80 > pageBottom) { doc.addPage(); cursorY = doc.page.margins.top; }
+      if (cursorY + 80 > pageBottom) {
+        doc.addPage();
+        cursorY = doc.page.margins.top;
+      }
 
       cursorY = drawSummaryRow(doc, 'Contract Price', summaryTotal, M, cursorY, contentWidth, false);
       cursorY = drawSummaryRow(doc, 'Amount Paid', summaryPaid, M, cursorY, contentWidth, false);
@@ -278,10 +267,10 @@ function generateInvoicePDF(data, mode = 'invoice') {
       cursorY += 8;
     }
 
-    // ============================================================
-    // CLOSING LINE
-    // ============================================================
-    if (cursorY + 30 > pageBottom) { doc.addPage(); cursorY = doc.page.margins.top; }
+    if (cursorY + 30 > pageBottom) {
+      doc.addPage();
+      cursorY = doc.page.margins.top;
+    }
     drawRule(doc, M, cursorY, contentWidth);
     cursorY += 14;
 
@@ -316,7 +305,7 @@ async function sendInvoiceEmail(to, pdfBuffer, emailConfig = {}, mode = 'invoice
 }
 
 function buildInvoiceData({ client, latestNote = null, companyProfile = {}, mode = 'invoice' }) {
-  const workDescription = client.scope_of_work || 'No scope of work provided.';
+  const workDescription = client.scope_of_work || client.work_description || latestNote?.content || 'No scope of work provided.';
   const company = normalizeCompanyProfile(companyProfile, process.env);
   const isEstimate = mode === 'estimate';
   const prefix = isEstimate ? 'EST' : 'INV';
@@ -330,7 +319,7 @@ function buildInvoiceData({ client, latestNote = null, companyProfile = {}, mode
     date: new Date().toLocaleDateString(),
     invoiceNumber: `${prefix}-${client.id}-${Date.now()}`,
     clientName: client.name || '',
-    clientAddress: client.address || '',
+    clientAddress: sanitizeAddress(client.address),
     clientPhone: client.phone || '',
     clientEmail: client.email || '',
     workDescription,
