@@ -194,6 +194,18 @@
       grid-column: 1 / -1;
     }
 
+    /* Fix: modal inputs must be dark text on white background */
+    #companyProfileModal input,
+    #companyProfileModal textarea,
+    #companyProfileModal select,
+    #emailSettingsModal input,
+    #emailSettingsModal textarea,
+    #emailSettingsModal select {
+      color: #111827 !important;
+      -webkit-text-fill-color: #111827 !important;
+      background: #fff !important;
+    }
+
     body.dashboard-body {
       margin: 0;
       overflow-x: hidden;

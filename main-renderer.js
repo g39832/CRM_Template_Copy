@@ -1815,6 +1815,7 @@ async function setupNotesSection(clientId) {
         const editBtn = document.createElement("button");
         editBtn.innerText = "Edit";
         editBtn.style.background = "linear-gradient(135deg,#2f80ed,#4f8dfd)";
+        editBtn.style.color = "#fff";
         editBtn.style.border = "none";
         editBtn.style.padding = "4px 8px";
         editBtn.style.borderRadius = "4px";
@@ -1823,6 +1824,7 @@ async function setupNotesSection(clientId) {
         const deleteBtn = document.createElement("button");
         deleteBtn.innerText = "Delete";
         deleteBtn.style.background = "#4a5568";
+        deleteBtn.style.color = "#fff";
         deleteBtn.style.border = "none";
         deleteBtn.style.padding = "4px 8px";
         deleteBtn.style.borderRadius = "4px";
@@ -1843,6 +1845,7 @@ async function setupNotesSection(clientId) {
           const saveBtn = document.createElement("button");
           saveBtn.innerText = "Save";
           saveBtn.style.background = "linear-gradient(135deg,#2f80ed,#4f8dfd)";
+          saveBtn.style.color = "#fff";
           saveBtn.style.border = "none";
           saveBtn.style.padding = "4px 8px";
           saveBtn.style.borderRadius = "4px";
@@ -1852,6 +1855,7 @@ async function setupNotesSection(clientId) {
           const cancelBtn = document.createElement("button");
           cancelBtn.innerText = "Cancel";
           cancelBtn.style.background = "rgba(255,255,255,0.14)";
+          cancelBtn.style.color = "#1a202c";
           cancelBtn.style.border = "none";
           cancelBtn.style.padding = "4px 8px";
           cancelBtn.style.borderRadius = "4px";

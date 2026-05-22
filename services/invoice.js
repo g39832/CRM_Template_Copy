@@ -14,59 +14,17 @@ function safeText(value, fallback = '') {
   return text || fallback;
 }
 
-function getLogoBuffer(logoBase64) {
-  if (!logoBase64) return null;
-
-  const raw = String(logoBase64).trim();
-  const match = raw.match(/^data:image\/[^;]+;base64,(.+)$/);
-  const base64 = match ? match[1] : raw;
-
+// Extract base64 from a data URL or raw base64 string — never falls back to disk
+function resolveLogoBuffer(data) {
+  if (!data.logoBase64) return null;
   try {
-    return Buffer.from(base64, 'base64');
+    const raw = String(data.logoBase64).trim();
+    const match = raw.match(/^data:image\/[^;]+;base64,(.+)$/);
+    const b64 = match ? match[1] : raw;
+    return Buffer.from(b64, 'base64');
   } catch {
     return null;
   }
-}
-
-function drawHeader(doc, data, mode) {
-  const isEstimate = mode === 'estimate';
-  const pageWidth = doc.page.width;
-  const left = 48;
-  const companyName = safeText(data.businessName, 'Your Company Name');
-  const companyAddress = safeText(data.businessAddress, 'Your Address');
-  const companyPhone = safeText(data.businessPhone, 'Your Phone');
-  const companyEmail = safeText(data.businessEmail, 'your@email.com');
-
-  const logoBuffer = getLogoBuffer(data.logoBase64);
-  if (logoBuffer) {
-    try {
-      doc.image(logoBuffer, (pageWidth - 120) / 2, 92, { fit: [120, 72] });
-    } catch {
-      // Ignore logo failures and continue with the text layout.
-    }
-  }
-
-  doc
-    .fontSize(18)
-    .fillColor('#222222')
-    .text(companyName, left, 302, { width: pageWidth - 96 });
-
-  doc
-    .fontSize(11)
-    .fillColor('#333333')
-    .text(companyAddress, left, 338, { width: pageWidth - 96 })
-    .text(companyPhone, left, 354, { width: pageWidth - 96 })
-    .fillColor('#2a5db0')
-    .text(companyEmail, left, 370, { width: pageWidth - 96, underline: true });
-
-  const dateText = safeText(data.date, '');
-  doc
-    .moveDown(0.4)
-    .fontSize(11)
-    .fillColor('#333333')
-    .text(`Date: ${dateText}`, left, 406, { width: pageWidth - 96 });
-
-  return { isEstimate };
 }
 
 function normalizeWorkLines(workDescription) {
@@ -74,36 +32,8 @@ function normalizeWorkLines(workDescription) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-
   if (rawLines.length === 0) return ['No scope of work provided.'];
-
   return rawLines.map((line) => line.replace(/^[•\-*]\s*/, ''));
-}
-
-function drawTextSection(doc, title, lines, x, y, width) {
-  doc.fontSize(12).fillColor('#333333').text(title, x, y);
-  let cursorY = y + 26;
-
-  lines.forEach((line) => {
-    doc.fontSize(11).fillColor('#222222').text('•', x + 2, cursorY, {
-      width: 10
-    });
-    doc.fontSize(11).fillColor('#222222').text(line, x + 18, cursorY, {
-      width: width - 18,
-      lineGap: 2
-    });
-    cursorY += doc.heightOfString(line, { width: width - 18, lineGap: 2 }) + 4;
-  });
-
-  return cursorY;
-}
-
-function drawSummaryLine(doc, label, value, x, y, width, bold = false) {
-  doc
-    .fontSize(bold ? 12 : 11)
-    .fillColor('#222222')
-    .text(`${label}: $${formatMoney(value)}`, x, y, { width });
-  return y + (bold ? 24 : 18);
 }
 
 // ======================================================
@@ -112,7 +42,7 @@ function drawSummaryLine(doc, label, value, x, y, width, bold = false) {
 // ======================================================
 function generateInvoicePDF(data, mode = 'invoice') {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 48, size: 'LETTER' });
+    const doc = new PDFDocument({ margin: 52, size: 'LETTER' });
     const buffers = [];
 
     doc.on('data', buffers.push.bind(buffers));
@@ -121,61 +51,176 @@ function generateInvoicePDF(data, mode = 'invoice') {
 
     const isEstimate = mode === 'estimate';
     const docTitle = isEstimate ? 'ESTIMATE' : 'INVOICE';
-
+    const M = doc.page.margins.left;           // left margin (52)
     const pageWidth = doc.page.width;
-    const left = 48;
-    const contentWidth = pageWidth - 96;
+    const contentWidth = pageWidth - M * 2;    // usable width
 
-    const clientName = safeText(data.clientName, 'Client Name');
-    const clientAddress = safeText(data.clientAddress, 'Client Address');
-    const clientPhone = safeText(data.clientPhone, 'Client Phone');
-    const clientEmail = safeText(data.clientEmail, 'Client Email');
-    const workDescription = safeText(data.workDescription, 'No scope of work provided.');
-    const invoiceNumber = safeText(data.invoiceNumber, `${isEstimate ? 'EST' : 'INV'}-0000`);
+    // ---- Logo ----
+    const logoBuffer = resolveLogoBuffer(data);
+    const centerX = pageWidth / 2;
 
-    drawHeader(doc, data, mode);
+    if (logoBuffer) {
+      try {
+        doc.image(logoBuffer, centerX - 80, 52, { fit: [160, 100] });
+        doc.y = 168;
+      } catch {
+        doc.y = 52;
+      }
+    } else {
+      doc.y = 52;
+    }
 
-    doc
-      .fontSize(11)
-      .fillColor('#333333')
-      .text(`Customer Information`, left, 430, { width: contentWidth });
+    // ---- Company info (left) + Document title (right) ----
+    const headerY = doc.y;
+    doc.fontSize(18).fillColor('#111827')
+      .text(safeText(data.businessName, 'Your Company'), M, headerY, { width: contentWidth * 0.55 });
 
-    doc
-      .fontSize(11)
-      .fillColor('#222222')
-      .text(`Name: ${clientName}`, left, 460, { width: contentWidth })
-      .text(`Address: ${clientAddress}`, left, 476, { width: contentWidth })
-      .text(`Phone: ${clientPhone}`, left, 492, { width: contentWidth })
-      .fillColor('#2a5db0')
-      .text(`Email: ${clientEmail}`, left, 508, { width: contentWidth, underline: true });
+    doc.fontSize(10).fillColor('#4b5563')
+      .text(safeText(data.businessAddress), M, headerY + 26, { width: contentWidth * 0.55 })
+      .text(safeText(data.businessPhone), M, headerY + 40, { width: contentWidth * 0.55 })
+      .text(safeText(data.businessEmail), M, headerY + 54, { width: contentWidth * 0.55 });
 
-    let cursorY = 546;
-    cursorY = drawTextSection(doc, isEstimate ? 'Scope of Work' : 'Work Completed', normalizeWorkLines(workDescription), left, cursorY, contentWidth);
+    // Right column: title + number + date
+    const rightX = M + contentWidth * 0.6;
+    const rightW = contentWidth * 0.4;
+    doc.fontSize(22).fillColor('#111827')
+      .text(docTitle, rightX, headerY, { width: rightW, align: 'right' });
+    doc.fontSize(10).fillColor('#4b5563')
+      .text(`${docTitle} #: ${safeText(data.invoiceNumber)}`, rightX, headerY + 30, { width: rightW, align: 'right' })
+      .text(`Date: ${safeText(data.date)}`, rightX, headerY + 44, { width: rightW, align: 'right' });
 
-    cursorY += 10;
-    doc.fontSize(12).fillColor('#333333').text(isEstimate ? 'Estimate Summary' : 'Invoice Summary', left, cursorY);
-    cursorY += 26;
+    // ---- Divider ----
+    const divY = headerY + 76;
+    doc.moveTo(M, divY).lineTo(M + contentWidth, divY)
+      .lineWidth(0.5).strokeColor('#d1d5db').stroke();
 
+    // ---- Customer info ----
+    let cursorY = divY + 16;
+    doc.fontSize(11).fillColor('#6b7280')
+      .text('BILL TO', M, cursorY, { width: contentWidth });
+    cursorY += 16;
+    doc.fontSize(11).fillColor('#111827')
+      .text(safeText(data.clientName), M, cursorY, { width: contentWidth });
+    cursorY += 14;
+    doc.fontSize(10).fillColor('#4b5563')
+      .text(safeText(data.clientAddress), M, cursorY, { width: contentWidth });
+    cursorY += 14;
+    doc.fontSize(10).fillColor('#4b5563')
+      .text(safeText(data.clientPhone), M, cursorY, { width: contentWidth });
+    cursorY += 14;
+    doc.fontSize(10).fillColor('#4b5563')
+      .text(safeText(data.clientEmail), M, cursorY, { width: contentWidth });
+    cursorY += 24;
+
+    // ---- Divider ----
+    doc.moveTo(M, cursorY).lineTo(M + contentWidth, cursorY)
+      .lineWidth(0.5).strokeColor('#d1d5db').stroke();
+    cursorY += 16;
+
+    // ---- Scope of Work ----
+    const workHeading = isEstimate ? 'SCOPE OF WORK' : 'WORK COMPLETED';
+    doc.fontSize(10).fillColor('#6b7280')
+      .text(workHeading, M, cursorY, { width: contentWidth });
+    cursorY += 16;
+
+    const workLines = normalizeWorkLines(data.workDescription);
+    workLines.forEach((line) => {
+      doc.fontSize(10).fillColor('#374151')
+        .text(`• ${line}`, M + 8, cursorY, { width: contentWidth - 8, lineGap: 2 });
+      cursorY += doc.heightOfString(`• ${line}`, { width: contentWidth - 8, lineGap: 2 }) + 4;
+    });
+    cursorY += 16;
+
+    // ---- Divider ----
+    doc.moveTo(M, cursorY).lineTo(M + contentWidth, cursorY)
+      .lineWidth(0.5).strokeColor('#d1d5db').stroke();
+    cursorY += 16;
+
+    // ---- Summary ----
     const summaryTotal = Number(data.total ?? 0);
     const summaryPaid = Number(data.paid ?? 0);
     const summaryBalance = Number(data.balance ?? 0);
 
-    cursorY = drawSummaryLine(doc, isEstimate ? 'Estimated Total' : 'Contract Price', summaryTotal, left, cursorY, contentWidth);
-    cursorY = drawSummaryLine(doc, isEstimate ? 'Deposit / Down Payment' : 'Amount Paid', summaryPaid, left, cursorY, contentWidth);
-    cursorY = drawSummaryLine(doc, 'Balance Due', summaryBalance, left, cursorY, contentWidth, true);
+    if (isEstimate) {
+      // Estimate: show ONLY the total, then terms + signature
+      doc.fontSize(10).fillColor('#6b7280')
+        .text('ESTIMATE TOTAL', M, cursorY, { width: contentWidth });
+      cursorY += 16;
+      doc.fontSize(22).fillColor('#111827')
+        .text(`$${formatMoney(summaryTotal)}`, M, cursorY, { width: contentWidth });
+      cursorY += 36;
 
-    doc
-      .moveDown(0.9)
-      .fontSize(11)
-      .fillColor('#222222')
-      .text(
-        isEstimate
-          ? 'Thank you for considering us. This estimate is valid for 30 days.'
-          : 'Thank you for your business!',
-        left,
-        cursorY + 10,
-        { width: contentWidth }
-      );
+      doc.fontSize(9).fillColor('#6b7280')
+        .text('This estimate is valid for 30 days. Prices subject to change based on final inspection.', M, cursorY, { width: contentWidth });
+      cursorY += 24;
+
+      // ---- Terms & Acceptance ----
+      doc.moveTo(M, cursorY).lineTo(M + contentWidth, cursorY)
+        .lineWidth(0.5).strokeColor('#d1d5db').stroke();
+      cursorY += 16;
+
+      doc.fontSize(10).fillColor('#6b7280')
+        .text('TERMS & ACCEPTANCE', M, cursorY, { width: contentWidth });
+      cursorY += 20;
+
+      doc.fontSize(9).fillColor('#374151')
+        .text('By signing below, you authorize the work described above at the stated price.', M, cursorY, { width: contentWidth });
+      cursorY += 28;
+
+      // Signature line
+      doc.moveTo(M, cursorY).lineTo(M + 220, cursorY)
+        .lineWidth(0.8).strokeColor('#aaaaaa').stroke();
+      doc.fontSize(9).fillColor('#666666')
+        .text('Customer Signature', M, cursorY + 4, { width: 220 });
+
+      doc.moveTo(M + 260, cursorY).lineTo(M + 380, cursorY)
+        .lineWidth(0.8).strokeColor('#aaaaaa').stroke();
+      doc.fontSize(9).fillColor('#666666')
+        .text('Date', M + 260, cursorY + 4, { width: 120 });
+
+      cursorY += 32;
+    } else {
+      // Invoice: Contract Price, Amount Paid, Balance Due — no dump fee
+      doc.fontSize(10).fillColor('#6b7280')
+        .text('INVOICE SUMMARY', M, cursorY, { width: contentWidth });
+      cursorY += 16;
+
+      const summaryRows = [
+        { label: 'Contract Price', value: summaryTotal, bold: false },
+        { label: 'Amount Paid', value: summaryPaid, bold: false },
+        { label: 'Balance Due', value: summaryBalance, bold: true }
+      ];
+
+      summaryRows.forEach(({ label, value, bold }) => {
+        // Light background on balance row
+        if (bold) {
+          doc.rect(M, cursorY - 4, contentWidth, 22)
+            .fillColor('#f8fafc').fill();
+          doc.moveTo(M, cursorY - 4).lineTo(M + contentWidth, cursorY - 4)
+            .lineWidth(0.5).strokeColor('#e2e8f0').stroke();
+        }
+        doc.fontSize(bold ? 12 : 10)
+          .fillColor(bold ? '#111827' : '#374151')
+          .text(label, M + 8, cursorY, { width: contentWidth * 0.6 });
+        doc.fontSize(bold ? 12 : 10)
+          .fillColor(bold ? '#111827' : '#374151')
+          .text(`$${formatMoney(value)}`, M, cursorY, { width: contentWidth - 8, align: 'right' });
+        cursorY += bold ? 26 : 20;
+      });
+
+      cursorY += 16;
+    }
+
+    // ---- Closing ----
+    doc.moveTo(M, cursorY).lineTo(M + contentWidth, cursorY)
+      .lineWidth(0.5).strokeColor('#d1d5db').stroke();
+    cursorY += 16;
+
+    const closing = isEstimate
+      ? 'Thank you for considering us!'
+      : 'Thank you for your business!';
+    doc.fontSize(10).fillColor('#6b7280')
+      .text(closing, M, cursorY, { width: contentWidth, align: 'center' });
 
     doc.end();
   });
@@ -205,7 +250,7 @@ async function sendInvoiceEmail(to, pdfBuffer, emailConfig = {}, mode = 'invoice
 }
 
 function buildInvoiceData({ client, latestNote = null, companyProfile = {}, mode = 'invoice' }) {
-  // Only use the client's scope_of_work; notes never appear on invoices/estimates.
+  // Only use the client's scope_of_work — notes never appear on invoices/estimates
   const workDescription = client.scope_of_work || 'No scope of work provided.';
 
   const company = normalizeCompanyProfile(companyProfile, process.env);
