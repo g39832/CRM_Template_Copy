@@ -135,14 +135,14 @@ function generateInvoicePDF(data, mode = 'invoice') {
       companyY += 13;
     });
 
-    doc.fontSize(24).fillColor('#111827')
-      .text(docTitle, rightX, startY, { width: rightW, align: 'right' });
+    doc.fontSize(10).fillColor('#6b7280')
+      .text(docTitle, rightX, startY + 2, { width: rightW, align: 'right' });
     doc.fontSize(9).fillColor('#6b7280')
-      .text(`${docTitle} #: ${safeText(data.invoiceNumber)}`, rightX, startY + 32, { width: rightW, align: 'right' });
+      .text(`${docTitle} #: ${safeText(data.invoiceNumber)}`, rightX, startY + 18, { width: rightW, align: 'right' });
     doc.fontSize(9).fillColor('#6b7280')
-      .text(`Date: ${safeText(data.date)}`, rightX, startY + 46, { width: rightW, align: 'right' });
+      .text(`Date: ${safeText(data.date)}`, rightX, startY + 32, { width: rightW, align: 'right' });
 
-    let cursorY = Math.max(companyY, startY + 62) + 16;
+    let cursorY = Math.max(companyY, startY + 48) + 16;
 
     drawRule(doc, M, cursorY, contentWidth);
     cursorY += 16;
