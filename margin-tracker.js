@@ -32,6 +32,7 @@
     loading: true,
     error: null,
     year: getYearFromInput(),
+    mockMode: false,
     view: 'year',
     month: new Date().getMonth() + 1,
     quarter: Math.ceil((new Date().getMonth() + 1) / 3),
@@ -46,6 +47,156 @@
   };
   let refreshDebounceTimer = null;
   let refreshIntervalId = null;
+
+  function isMockModeEnabled() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const raw = params.get('demo') || params.get('mock') || localStorage.getItem('marginTrackerDemo');
+      return ['1', 'true', 'yes', 'on'].includes(String(raw).toLowerCase());
+    } catch {
+      return false;
+    }
+  }
+
+  function makeDate(year, month, day) {
+    const safeMonth = clamp(month, 1, 12) - 1;
+    const safeDay = clamp(day, 1, new Date(year, safeMonth + 1, 0).getDate());
+    return new Date(year, safeMonth, safeDay);
+  }
+
+  function buildMockMarginData(year) {
+    const clientTemplates = [
+      { name: 'Northstar Roofing', status: 'Active', baseRevenue: 17800, baseExpense: 10400 },
+      { name: 'Pinecrest Dental', status: 'Active', baseRevenue: 22400, baseExpense: 12100 },
+      { name: 'Summit Logistics', status: 'Watch', baseRevenue: 19600, baseExpense: 14800 },
+      { name: 'Harbor Law Group', status: 'Active', baseRevenue: 24100, baseExpense: 12400 },
+      { name: 'Bluebird Fitness', status: 'Risk', baseRevenue: 13200, baseExpense: 11100 },
+      { name: 'Atlas Manufacturing', status: 'Active', baseRevenue: 28600, baseExpense: 17100 },
+      { name: 'Cedar Retail', status: 'Watch', baseRevenue: 14900, baseExpense: 10300 },
+      { name: 'Orbit SaaS', status: 'Active', baseRevenue: 30200, baseExpense: 16200 }
+    ];
+
+    const clients = clientTemplates.map((template, idx) => {
+      const revenue = Math.round(template.baseRevenue * (0.88 + (idx % 3) * 0.07));
+      const expense = Math.round(template.baseExpense * (0.92 + (idx % 2) * 0.05));
+      return {
+        id: idx + 1,
+        name: template.name,
+        status: template.status,
+        created_at: `${year - 1}-11-${String((idx % 9) + 1).padStart(2, '0')}T00:00:00.000Z`,
+        total_due: revenue,
+        amount_paid: Math.round(revenue * (0.78 + (idx % 3) * 0.05)),
+        balance: Math.max(0, revenue - Math.round(revenue * (0.78 + (idx % 3) * 0.05)))
+      };
+    });
+
+    const payments = [];
+    const expenses = [];
+    const categoriesByClient = ['Labor', 'Marketing', 'Software', 'Contractors', 'Operations', 'Taxes', 'Misc'];
+    const invoiceCycle = ['Paid', 'Partially Paid', 'Billed', 'Overdue', 'Pending'];
+
+    for (const client of clients) {
+      for (const offset of [0, 1]) {
+        const targetYear = year - offset;
+        for (let month = 1; month <= 12; month += 1) {
+          const seasonality = 0.88 + ((month + client.id) % 6) * 0.06;
+          const yearFactor = offset === 0 ? 1 : 0.92;
+          const revenue = Math.round((16000 + client.id * 1300 + month * 240) * seasonality * yearFactor);
+          const directExpense = Math.round(revenue * (0.48 + ((client.id + month) % 4) * 0.035));
+          const taxExpense = Math.round(revenue * (0.06 + (month % 3) * 0.008));
+          const paymentDay = ((client.id * 3 + month) % 24) + 4;
+          const expenseDay = ((client.id * 5 + month) % 20) + 6;
+
+          payments.push({
+            id: payments.length + 1,
+            client_id: client.id,
+            amount: revenue,
+            payment_date: makeDate(targetYear, month, paymentDay).toISOString().slice(0, 10)
+          });
+
+          expenses.push({
+            id: expenses.length + 1,
+            client_id: client.id,
+            client_name: client.name,
+            category: categoriesByClient[(client.id + month) % categoriesByClient.length],
+            project: `${client.name} ${month} Retainer`,
+            invoice_status: invoiceCycle[(client.id + month) % invoiceCycle.length],
+            amount: directExpense,
+            expense_type: month % 2 === 0 ? 'recurring' : 'one-time',
+            recurring: month % 2 === 0,
+            expense_date: makeDate(targetYear, month, expenseDay).toISOString().slice(0, 10),
+            notes: month % 3 === 0
+              ? JSON.stringify({
+                  kind: 'quick-margin',
+                  jobTotal: revenue,
+                  moneyReceived: Math.round(revenue * 0.72),
+                  jobCost: directExpense,
+                  marginPct: computeMarginPct(revenue, directExpense),
+                  noteText: `Mock margin snapshot for ${client.name}`
+                })
+              : `Mock expense for ${client.name}`
+          });
+
+          expenses.push({
+            id: expenses.length + 1,
+            client_id: client.id,
+            client_name: client.name,
+            category: 'Taxes',
+            project: `${client.name} Tax Reserve`,
+            invoice_status: 'Paid',
+            amount: taxExpense,
+            expense_type: 'recurring',
+            recurring: true,
+            expense_date: makeDate(targetYear, month, Math.min(28, expenseDay + 2)).toISOString().slice(0, 10),
+            notes: `Quarterly tax reserve for ${client.name}`
+          });
+        }
+      }
+    }
+
+    const sharedExpenses = [];
+    let sharedExpenseId = expenses.length;
+    for (const targetYear of [year - 1, year]) {
+      for (let month = 1; month <= 12; month += 1) {
+        const sharedOps = Math.round(3800 + month * 180 + (month % 4) * 250);
+        const sharedTax = Math.round(2100 + month * 90 + (month % 3) * 120);
+
+        sharedExpenses.push({
+          id: sharedExpenseId += 1,
+          client_id: null,
+          client_name: 'Shared Overhead',
+          category: 'Operations',
+          project: 'Office Overhead',
+          invoice_status: 'Paid',
+          amount: sharedOps,
+          expense_type: 'recurring',
+          recurring: true,
+          expense_date: makeDate(targetYear, month, 5).toISOString().slice(0, 10),
+          notes: 'Shared operating overhead'
+        });
+
+        sharedExpenses.push({
+          id: sharedExpenseId += 1,
+          client_id: null,
+          client_name: 'Shared Overhead',
+          category: 'Taxes',
+          project: 'Estimated Taxes',
+          invoice_status: 'Paid',
+          amount: sharedTax,
+          expense_type: 'recurring',
+          recurring: true,
+          expense_date: makeDate(targetYear, month, 20).toISOString().slice(0, 10),
+          notes: 'Shared tax reserve'
+        });
+      }
+    }
+
+    return {
+      clients,
+      payments,
+      expenses: expenses.concat(sharedExpenses)
+    };
+  }
 
   function getYearFromInput() {
     const parsed = Number.parseInt(yearInput?.value, 10);
@@ -933,6 +1084,9 @@
     state.page = model.currentPage;
 
     const periodText = periodLabel(state.year, state.view, state.month, state.quarter);
+    const modeChip = state.mockMode
+      ? '<span class="mt-chip"><strong>Demo</strong> data</span>'
+      : '<span class="mt-chip"><strong>Live</strong> data</span>';
     const monthSelect = state.view === 'month' ? `
       <select data-control="month" aria-label="Select month">
         ${monthNames.map((label, idx) => `<option value="${idx + 1}" ${idx + 1 === state.month ? 'selected' : ''}>${label}</option>`).join('')}
@@ -957,6 +1111,7 @@
               <button class="mt-view-btn" data-action="set-view" data-view="quarter" aria-pressed="${state.view === 'quarter'}">Quarter</button>
               <button class="mt-view-btn" data-action="set-view" data-view="year" aria-pressed="${state.view === 'year'}">Year</button>
             </div>
+            ${modeChip}
             <span class="mt-chip"><strong>Year</strong> ${escapeHtml(String(state.year))}</span>
             ${monthSelect}
             ${quarterSelect}
@@ -1335,7 +1490,7 @@
     const spread = max - min || 1;
     const stepX = values.length > 1 ? width / (values.length - 1) : width / 2;
     const points = values.map((value, idx) => ({
-      x: idx * stepX,
+      x: values.length === 1 ? width / 2 : idx * stepX,
       y: height - 26 - ((value - min) / spread) * (height - 56)
     }));
     const line = points.map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
@@ -1368,8 +1523,8 @@
           return `
             <div class="mt-list-item" style="flex-direction:column;">
               <div style="display:flex; justify-content:space-between; gap:10px; width:100%; margin-bottom:8px;">
-                <div>
-                  <strong>${escapeHtml(row.name)}</strong>
+                <div style="min-width:0; overflow:hidden;">
+                  <strong style="display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(row.name)}</strong>
                   <small>${escapeHtml(formatDelta(row.marginPct, 'percent'))} margin | ${escapeHtml(formatMoney(row.revenue))} revenue</small>
                 </div>
                 <div style="text-align:right;">
@@ -1963,6 +2118,16 @@
     const currentRequest = ++state.refreshCounter;
     const year = getYearFromInput();
     state.year = year;
+    state.mockMode = isMockModeEnabled();
+
+    if (state.mockMode) {
+      state.data = buildMockMarginData(year);
+      if (currentRequest !== state.refreshCounter) return;
+      state.loading = false;
+      state.error = null;
+      render();
+      return;
+    }
 
     try {
       const res = await fetch(`/api/finance/margin/dashboard?year=${encodeURIComponent(year)}`);

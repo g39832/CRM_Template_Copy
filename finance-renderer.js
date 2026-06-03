@@ -387,6 +387,7 @@ async function getSupabaseClient() {
 
 async function uploadPDFToSupabaseDirect(files, groupKey) {
   const supabaseClient = await getSupabaseClient();
+  const config = await getSupabaseConfig();
   const uploaded = [];
 
   for (const file of files) {

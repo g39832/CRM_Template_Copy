@@ -1,10 +1,12 @@
 const path = require('path');
+const fs = require('fs/promises');
 const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'crm-files';
 const STORAGE_BACKEND = (process.env.STORAGE_BACKEND || 'auto').toLowerCase();
+const LOCAL_UPLOAD_ROOT = path.join(__dirname, '..', 'uploads');
 
 const supabase = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -21,6 +23,40 @@ function isRemoteStorageEnabled() {
   if (STORAGE_BACKEND === 'local') return false;
   if (STORAGE_BACKEND === 'supabase') return Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
   return Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
+}
+
+function isLocalStorageEnabled() {
+  return STORAGE_BACKEND === 'local' || !isRemoteStorageEnabled();
+}
+
+function safePrefix(prefix) {
+  return String(prefix || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => segment.replace(/[^a-zA-Z0-9_-]/g, '_'))
+    .join(path.sep);
+}
+
+function safeFileName(fileName) {
+  return path.basename(String(fileName || 'file')).replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function localObjectPath(prefix, fileName) {
+  const cleanPrefix = safePrefix(prefix);
+  const cleanFile = safeFileName(fileName);
+  return path.join(LOCAL_UPLOAD_ROOT, cleanPrefix, cleanFile);
+}
+
+function localPublicPath(prefix, fileName) {
+  const cleanPrefix = safePrefix(prefix).replace(new RegExp(`\\${path.sep}`, 'g'), '/');
+  const cleanFile = safeFileName(fileName);
+  return `/uploads/${cleanPrefix ? `${cleanPrefix}/` : ''}${encodeURIComponent(cleanFile)}`;
+}
+
+async function ensureLocalBucket(prefix) {
+  const dir = path.dirname(localObjectPath(prefix, 'placeholder.pdf'));
+  await fs.mkdir(dir, { recursive: true });
 }
 
 function storageHeaders(extra = {}) {
@@ -57,6 +93,14 @@ async function ensureRemoteBucket() {
 }
 
 async function remoteUploadFile(file, objectPath) {
+  if (isLocalStorageEnabled()) {
+    const prefix = path.dirname(objectPath);
+    const fileName = path.basename(objectPath);
+    await ensureLocalBucket(prefix);
+    await fs.writeFile(localObjectPath(prefix, fileName), file.buffer);
+    return objectPath;
+  }
+
   console.log('remoteUploadFile called');
   console.log('Supabase bucket:', SUPABASE_STORAGE_BUCKET);
   await ensureRemoteBucket();
@@ -85,6 +129,41 @@ async function remoteUploadFile(file, objectPath) {
 }
 
 async function remoteListFiles(prefix) {
+  if (isLocalStorageEnabled()) {
+    await ensureLocalBucket(prefix);
+    const dir = path.join(LOCAL_UPLOAD_ROOT, safePrefix(prefix));
+    const files = [];
+
+    async function walk(currentDir) {
+      let entries = [];
+      try {
+        entries = await fs.readdir(currentDir, { withFileTypes: true });
+      } catch (err) {
+        if (err && err.code === 'ENOENT') return;
+        throw err;
+      }
+
+      for (const entry of entries) {
+        const fullPath = path.join(currentDir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(fullPath);
+          continue;
+        }
+
+        const relPath = path.relative(LOCAL_UPLOAD_ROOT, fullPath).split(path.sep).join('/');
+        files.push({
+          name: entry.name,
+          path: relPath,
+          url: localPublicPath(prefix, entry.name),
+          ext: path.extname(entry.name).toLowerCase()
+        });
+      }
+    }
+
+    await walk(dir);
+    return files;
+  }
+
   await ensureRemoteBucket();
   if (!supabase) {
     throw new Error('Supabase storage is not configured');
@@ -126,6 +205,19 @@ async function remoteListFiles(prefix) {
 }
 
 async function remoteDeleteFile(prefix, fileName) {
+  if (isLocalStorageEnabled()) {
+    const cleanPrefix = safePrefix(prefix);
+    const cleanFile = safeFileName(fileName);
+    const target = localObjectPath(cleanPrefix, cleanFile);
+    try {
+      await fs.unlink(target);
+      return true;
+    } catch (err) {
+      if (err && err.code === 'ENOENT') return false;
+      throw err;
+    }
+  }
+
   await ensureRemoteBucket();
   if (!supabase) {
     throw new Error('Supabase storage is not configured');
@@ -163,6 +255,7 @@ async function remoteDeleteFile(prefix, fileName) {
 
 module.exports = {
   isRemoteStorageEnabled,
+  isLocalStorageEnabled,
   ensureRemoteBucket,
   remoteUploadFile,
   remoteListFiles,

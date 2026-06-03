@@ -377,6 +377,94 @@ async function deleteMarginEntryById(id) {
   }
 }
 
+// ======================================================
+// JOBS HELPERS
+// ======================================================
+async function fetchJobsByClientId(clientId) {
+  ensureConfigured();
+  try {
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('*')
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(normalizeJobRow);
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return [];
+    throw error;
+  }
+}
+
+async function fetchJobById(id) {
+  ensureConfigured();
+  try {
+    const { data, error } = await supabase
+      .from('jobs').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return data ? normalizeJobRow(data) : null;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return null;
+    throw error;
+  }
+}
+
+function normalizeJobRow(row) {
+  return {
+    ...row,
+    total_due: asNumber(row.total_due),
+    amount_paid: asNumber(row.amount_paid),
+    balance: asNumber(row.balance),
+    job_cost: asNumber(row.job_cost)
+  };
+}
+
+async function insertJob(row) {
+  ensureConfigured();
+  const payload = {
+    client_id: row.client_id,
+    title: row.title || 'New Job',
+    status: row.status || 'Prospect',
+    scope_of_work: row.scope_of_work || '',
+    total_due: asNumber(row.total_due),
+    amount_paid: 0,
+    balance: asNumber(row.total_due),
+    job_cost: asNumber(row.job_cost),
+    created_at: toDateValue(row.created_at) || new Date().toISOString()
+  };
+  try {
+    const { data, error } = await supabase.from('jobs').insert(payload).select().maybeSingle();
+    if (error) throw error;
+    return data ? normalizeJobRow(data) : null;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return null;
+    throw error;
+  }
+}
+
+async function updateJobById(id, values) {
+  ensureConfigured();
+  try {
+    const { data, error } = await supabase.from('jobs').update(values).eq('id', id).select().maybeSingle();
+    if (error) throw error;
+    return data ? normalizeJobRow(data) : null;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return null;
+    throw error;
+  }
+}
+
+async function deleteJobById(id) {
+  ensureConfigured();
+  try {
+    const { error } = await supabase.from('jobs').delete().eq('id', id);
+    if (error) throw error;
+  } catch (error) {
+    if (isOfflineOrMissingTableError(error)) return;
+    throw error;
+  }
+}
+
 async function countRows(table, filterFn = null) {
   const rows = await fetchAll(table);
   return filterFn ? rows.filter(filterFn).length : rows.length;
@@ -805,6 +893,57 @@ async function query(text, params = []) {
   if (sql === 'select count(*)::int as total_clients from clients where balance > 0') {
     const total = await countRows('clients', (row) => asNumber(row.balance) > 0);
     return makeResult([{ overdue_clients: total }]);
+  }
+
+  // ---- JOBS ----
+  if (sql === 'select * from jobs where client_id = $1 order by created_at desc') {
+    const rows = await fetchJobsByClientId(params[0]);
+    return makeResult(rows);
+  }
+
+  if (sql === 'select * from jobs where id = $1') {
+    const row = await fetchJobById(params[0]);
+    return makeResult(row ? [row] : []);
+  }
+
+  if (sql.startsWith('insert into jobs (client_id, title, status, scope_of_work, total_due, amount_paid, balance, job_cost, created_at)')) {
+    const inserted = await insertJob({
+      client_id: params[0],
+      title: params[1],
+      status: params[2],
+      scope_of_work: params[3],
+      total_due: params[4],
+      amount_paid: 0,
+      balance: params[5],
+      job_cost: params[6],
+      created_at: params[7]
+    });
+    return makeResult(inserted ? [inserted] : []);
+  }
+
+  if (sql.startsWith('update jobs set title=$1, status=$2, scope_of_work=$3, total_due=$4, balance=$5, job_cost=$6 where id=$7')) {
+    const updated = await updateJobById(params[6], {
+      title: params[0],
+      status: params[1],
+      scope_of_work: params[2],
+      total_due: params[3],
+      balance: params[4],
+      job_cost: params[5]
+    });
+    return makeResult(updated ? [updated] : []);
+  }
+
+  if (sql === 'update jobs set amount_paid=$1, balance=$2 where id=$3 returning *') {
+    const updated = await updateJobById(params[2], {
+      amount_paid: params[0],
+      balance: params[1]
+    });
+    return makeResult(updated ? [updated] : []);
+  }
+
+  if (sql === 'delete from jobs where id = $1') {
+    await deleteJobById(params[0]);
+    return makeResult([]);
   }
 
   throw new Error(`Unsupported Supabase query: ${String(text || '').trim()}`);

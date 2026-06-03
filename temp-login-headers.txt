@@ -1,0 +1,14 @@
+HTTP/1.1 200 OK
+X-Powered-By: Express
+RateLimit-Policy: 20;w=900
+RateLimit-Limit: 20
+RateLimit-Remaining: 19
+RateLimit-Reset: 764
+Content-Type: application/json; charset=utf-8
+Content-Length: 16
+ETag: W/"10-oV4hJxRVSENxc/wX8+mA4/Pe4tA"
+Set-Cookie: crm.template.sid=s%3A0Po8JdOlRbtNJ3GaVxJQT4T4AN-3lXZh.EnsF%2FrOIjyPEgcQRbyC1eoluDb6AblDWX3wTI5ndYAU; Path=/; Expires=Thu, 04 Jun 2026 08:35:14 GMT; HttpOnly; SameSite=Lax
+Date: Wed, 03 Jun 2026 20:35:14 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+

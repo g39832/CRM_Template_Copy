@@ -16,6 +16,22 @@ document.addEventListener("DOMContentLoaded", () => {
     resetSection.style.display = "none";
   }
 
+  async function readErrorMessage(response, fallback) {
+    try {
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const data = await response.json();
+        return data?.error || data?.message || fallback;
+      }
+
+      const text = await response.text();
+      return text.trim() || fallback;
+    } catch (err) {
+      console.warn("Failed to read error response:", err);
+      return fallback;
+    }
+  }
+
   // =========================
   // LOGIN
   // =========================
@@ -38,15 +54,8 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify({ password })
       });
 
-      // If server returns 404 or 500
       if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
-      }
-
-      // Ensure response is JSON
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("Server did not return JSON.");
+        throw new Error(await readErrorMessage(response, `Server error: ${response.status}`));
       }
 
       const data = await response.json();
@@ -102,12 +111,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         if (!response.ok) {
-          throw new Error(`Server error: ${response.status}`);
-        }
-
-        const contentType = response.headers.get("content-type");
-        if (!contentType || !contentType.includes("application/json")) {
-          throw new Error("Server did not return JSON.");
+          throw new Error(await readErrorMessage(response, `Server error: ${response.status}`));
         }
 
         const data = await response.json();

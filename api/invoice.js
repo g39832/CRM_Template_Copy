@@ -102,4 +102,64 @@ router.post('/send-estimate/:clientId', asyncHandler((req, res) =>
   handleDocumentGeneration(req, res, 'estimate')
 ));
 
+// ======================================================
+// JOB-BASED INVOICE / ESTIMATE
+// ======================================================
+async function handleJobDocumentGeneration(req, res, mode) {
+  try {
+    const { jobId } = req.params;
+
+    // Fetch the job
+    const { rows: jobRows } = await db.query('SELECT * FROM jobs WHERE id = $1', [jobId]);
+    const job = jobRows[0];
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    // Fetch the client for contact info
+    const { data: client, error } = await supabase
+      .from('clients').select('*').eq('id', job.client_id).single();
+    if (error || !client) return res.status(404).json({ error: 'Client not found' });
+
+    const storedCompanyProfile = await readStoredCompanyProfile();
+    if (storedCompanyProfile?.logoUrl) {
+      const match = storedCompanyProfile.logoUrl.match(/^data:image\/[^;]+;base64,(.+)$/);
+      if (match) storedCompanyProfile.logoBase64 = match[1];
+    }
+    const normalizedProfile = normalizeCompanyProfile(storedCompanyProfile || {});
+
+    // Build invoice data from the job record (not the client financial fields)
+    const { buildInvoiceData, generateInvoicePDF } = require('../services/invoice');
+    const invoiceData = buildInvoiceData({
+      client: {
+        ...client,
+        scope_of_work: job.scope_of_work || client.scope_of_work || '',
+        total_due: job.total_due,
+        amount_paid: job.amount_paid,
+        balance: job.balance,
+        id: `${client.id}-J${job.id}`
+      },
+      companyProfile: normalizedProfile,
+      mode
+    });
+
+    const pdfBuffer = await generateInvoicePDF(invoiceData, mode);
+    const safeClientName = String(client.name || 'client')
+      .trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'client';
+    const filename = `${safeClientName}-${invoiceData.invoiceNumber}.pdf`;
+
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${filename}"` });
+    return res.send(pdfBuffer);
+  } catch (err) {
+    console.error(`Job ${mode} generation failed:`, err);
+    res.status(500).json({ error: `Failed to generate ${mode}` });
+  }
+}
+
+router.post('/jobs/:jobId/invoice', asyncHandler((req, res) =>
+  handleJobDocumentGeneration(req, res, 'invoice')
+));
+
+router.post('/jobs/:jobId/estimate', asyncHandler((req, res) =>
+  handleJobDocumentGeneration(req, res, 'estimate')
+));
+
 module.exports = router;

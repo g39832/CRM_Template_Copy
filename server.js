@@ -35,6 +35,18 @@ const { startBackupScheduler } = require('./services/db-backup');
 const app = express();
 app.set('trust proxy', 1);
 const disableAuth = process.env.NODE_ENV !== 'production' || process.env.DISABLE_AUTH === 'true';
+const faviconSvg = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CRM Template">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#47a7f5"/>
+      <stop offset="100%" stop-color="#1c92d2"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#0f2027"/>
+  <rect x="6" y="6" width="52" height="52" rx="13" fill="url(#g)"/>
+  <path d="M18 24h28v6H18zm0 10h20v6H18zm0 10h24v6H18z" fill="#ffffff" opacity="0.96"/>
+</svg>`);
 
 // ===== BODY PARSING =====
 app.use(express.json({ limit: '5mb' }));
@@ -59,14 +71,15 @@ app.use(
     proxy: true,
     resave: false,
     saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 1000 * 60 * 60 * 12
-    }
-  })
-);
+      cookie: {
+        httpOnly: true,
+        sameSite: 'lax',
+        // Allow local HTTP testing unless secure cookies are explicitly enabled.
+        secure: process.env.SESSION_COOKIE_SECURE === 'true',
+        maxAge: 1000 * 60 * 60 * 12
+      }
+    })
+  );
 
 function isAuthenticated(req) {
   if (disableAuth) return true;
@@ -125,17 +138,19 @@ const emailSettingsRoutes = require('./api/email-settings');
 const invoiceRoutes = require('./api/invoice');
 const pdfRoutes = require('./api/pdf');
 const notesRoutes = require('./api/notes');
+const jobsRoutes = require('./api/jobs');
 const supabaseConfigRoutes = require('./api/supabase-config');
 
 // Mount routers under /api
-app.use('/api', authRoutes);       // /api/login, /api/change-password
-app.use('/api', clientsRoutes);    // /api/clients/...
-app.use('/api/company-profile', companyProfileRoutes); // /api/company-profile
-app.use('/api/email-settings', emailSettingsRoutes); // /api/email-settings
-app.use('/api', invoiceRoutes);    // /api/send-invoice/:clientId
-app.use('/api/pdf', pdfRoutes);    // /api/pdf/*
-app.use('/api/supabase-config', supabaseConfigRoutes); // /api/supabase-config
-app.use('/api/notes', notesRoutes); // /api/notes/*
+app.use('/api', authRoutes);
+app.use('/api', clientsRoutes);
+app.use('/api/company-profile', companyProfileRoutes);
+app.use('/api/email-settings', emailSettingsRoutes);
+app.use('/api', invoiceRoutes);
+app.use('/api/pdf', pdfRoutes);
+app.use('/api/supabase-config', supabaseConfigRoutes);
+app.use('/api/notes', notesRoutes);
+app.use('/api/jobs', jobsRoutes);
 
 // ===== BLOCK SENSITIVE FILES FROM STATIC ACCESS =====
 const blockedStaticPaths = [
@@ -161,6 +176,11 @@ app.use('/assets', express.static(path.join(__dirname, 'assets'), {
   etag: true,
   lastModified: true
 }));
+app.get('/favicon.ico', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.type('image/svg+xml');
+  res.send(faviconSvg);
+});
 app.use(express.static(path.join(__dirname), {
   etag: true,
   lastModified: true,

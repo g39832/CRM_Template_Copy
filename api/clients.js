@@ -186,13 +186,14 @@ router.post('/update-project', asyncHandler(async (req, res) => {
   const totalDueInput = req.body.total_due;
   const scopeOfWork = parseStringField(req.body.scope_of_work ?? '', 'scope_of_work', { required: false, maxLength: 5000, defaultValue: '' });
   const jobCostInput = req.body.job_cost;
-  const finalName = name || `${fName} ${lName}`.trim();
 
   await db.schemaReady;
   // Fetch existing client — use * to avoid errors if new columns don't exist yet in Supabase
   const clientResult = await db.query('SELECT * FROM clients WHERE id = $1', [id]);
   const clientRow = clientResult.rows[0];
   if (!clientRow) return res.status(404).json({ error: 'Client not found' });
+
+  const fallbackName = String(clientRow.name || '').trim();
 
   const newTotal = typeof totalDueInput !== 'undefined'
     ? parseNumberField(totalDueInput, 'total_due', { required: false, defaultValue: Number(clientRow.total_due || 0) })
@@ -201,6 +202,11 @@ router.post('/update-project', asyncHandler(async (req, res) => {
   const newJobCost = typeof jobCostInput !== 'undefined'
     ? parseNumberField(jobCostInput, 'job_cost', { required: false, defaultValue: Number(clientRow.job_cost || 0) })
     : Number(clientRow.job_cost || 0);
+  const finalName = name || `${fName} ${lName}`.trim() || fallbackName;
+  const finalStatus = status || String(clientRow.status || 'Lead').trim() || 'Lead';
+  if (!finalName) {
+    return res.status(400).json({ error: 'Name required' });
+  }
 
   // Try to save scope_of_work and job_cost — gracefully skip if columns don't exist yet
   try {
@@ -209,7 +215,7 @@ router.post('/update-project', asyncHandler(async (req, res) => {
       SET name = $1, phone = $2, email = $3, address = $4, status = $5, total_due = $6, balance = $7,
           scope_of_work = $8, job_cost = $9
       WHERE id = $10
-    `, [finalName, phone, email, address, status, newTotal || 0, newBalance, scopeOfWork, newJobCost, id]);
+    `, [finalName, phone, email, address, finalStatus, newTotal || 0, newBalance, scopeOfWork, newJobCost, id]);
   } catch (colErr) {
     // Fallback: save without new columns if they don't exist in DB yet
     if (String(colErr?.message || '').toLowerCase().includes('column') ||
@@ -218,7 +224,7 @@ router.post('/update-project', asyncHandler(async (req, res) => {
         UPDATE clients
         SET name = $1, phone = $2, email = $3, address = $4, status = $5, total_due = $6, balance = $7
         WHERE id = $8
-      `, [finalName, phone, email, address, status, newTotal || 0, newBalance, id]);
+      `, [finalName, phone, email, address, finalStatus, newTotal || 0, newBalance, id]);
     } else {
       throw colErr;
     }

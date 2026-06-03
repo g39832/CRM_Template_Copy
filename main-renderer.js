@@ -597,13 +597,14 @@ window.api = {
   },
 
   async updateProject(data) {
-    if (data.fName || data.lName) {
-      data.name = `${data.fName || ''} ${data.lName || ''}`.trim();
+    const payload = { ...data };
+    if (payload.fName || payload.lName) {
+      payload.name = `${payload.fName || ''} ${payload.lName || ''}`.trim();
     }
     const res = await fetch('/api/update-project', {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data)
+      body: JSON.stringify(payload)
     });
     if (!res.ok) throw new Error("Update failed");
     return res.json();
@@ -653,6 +654,7 @@ window.api = {
 
   async uploadPDFToSupabaseDirect(files, clientId) {
     const supabaseClient = await this.getSupabaseClient();
+    const config = await this.getSupabaseConfig();
     const uploaded = [];
 
     for (const file of files) {
@@ -797,10 +799,10 @@ window.api = {
     return this._downloadDocument(clientId, 'estimate');
   },
 
-  async _downloadDocument(clientId, mode) {
-    const endpoint = mode === 'estimate'
-      ? `/api/send-estimate/${clientId}`
-      : `/api/send-invoice/${clientId}`;
+  async _downloadDocument(clientId, mode, isJob = false) {
+    const endpoint = isJob
+      ? `/api/jobs/${clientId}/${mode === 'estimate' ? 'estimate' : 'invoice'}`
+      : (mode === 'estimate' ? `/api/send-estimate/${clientId}` : `/api/send-invoice/${clientId}`);
     const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -808,27 +810,72 @@ window.api = {
     });
     if (!res.ok) {
       let message = `Failed to generate ${mode}`;
-      try {
-        const data = await res.json();
-        message = data?.error || data?.message || message;
-      } catch { /* ignore */ }
+      try { const d = await res.json(); message = d?.error || d?.message || message; } catch { /* ignore */ }
       throw new Error(message);
     }
-
     const blob = await res.blob();
-    const contentDisposition = res.headers.get('content-disposition') || '';
-    const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
-    const filename = filenameMatch?.[1] || `${mode}-${clientId}.pdf`;
+    const cd = res.headers.get('content-disposition') || '';
+    const match = cd.match(/filename="?([^"]+)"?/i);
+    const filename = match?.[1] || `${mode}-${clientId}.pdf`;
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    link.href = url; link.download = filename;
+    document.body.appendChild(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-
     return { success: true, filename };
+  },
+
+  // ==========================
+  // JOBS API
+  // ==========================
+  async listJobs(clientId) {
+    const res = await fetch(`/api/jobs/client/${clientId}`);
+    if (!res.ok) throw new Error('Failed to list jobs');
+    return res.json();
+  },
+
+  async createJob(payload) {
+    const res = await fetch('/api/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Failed to create job');
+    return res.json();
+  },
+
+  async updateJob(jobId, payload) {
+    const res = await fetch(`/api/jobs/${jobId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Failed to update job');
+    return res.json();
+  },
+
+  async addJobPayment(jobId, amount) {
+    const res = await fetch(`/api/jobs/${jobId}/payment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount })
+    });
+    if (!res.ok) throw new Error('Failed to add job payment');
+    return res.json();
+  },
+
+  async deleteJob(jobId) {
+    const res = await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete job');
+    return res.json();
+  },
+
+  async sendJobInvoice(jobId) {
+    return this._downloadDocument(jobId, 'invoice', true);
+  },
+
+  async sendJobEstimate(jobId) {
+    return this._downloadDocument(jobId, 'estimate', true);
   },
 
   async getEmailSettings() {
@@ -1380,14 +1427,15 @@ function buildClientCard(c, term = "") {
   const lName = rest.join(" ");
   const color = STATUS_COLORS[c.status] || "#007bff";
   const displayName = `${fName || ""} ${lName || ""}`.trim();
+  const safeDisplayName = escapeHtml(displayName);
   const displayPhone = c.phone || "";
   const safeTerm = term ? term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : "";
   const nameHighlighted = safeTerm
-    ? displayName.replace(new RegExp(safeTerm, "ig"), (m) => `<mark>${m}</mark>`)
-    : displayName;
+    ? safeDisplayName.replace(new RegExp(safeTerm, "ig"), (m) => `<mark>${m}</mark>`)
+    : safeDisplayName;
   const phoneHighlighted = safeTerm
-    ? displayPhone.replace(new RegExp(safeTerm, "ig"), (m) => `<mark>${m}</mark>`)
-    : displayPhone;
+    ? escapeHtml(displayPhone).replace(new RegExp(safeTerm, "ig"), (m) => `<mark>${m}</mark>`)
+    : escapeHtml(displayPhone);
 
   return `
     <div class="client-card" data-id="${c.id}" data-name="${displayName}" style="border-left:4px solid ${color};">
@@ -1402,7 +1450,7 @@ function buildClientCard(c, term = "") {
       ${c.email ? `<div class="client-meta" style="font-size:0.82rem; opacity:0.8;">✉️ ${c.email}</div>` : ''}
 
       <div class="client-status" style="color:${color};">
-        ${c.status || "Lead"}
+        ${escapeHtml(c.status || "Lead")}
       </div>
     </div>
   `;
@@ -1433,6 +1481,7 @@ async function openClient(id) {
     const client = clients.find(c => c.id == id);
     if (!client) return;
     activeClient = client;
+    projectPanel.dataset.clientName = client.name || "";
 
     const [fName, ...rest] = (client.name || "").split(" ");
     const lName = rest.join(" ");
@@ -1456,20 +1505,20 @@ async function openClient(id) {
           <div class="panel-title-block">
             <div class="panel-kicker">Client Workspace</div>
             <h2 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-              ${fName || ""} ${lName || ""}
+              ${escapeHtml(fName || "")} ${escapeHtml(lName || "")}
               <span style="
                 font-size:0.7rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase;
                 padding:4px 10px; border-radius:999px; white-space:nowrap;
                 background:${STATUS_COLORS[client.status] || '#007bff'}22;
                 color:${STATUS_COLORS[client.status] || '#007bff'};
                 border:1px solid ${STATUS_COLORS[client.status] || '#007bff'}55;
-              ">${client.status || 'Lead'}</span>
+              ">${escapeHtml(client.status || 'Lead')}</span>
             </h2>
             <div class="panel-subtitle">Core contact, financial, and document details stay in one place.</div>
           </div>
           <div class="contact-quick-links panel-contact-links">
-            <span>📞 <a href="tel:${client.phone || ""}">${client.phone || ""}</a></span>
-            <span>✉️ <a href="mailto:${client.email || ""}">${client.email || ""}</a></span>
+            <span>📞 <a href="tel:${encodeURIComponent(client.phone || "")}">${escapeHtml(client.phone || "")}</a></span>
+            <span>✉️ <a href="mailto:${encodeURIComponent(client.email || "")}">${escapeHtml(client.email || "")}</a></span>
           </div>
           <span id="saveStatus" class="save-status-chip">Saved</span>
         </header>
@@ -1606,6 +1655,19 @@ async function openClient(id) {
             </div>
           </div>
 
+          <!-- ===== JOBS SECTION ===== -->
+          <div class="panel-section panel-full-span" id="jobs-section">
+            <div class="panel-section-header">
+              <h3>Jobs</h3>
+              <span class="panel-section-note">Each job has its own scope, financials, and documents.</span>
+            </div>
+            <div id="jobs-list" style="display:flex; flex-direction:column; gap:10px; margin-bottom:12px;"></div>
+            <button id="add-job-btn" class="btn-primary"
+              style="background:linear-gradient(135deg,#0f9b58,#27c97a); width:100%; padding:10px;">
+              + New Job
+            </button>
+          </div>
+
           <div class="panel-actions panel-full-span">
             <button id="estimateBtn" class="btn-primary" style="background:linear-gradient(135deg,#0f9b58,#27c97a); flex:2;">Download Estimate</button>
             <button id="invoiceBtn" class="btn-primary" style="background:linear-gradient(135deg,#1c92d2,#47a7f5); flex:2;">Download Invoice</button>
@@ -1633,6 +1695,7 @@ async function openClient(id) {
     loadPDFs(id);
     setupFinancialSection(client);
     setupNotesSection(id);
+    setupJobsSection(id);
     setupDirtyTracking();
     setSaveStatus("saved");
     // SHOW MODAL
@@ -1978,6 +2041,342 @@ async function setupNotesSection(clientId) {
   newNoteInput.addEventListener("input", markDirty);
 
   loadNotes();
+}
+
+// ======================================================
+// JOBS SECTION
+// ======================================================
+async function setupJobsSection(clientId) {
+  const jobsList = document.getElementById('jobs-list');
+  const addJobBtn = document.getElementById('add-job-btn');
+  if (!jobsList || !addJobBtn) return;
+
+  const STATUS_COLORS_JOB = {
+    Prospect: '#a780ee', Approved: '#6dddef', Completed: '#f0ad4e',
+    Invoice: '#dfa575', Closed: '#aa1b1b'
+  };
+
+  async function loadJobs() {
+    jobsList.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Loading jobs...</div>';
+    try {
+      const data = await window.api.listJobs(clientId);
+      const jobs = data.jobs || [];
+      jobsList.innerHTML = '';
+
+      if (jobs.length === 0) {
+        jobsList.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No jobs yet. Click "+ New Job" to add one.</div>';
+        return;
+      }
+
+      jobs.forEach(job => {
+        const color = STATUS_COLORS_JOB[job.status] || '#007bff';
+        const margin = job.total_due > 0
+          ? Math.round(((job.total_due - job.job_cost) / job.total_due) * 100)
+          : null;
+
+        const card = document.createElement('div');
+        card.style.cssText = `
+          background:rgba(15,32,39,0.28); border:1px solid rgba(122,183,214,0.14);
+          border-left:4px solid ${color}; border-radius:12px; padding:14px 16px;
+          cursor:pointer; transition:all 0.2s ease;
+        `;
+        card.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;color:var(--text-main);font-size:0.95rem;">${escapeHtml(job.title || 'Untitled Job')}</div>
+              <div style="font-size:0.82rem;color:var(--text-muted);margin-top:3px;">
+                Created ${new Date(job.created_at).toLocaleDateString()}
+                ${margin !== null ? ` &nbsp;·&nbsp; Margin: ${margin}%` : ''}
+              </div>
+            </div>
+            <div style="text-align:right;flex-shrink:0;">
+              <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
+                color:${color};background:${color}22;border:1px solid ${color}44;
+                padding:3px 8px;border-radius:999px;display:inline-block;margin-bottom:4px;">
+                ${escapeHtml(job.status)}
+              </div>
+              <div style="font-size:0.9rem;font-weight:700;color:var(--text-main);">
+                $${formatMoney(job.total_due)}
+              </div>
+              <div style="font-size:0.78rem;color:var(--text-muted);">
+                Bal: $${formatMoney(job.balance)}
+              </div>
+            </div>
+          </div>
+        `;
+
+        card.addEventListener('mouseenter', () => {
+          card.style.borderColor = `rgba(71,167,245,0.55)`;
+          card.style.transform = 'translateY(-1px)';
+        });
+        card.addEventListener('mouseleave', () => {
+          card.style.borderColor = `rgba(122,183,214,0.14)`;
+          card.style.borderLeftColor = color;
+          card.style.transform = '';
+        });
+
+        card.addEventListener('click', () => openJobPanel(job, clientId, loadJobs));
+        jobsList.appendChild(card);
+      });
+    } catch (err) {
+      console.error(err);
+      jobsList.innerHTML = '<div style="color:#ff9aa2;font-size:13px;">Failed to load jobs.</div>';
+    }
+  }
+
+  addJobBtn.onclick = async () => {
+    try {
+      addJobBtn.disabled = true;
+      addJobBtn.textContent = 'Creating...';
+
+      // Pre-fill scope from company profile default
+      let defaultScope = '';
+      try {
+        const profile = await window.api.getCompanyProfile();
+        defaultScope = profile?.settings?.defaultScopeOfWork || '';
+      } catch (e) { /* skip */ }
+
+      const result = await window.api.createJob({
+        client_id: clientId,
+        title: 'New Job',
+        status: 'Prospect',
+        scope_of_work: defaultScope,
+        total_due: 0,
+        job_cost: 0
+      });
+
+      await loadJobs();
+      showToast('Job created', 'success');
+      // Auto-open the new job
+      if (result.job) openJobPanel(result.job, clientId, loadJobs);
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to create job', 'error');
+    } finally {
+      addJobBtn.disabled = false;
+      addJobBtn.textContent = '+ New Job';
+    }
+  };
+
+  loadJobs();
+}
+
+// ======================================================
+// JOB PANEL (modal overlay)
+// ======================================================
+function openJobPanel(job, clientId, onSave) {
+  // Remove any existing job panel
+  const existing = document.getElementById('jobPanelOverlay');
+  if (existing) existing.remove();
+
+  const STATUS_ORDER_JOB = ['Prospect', 'Approved', 'Completed', 'Invoice', 'Closed'];
+
+  const overlay = document.createElement('div');
+  overlay.id = 'jobPanelOverlay';
+  overlay.style.cssText = `
+    position:fixed;inset:0;background:rgba(5,12,16,0.72);
+    display:flex;align-items:center;justify-content:center;
+    z-index:20000;padding:16px;
+  `;
+
+  overlay.innerHTML = `
+    <div id="jobPanelCard" style="
+      position:relative;width:min(680px,100%);max-height:90vh;overflow-y:auto;
+      background:linear-gradient(180deg,rgba(44,83,100,0.98),rgba(32,58,67,0.98));
+      border:1px solid rgba(122,183,214,0.18);border-radius:18px;
+      padding:24px;box-shadow:0 24px 60px rgba(0,0,0,0.45);color:var(--text-main);
+    ">
+      <button id="closeJobPanel" style="
+        position:absolute;top:12px;right:14px;border:none;background:transparent;
+        color:var(--accent);font-size:1.5rem;cursor:pointer;line-height:1;
+      ">&times;</button>
+
+      <div style="margin-bottom:18px;">
+        <div style="font-size:0.75rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:4px;">Job Details</div>
+        <input id="job-title" type="text" value="${escapeHtml(job.title || 'New Job')}"
+          style="width:100%;box-sizing:border-box;font-size:1.2rem;font-weight:700;
+          background:transparent;border:none;border-bottom:1px solid rgba(122,183,214,0.3);
+          color:var(--text-main);padding:4px 0;outline:none;">
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div>
+          <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:4px;">Status</label>
+          <select id="job-status" style="width:100%;padding:10px 12px;border-radius:10px;
+            border:1px solid rgba(122,183,214,0.22);background:rgba(32,58,67,0.96);
+            color:var(--text-main);font-size:0.95rem;">
+            ${STATUS_ORDER_JOB.map(s => `<option value="${s}" ${job.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:4px;">Total Due</label>
+          <input id="job-total" type="text" inputmode="decimal" value="${formatMoney(job.total_due)}"
+            style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;
+            border:1px solid rgba(122,183,214,0.22);background:rgba(32,58,67,0.96);
+            color:var(--text-main);font-size:0.95rem;">
+        </div>
+        <div>
+          <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:4px;">Job Cost</label>
+          <input id="job-cost" type="text" inputmode="decimal" value="${formatMoney(job.job_cost)}"
+            style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;
+            border:1px solid rgba(122,183,214,0.22);background:rgba(32,58,67,0.96);
+            color:var(--text-main);font-size:0.95rem;">
+        </div>
+        <div>
+          <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:4px;">Margin</label>
+          <div id="job-margin-display" style="padding:10px 12px;border-radius:10px;
+            background:rgba(15,32,39,0.28);border:1px solid rgba(122,183,214,0.12);
+            font-weight:700;color:var(--text-main);">
+            ${job.total_due > 0 ? Math.round(((job.total_due - job.job_cost) / job.total_due) * 100) + '%' : '—'}
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <label style="font-size:0.8rem;color:var(--text-muted);">Amount Paid</label>
+          <strong style="color:var(--text-main);">$${formatMoney(job.amount_paid)}</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <label style="font-size:0.8rem;color:var(--text-muted);">Balance</label>
+          <strong style="color:var(--text-main);">$${formatMoney(job.balance)}</strong>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <input id="job-payment-input" type="text" inputmode="decimal" placeholder="Add Payment"
+            style="flex:1;padding:9px 12px;border-radius:10px;
+            border:1px solid rgba(122,183,214,0.22);background:rgba(32,58,67,0.96);
+            color:var(--text-main);font-size:0.9rem;">
+          <button id="job-add-payment-btn" class="btn-primary"
+            style="background:linear-gradient(135deg,#2f80ed,#4f8dfd);padding:9px 14px;white-space:nowrap;">
+            Add Payment
+          </button>
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:6px;">Scope of Work</label>
+        <textarea id="job-scope" rows="5" style="width:100%;box-sizing:border-box;padding:10px 12px;
+          border-radius:10px;border:1px solid rgba(122,183,214,0.22);
+          background:rgba(32,58,67,0.96);color:var(--text-main);
+          font-size:0.9rem;resize:vertical;font-family:inherit;"
+          placeholder="Describe the work for this job...">${escapeHtml(job.scope_of_work || '')}</textarea>
+      </div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button id="job-save-btn" class="btn-primary"
+          style="background:linear-gradient(135deg,#2f80ed,#4f8dfd);flex:2;">Save Job</button>
+        <button id="job-estimate-btn" class="btn-primary"
+          style="background:linear-gradient(135deg,#0f9b58,#27c97a);flex:2;">Download Estimate</button>
+        <button id="job-invoice-btn" class="btn-primary"
+          style="background:linear-gradient(135deg,#1c92d2,#47a7f5);flex:2;">Download Invoice</button>
+        <button id="job-delete-btn" class="btn-primary"
+          style="background:#4a5568;flex:1;">Delete</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Live margin update
+  const totalInput = overlay.querySelector('#job-total');
+  const costInput = overlay.querySelector('#job-cost');
+  const marginDisplay = overlay.querySelector('#job-margin-display');
+
+  function updateMargin() {
+    const t = parseMoney(totalInput.value) || 0;
+    const c = parseMoney(costInput.value) || 0;
+    marginDisplay.textContent = t > 0 ? Math.round(((t - c) / t) * 100) + '%' : '—';
+  }
+  totalInput.addEventListener('input', updateMargin);
+  costInput.addEventListener('input', updateMargin);
+
+  // Close
+  overlay.querySelector('#closeJobPanel').onclick = () => overlay.remove();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  // Save
+  overlay.querySelector('#job-save-btn').onclick = async () => {
+    const btn = overlay.querySelector('#job-save-btn');
+    try {
+      btn.disabled = true; btn.textContent = 'Saving...';
+      await window.api.updateJob(job.id, {
+        title: overlay.querySelector('#job-title').value.trim() || 'New Job',
+        status: overlay.querySelector('#job-status').value,
+        scope_of_work: overlay.querySelector('#job-scope').value,
+        total_due: parseMoney(overlay.querySelector('#job-total').value) || 0,
+        job_cost: parseMoney(overlay.querySelector('#job-cost').value) || 0
+      });
+      showToast('Job saved', 'success');
+      if (onSave) await onSave();
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to save job', 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Save Job';
+    }
+  };
+
+  // Add payment
+  overlay.querySelector('#job-add-payment-btn').onclick = async () => {
+    const amount = parseMoney(overlay.querySelector('#job-payment-input').value);
+    if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+    try {
+      const result = await window.api.addJobPayment(job.id, amount);
+      job.amount_paid = result.job.amount_paid;
+      job.balance = result.job.balance;
+      overlay.querySelector('#job-payment-input').value = '';
+      overlay.querySelectorAll('[style*="Amount Paid"] + strong, [style*="Balance"] + strong').forEach(el => el.remove());
+      // Refresh the panel
+      overlay.remove();
+      openJobPanel(result.job, clientId, onSave);
+      if (onSave) await onSave();
+      showToast('Payment added', 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to add payment', 'error');
+    }
+  };
+
+  // Estimate
+  overlay.querySelector('#job-estimate-btn').onclick = async () => {
+    const btn = overlay.querySelector('#job-estimate-btn');
+    try {
+      btn.disabled = true; btn.textContent = 'Downloading...';
+      await window.api.sendJobEstimate(job.id);
+      showToast('Estimate downloaded', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to generate estimate', 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Download Estimate';
+    }
+  };
+
+  // Invoice
+  overlay.querySelector('#job-invoice-btn').onclick = async () => {
+    const btn = overlay.querySelector('#job-invoice-btn');
+    try {
+      btn.disabled = true; btn.textContent = 'Downloading...';
+      await window.api.sendJobInvoice(job.id);
+      showToast('Invoice downloaded', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to generate invoice', 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Download Invoice';
+    }
+  };
+
+  // Delete
+  overlay.querySelector('#job-delete-btn').onclick = async () => {
+    if (!confirm('Permanently delete this job?')) return;
+    try {
+      await window.api.deleteJob(job.id);
+      overlay.remove();
+      if (onSave) await onSave();
+      showToast('Job deleted', 'success');
+    } catch (err) {
+      showToast('Failed to delete job', 'error');
+    }
+  };
 }
 
 // ======================================================
@@ -2513,13 +2912,16 @@ async function savePendingNotes({ silent = false } = {}) {
   }
 }
 
+function getStoredClientName() {
+  return (activeClient?.name || projectPanel.dataset.clientName || "").trim();
+}
+
 function collectPanelData() {
   const jobCostRaw = document.getElementById("jobCostInput")?.value || "0";
   const jobCost = parseMoney(jobCostRaw) || 0;
   return {
     id: activeId,
-    fName: getPanelFName(),
-    lName: getPanelLName(),
+    name: getStoredClientName(),
     address: document.getElementById("p-address")?.value || "",
     status: document.getElementById("p-status")?.value || "",
     phone: document.getElementById("p-phone")?.value || "",
@@ -2565,16 +2967,12 @@ async function savePanelChanges({ silent = false, force = false } = {}) {
 }
 
 function getPanelFName() {
-  const h2 = projectPanel.querySelector("h2");
-  if (!h2) return "";
-  const parts = h2.innerText.trim().split(" ");
-  return parts[0] || "";
+  const [firstName] = getStoredClientName().split(/\s+/);
+  return firstName || "";
 }
 
 function getPanelLName() {
-  const h2 = projectPanel.querySelector("h2");
-  if (!h2) return "";
-  const parts = h2.innerText.trim().split(" ");
+  const parts = getStoredClientName().split(/\s+/);
   return parts.slice(1).join(" ") || "";
 }
 
@@ -2591,6 +2989,7 @@ function closePanel() {
   setTimeout(() => {
     projectPanel.innerHTML = '';
     projectPanel.style.display = "none";
+    delete projectPanel.dataset.clientName;
     activeId = null;
     activeClient = null;
   }, 250);

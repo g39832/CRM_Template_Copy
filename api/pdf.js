@@ -8,6 +8,7 @@ const {
 } = require('./request-utils');
 const {
   isRemoteStorageEnabled,
+  isLocalStorageEnabled,
   ensureRemoteBucket,
   remoteUploadFile,
   remoteListFiles,
@@ -38,12 +39,13 @@ router.post('/upload/:key', upload.any(), asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, error: 'No files uploaded.' });
   }
 
-  const remoteEnabled = isRemoteStorageEnabled();
-  if (!remoteEnabled) {
-    return res.status(500).json({ success: false, error: 'Remote storage is not configured.' });
+  if (!isRemoteStorageEnabled() && !isLocalStorageEnabled()) {
+    return res.status(500).json({ success: false, error: 'File storage is not configured.' });
   }
 
-  await ensureRemoteBucket();
+  if (isRemoteStorageEnabled()) {
+    await ensureRemoteBucket();
+  }
 
   const saved = [];
   for (const file of files) {
@@ -77,8 +79,8 @@ router.get('/list/:key', asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, error: 'Invalid list key.' });
   }
 
-  if (!isRemoteStorageEnabled()) {
-    return res.status(500).json({ success: false, error: 'Remote storage is not configured.' });
+  if (!isRemoteStorageEnabled() && !isLocalStorageEnabled()) {
+    return res.status(500).json({ success: false, error: 'File storage is not configured.' });
   }
 
   const isClientId = /^\d+$/.test(key);
@@ -99,8 +101,8 @@ router.delete('/delete/:clientId/:fileName', asyncHandler(async (req, res) => {
   }
 
   try {
-    if (!isRemoteStorageEnabled()) {
-      return res.status(500).json({ success: false, error: 'Remote storage is not configured.' });
+    if (!isRemoteStorageEnabled() && !isLocalStorageEnabled()) {
+      return res.status(500).json({ success: false, error: 'File storage is not configured.' });
     }
 
     const deleted = await remoteDeleteFile(clientId, fileName);
@@ -128,8 +130,8 @@ router.delete('/delete/:groupKey', asyncHandler(async (req, res) => {
 
   const decodedFile = decodeURIComponent(fileName);
   try {
-    if (!isRemoteStorageEnabled()) {
-      return res.status(500).json({ error: 'Remote storage is not configured.' });
+    if (!isRemoteStorageEnabled() && !isLocalStorageEnabled()) {
+      return res.status(500).json({ error: 'File storage is not configured.' });
     }
 
     const deleted = await remoteDeleteFile(groupKey, decodedFile);

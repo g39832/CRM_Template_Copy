@@ -1,0 +1,4 @@
+Uploads folder is ready
+Server running on http://localhost:3001
+[API] POST /api/login -> 200 (344ms)
+[API] POST /api/login -> 200 (331ms)

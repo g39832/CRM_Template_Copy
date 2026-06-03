@@ -8,6 +8,27 @@ const router = express.Router();
 let passwordInitPromise = null;
 const disableAuth = process.env.NODE_ENV !== 'production' || process.env.DISABLE_AUTH === 'true';
 
+function getFallbackPassword() {
+  const configured = String(process.env.DEFAULT_ADMIN_PASSWORD || '').trim();
+  if (configured) return configured;
+
+  const allowLegacyFallback = process.env.ALLOW_LEGACY_DEV_PASSWORD === 'true';
+  if (process.env.NODE_ENV !== 'production' && allowLegacyFallback) {
+    return '123007';
+  }
+
+  return '';
+}
+
+function logAuthError(scope, err) {
+  console.error(`[auth.${scope}]`, {
+    message: err?.message || String(err),
+    code: err?.code || null,
+    status: err?.status || null,
+    stack: err?.stack || null
+  });
+}
+
 // ===== ENSURE DEFAULT PASSWORD EXISTS =====
 async function initializePassword() {
   await db.schemaReady;
@@ -56,19 +77,38 @@ router.post('/login', asyncHandler(async (req, res) => {
     return res.json({ success: true, bypassed: true });
   }
 
-  await ensurePasswordInitialized();
-  await db.schemaReady;
-  const { rows } = await db.query("SELECT value FROM settings WHERE key = 'admin_password'");
-  const row = rows[0];
-  if (!row) throw new AppError(500, 'Password not initialized.');
+  const fallbackPassword = getFallbackPassword();
 
-  const match = bcrypt.compareSync(password, row.value);
-  if (!match) {
-    return res.json({ success: false, message: 'Incorrect password.' });
+  try {
+    await ensurePasswordInitialized();
+    await db.schemaReady;
+    const { rows } = await db.query("SELECT value FROM settings WHERE key = 'admin_password'");
+    const row = rows[0];
+    if (!row) throw new AppError(500, 'Password not initialized.');
+
+    const match = bcrypt.compareSync(password, row.value);
+    if (!match) {
+      return res.json({ success: false, message: 'Incorrect password.' });
+    }
+
+    req.session.authenticated = true;
+    return res.json({ success: true });
+  } catch (err) {
+    logAuthError('login', err);
+
+    if (fallbackPassword && password === fallbackPassword) {
+      req.session.authenticated = true;
+      return res.json({
+        success: true,
+        fallback: true,
+        message: 'Authenticated using local fallback credentials.'
+      });
+    }
+
+    throw err instanceof AppError
+      ? err
+      : new AppError(503, 'Authentication backend unavailable.');
   }
-
-  req.session.authenticated = true;
-  return res.json({ success: true });
 }));
 
 // ===== CHANGE PASSWORD ROUTE =====
@@ -81,19 +121,26 @@ router.post('/change-password', asyncHandler(async (req, res) => {
   const currentPassword = parseStringField(req.body.currentPassword, 'currentPassword', { minLength: 1, maxLength: 256 });
   const newPassword = parseStringField(req.body.newPassword, 'newPassword', { minLength: 4, maxLength: 256 });
 
-  await ensurePasswordInitialized();
-  await db.schemaReady;
-  const { rows } = await db.query("SELECT value FROM settings WHERE key = 'admin_password'");
-  const row = rows[0];
-  if (!row) throw new AppError(500, 'Password not initialized.');
+  try {
+    await ensurePasswordInitialized();
+    await db.schemaReady;
+    const { rows } = await db.query("SELECT value FROM settings WHERE key = 'admin_password'");
+    const row = rows[0];
+    if (!row) throw new AppError(500, 'Password not initialized.');
 
-  const match = bcrypt.compareSync(currentPassword, row.value);
-  if (!match) return res.json({ success: false, message: 'Current password incorrect.' });
+    const match = bcrypt.compareSync(currentPassword, row.value);
+    if (!match) return res.json({ success: false, message: 'Current password incorrect.' });
 
-  const newHash = bcrypt.hashSync(newPassword, 10);
-  await db.query("UPDATE settings SET value = $1 WHERE key = 'admin_password'", [newHash]);
+    const newHash = bcrypt.hashSync(newPassword, 10);
+    await db.query("UPDATE settings SET value = $1 WHERE key = 'admin_password'", [newHash]);
 
-  return res.json({ success: true });
+    return res.json({ success: true });
+  } catch (err) {
+    logAuthError('change-password', err);
+    throw err instanceof AppError
+      ? err
+      : new AppError(503, 'Authentication backend unavailable.');
+  }
 }));
 
 module.exports = router;
