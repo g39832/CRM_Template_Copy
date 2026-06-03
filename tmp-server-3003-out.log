@@ -1,2 +1,9 @@
 Uploads folder is ready
 Server running on http://localhost:3003
+[API] POST /api/pdf/upload/123 -> 401 (3ms)
+[API] POST /api/login -> 200 (279ms)
+[API] GET /api/pdf/list/123 -> 200 (310ms)
+remoteUploadFile called
+Supabase bucket: crm-files
+[API] POST /api/pdf/upload/123 -> 200 (215ms)
+[API] GET /api/pdf/list/123 -> 200 (235ms)

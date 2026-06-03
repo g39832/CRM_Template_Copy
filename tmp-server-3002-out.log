@@ -1,2 +1,5 @@
 Uploads folder is ready
 Server running on http://localhost:3002
+[API] POST /api/pdf/upload/123 -> 401 (1ms)
+[API] POST /api/login -> 200 (353ms)
+[API] POST /api/pdf/upload/123 -> 401 (1ms)
