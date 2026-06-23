@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Settings</title>
+  <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f2027;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .settings-shell {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    .settings-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .settings-header h1 {
+      font-size: 1.5rem;
+      font-weight: 800;
+    }
+    .settings-header a {
+      color: #60a5fa;
+      text-decoration: none;
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+    .settings-header a:hover { text-decoration: underline; }
+
+    /* ---- Tabs ---- */
+    .tab-bar {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 24px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 14px;
+      padding: 4px;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 12px;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 0.92rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+    .tab-btn:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
+    .tab-btn.active {
+      background: rgba(37,99,235,0.2);
+      color: #60a5fa;
+    }
+
+    /* ---- Cards ---- */
+    .settings-card {
+      background: linear-gradient(180deg, rgba(28,58,67,0.97), rgba(15,32,39,0.97));
+      border: 1px solid rgba(122,183,214,0.15);
+      border-radius: 18px;
+      padding: 28px 24px;
+      display: none;
+    }
+    .settings-card.active { display: block; }
+    .settings-card h2 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .settings-card .subtitle {
+      color: #94a3b8;
+      font-size: 0.88rem;
+      margin-bottom: 20px;
+    }
+    .settings-note {
+      margin-top: 12px;
+      color: #94a3b8;
+      font-size: 0.84rem;
+      line-height: 1.5;
+    }
+    .settings-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      background: rgba(71,167,245,0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(71,167,245,0.25);
+    }
+    .settings-split {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .settings-mini-card {
+      padding: 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(122,183,214,0.12);
+      background: rgba(255,255,255,0.03);
+    }
+    .settings-mini-card h3 {
+      font-size: 0.95rem;
+      margin-bottom: 6px;
+    }
+    .settings-mini-card p {
+      color: #94a3b8;
+      font-size: 0.84rem;
+      line-height: 1.45;
+      margin-bottom: 12px;
+    }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 0;
+      border-top: 1px solid rgba(122,183,214,0.08);
+    }
+    .setting-row:first-of-type { border-top: 0; }
+    .setting-row .label {
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .setting-row .help {
+      color: #94a3b8;
+      font-size: 0.8rem;
+      margin-top: 2px;
+    }
+    .toggle {
+      width: 44px;
+      height: 24px;
+      border-radius: 999px;
+      background: #475569;
+      position: relative;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      top: 3px;
+      left: 3px;
+      background: #e2e8f0;
+      transition: transform 0.2s ease;
+    }
+    .toggle input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .toggle input:checked + span::after,
+    .toggle.checked::after {
+      transform: translateX(20px);
+    }
+
+    /* ---- Form fields ---- */
+    .field-group { margin-bottom: 16px; }
+    .field-group label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .field-group input,
+    .field-group textarea,
+    .field-group select {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid rgba(122,183,214,0.2);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.04);
+      color: #e2e8f0;
+      font-size: 0.92rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .field-group input:focus,
+    .field-group textarea:focus,
+    .field-group select:focus {
+      border-color: #3b82f6;
+    }
+    .field-group textarea { resize: vertical; min-height: 80px; }
+    .field-group input[type="color"] {
+      height: 44px;
+      padding: 4px;
+      cursor: pointer;
+    }
+    .field-group input[type="file"] {
+      padding: 8px;
+    }
+    .field-row {
+      display: flex;
+      gap: 16px;
+    }
+    .field-row .field-group { flex: 1; }
+
+    /* ---- Feature list ---- */
+    .feature-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .feature-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border: 1px solid rgba(122,183,214,0.12);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.03);
+    }
+    .feature-item.inactive { opacity: 0.55; }
+    .feature-order {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .feature-order button {
+      width: 24px;
+      height: 18px;
+      border: 1px solid rgba(122,183,214,0.15);
+      border-radius: 4px;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 0.7rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+    .feature-order button:hover:not(:disabled) {
+      background: rgba(37,99,235,0.15);
+      color: #3b82f6;
+    }
+    .feature-order button:disabled { opacity: 0.25; cursor: not-allowed; }
+    .feature-toggle {
+      position: relative;
+      flex-shrink: 0;
+    }
+    .feature-toggle input {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .feature-toggle label {
+      display: block;
+      width: 40px;
+      height: 22px;
+      border-radius: 12px;
+      background: #475569;
+      cursor: pointer;
+      transition: background 0.2s;
+      position: relative;
+    }
+    .feature-toggle label::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .feature-toggle input:checked + label { background: #059669; }
+    .feature-toggle input:checked + label::after {
+      transform: translateX(18px);
+      background: #fff;
+    }
+    .feature-info { flex: 1; min-width: 0; }
+    .feature-info .name {
+      font-weight: 600;
+      font-size: 0.92rem;
+      text-transform: capitalize;
+    }
+    .feature-info .desc {
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    /* ---- Buttons ---- */
+    .form-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .btn-primary {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s;
+    }
+    .btn-primary:hover { opacity: 0.92; transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-secondary {
+      padding: 12px 24px;
+      border: 1px solid rgba(122,183,214,0.2);
+      border-radius: 12px;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.06); }
+    .btn-danger {
+      padding: 12px 24px;
+      border: 1px solid rgba(239,68,68,0.35);
+      border-radius: 12px;
+      background: rgba(239,68,68,0.12);
+      color: #fca5a5;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s;
+    }
+    .btn-danger:hover { background: rgba(239,68,68,0.2); transform: translateY(-1px); }
+
+    #formFeedback {
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      display: none;
+    }
+    #formFeedback.success {
+      display: block;
+      background: rgba(5,150,105,0.15);
+      border: 1px solid rgba(5,150,105,0.3);
+      color: #6ee7b7;
+    }
+    #formFeedback.error {
+      display: block;
+      background: rgba(239,68,68,0.15);
+      border: 1px solid rgba(239,68,68,0.3);
+      color: #fca5a5;
+    }
+
+    .loading-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+    .loading-overlay.visible { display: flex; }
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid rgba(255,255,255,0.15);
+      border-top: 4px solid #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .logo-preview {
+      max-height: 60px;
+      max-width: 200px;
+      border-radius: 8px;
+      margin-top: 8px;
+      display: none;
+    }
+    .logo-preview.visible { display: block; }
+
+    @media (max-width: 600px) {
+      .field-row { flex-direction: column; gap: 0; }
+      .settings-split { grid-template-columns: 1fr; }
+      .tab-btn { font-size: 0.8rem; padding: 10px 8px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+  </div>
+
+  <div class="settings-shell">
+    <div class="settings-header">
+      <h1>Admin Settings</h1>
+      <a href="/main">&larr; Back to Dashboard</a>
+    </div>
+
+    <div class="tab-bar" role="tablist">
+      <button class="tab-btn active" data-tab="user" role="tab">My Settings</button>
+      <button class="tab-btn" data-tab="features" role="tab" data-admin-only="true">Features Marketplace</button>
+      <button class="tab-btn" data-tab="branding" role="tab" data-admin-only="true">Branding &amp; Identity</button>
+      <button class="tab-btn" data-tab="users" role="tab" data-admin-only="true">Users &amp; Permissions</button>
+      <button class="tab-btn" data-tab="audit" role="tab" data-admin-only="true">System Audit</button>
+      <button class="tab-btn" data-tab="workflow" role="tab" data-admin-only="true">Platform Preferences</button>
+    </div>
+
+    <!-- ===== TAB 0: My Settings ===== -->
+    <div class="settings-card active" id="tabUser" role="tabpanel">
+      <h2>My Settings</h2>
+      <p class="subtitle">Update your personal account, password, and a few preferences that make the app easier to use every day.</p>
+
+      <div class="settings-split">
+        <div class="settings-mini-card">
+          <h3>Profile</h3>
+          <p>Keep your display name current so teammates can recognize who made changes.</p>
+          <div class="field-group">
+            <label for="userDisplayName">Display Name</label>
+            <input type="text" id="userDisplayName" placeholder="Your name">
+          </div>
+          <div class="field-group">
+            <label for="userEmail">Email Address</label>
+            <input type="email" id="userEmail" readonly>
+          </div>
+          <div class="field-group">
+            <label>Access Level</label>
+            <div id="userRoleBadge" class="settings-chip">User</div>
+          </div>
+        </div>
+
+        <div class="settings-mini-card">
+          <h3>Security</h3>
+          <p>Change your password whenever you need to keep the account locked down.</p>
+          <div class="field-group">
+            <label for="currentPassword">Current Password</label>
+            <input type="password" id="currentPassword" placeholder="Current password">
+          </div>
+          <div class="field-group">
+            <label for="newPassword">New Password</label>
+            <input type="password" id="newPassword" placeholder="New password">
+          </div>
+          <div class="field-group">
+            <label for="confirmPassword">Confirm New Password</label>
+            <input type="password" id="confirmPassword" placeholder="Confirm new password">
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-split" style="margin-top:16px;">
+        <div class="settings-mini-card">
+          <h3>Preferences</h3>
+          <p>These are browser-side defaults that make the workspace feel familiar during demos.</p>
+          <div class="setting-row">
+            <div>
+              <div class="label">Compact dashboard layout</div>
+              <div class="help">Tightens spacing in the main dashboard.</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="prefCompactLayout">
+              <span></span>
+            </label>
+          </div>
+          <div class="setting-row">
+            <div>
+              <div class="label">Email reminders</div>
+              <div class="help">Store a reminder preference for follow-ups and invoices.</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="prefEmailReminders">
+              <span></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-mini-card">
+          <h3>Session</h3>
+          <p>Quick actions for demos and shared machines.</p>
+          <div class="form-actions" style="margin-top:0;">
+            <button type="button" class="btn-secondary" id="logoutBtn">Sign Out</button>
+            <button type="button" class="btn-primary" id="saveUserSettingsBtn">Save My Settings</button>
+          </div>
+          <div class="settings-note">Password changes require your current password. Preferences save to this browser for a smoother client demo flow.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== TAB 1: Features ===== -->
+    <div class="settings-card" id="tabFeatures" role="tabpanel" data-admin-only="true">
+      <h2>Feature Marketplace</h2>
+      <p class="subtitle">Toggle feature sections on/off and reorder them as needed.</p>
+      <div class="feature-list" id="featureList"></div>
+      <div class="form-actions">
+        <button type="button" class="btn-primary" id="saveFeaturesBtn">Save Features</button>
+      </div>
+    </div>
+
+    <!-- ===== TAB 2: Branding ===== -->
+    <div class="settings-card" id="tabBranding" role="tabpanel" data-admin-only="true">
+      <h2>Branding &amp; Identity</h2>
+      <p class="subtitle">Customize your company's appearance across the dashboard and invoices.</p>
+      <div class="field-group">
+        <label for="companyName">Company Name</label>
+        <input type="text" id="companyName" placeholder="Your Company">
+      </div>
+      <div class="field-group">
+        <label for="tagline">Tagline</label>
+        <input type="text" id="tagline" placeholder="Short description or tagline">
+      </div>
+      <div class="field-group">
+        <label for="description">Business Description</label>
+        <textarea id="description" placeholder="Describe what your company does..."></textarea>
+      </div>
+      <div class="field-group">
+        <label for="contactEmail">Contact Email</label>
+        <input type="email" id="contactEmail" placeholder="contact@company.com">
+      </div>
+      <div class="field-group">
+        <label for="logoUpload">Company Logo</label>
+        <input type="file" id="logoUpload" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml">
+        <img class="logo-preview" id="logoPreview" alt="Logo preview">
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <label for="primaryColor">Primary Color</label>
+          <input type="color" id="primaryColor" value="#2563eb">
+        </div>
+        <div class="field-group">
+          <label for="secondaryColor">Secondary Color</label>
+          <input type="color" id="secondaryColor" value="#1c92d2">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-primary" id="saveBrandingBtn">Save Branding</button>
+      </div>
+    </div>
+
+    <!-- ===== TAB 3: User & Permissions ===== -->
+    <div class="settings-card" id="tabUsers" role="tabpanel" data-admin-only="true">
+      <h2>User &amp; Permissions Management</h2>
+      <p class="subtitle">Manage team members and their access levels. Only admins can create or modify users.</p>
+      <div style="margin-bottom:16px;">
+        <button type="button" class="btn-primary" id="addUserBtn" style="padding:10px 20px;">+ Add User</button>
+      </div>
+      <div style="margin-bottom:18px;padding:14px 16px;border:1px solid rgba(239,68,68,0.18);border-radius:12px;background:rgba(239,68,68,0.08);display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;">
+        <div style="min-width:220px;">
+          <div style="font-size:0.9rem;font-weight:700;color:#fca5a5;margin-bottom:4px;">Demo Reset</div>
+          <div style="font-size:0.82rem;color:#94a3b8;">Wipes onboarding data so the app returns to first-run setup for the next client showing.</div>
+        </div>
+        <button type="button" class="btn-danger" id="resetDemoBtn">Reset Demo State</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table id="usersTable" style="width:100%;border-collapse:collapse;font-size:0.88rem;">
+          <thead>
+            <tr style="border-bottom:1px solid rgba(122,183,214,0.15);">
+              <th style="padding:10px 8px;text-align:left;color:#94a3b8;font-weight:600;">Name</th>
+              <th style="padding:10px 8px;text-align:left;color:#94a3b8;font-weight:600;">Email</th>
+              <th style="padding:10px 8px;text-align:left;color:#94a3b8;font-weight:600;">Role</th>
+              <th style="padding:10px 8px;text-align:left;color:#94a3b8;font-weight:600;">Created</th>
+              <th style="padding:10px 8px;text-align:center;color:#94a3b8;font-weight:600;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="usersTableBody">
+            <tr><td colspan="5" style="padding:24px;text-align:center;color:#64748b;">Loading users...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Add User Modal -->
+      <div id="addUserModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;z-index:999;">
+        <div style="background:linear-gradient(180deg,rgba(28,58,67,0.98),rgba(15,32,39,0.98));border:1px solid rgba(122,183,214,0.18);border-radius:18px;padding:28px 24px;width:min(440px,92%);">
+          <h3 style="margin-bottom:16px;">Add Team Member</h3>
+          <div class="field-group">
+            <label for="newUserEmail">Email Address</label>
+            <input type="email" id="newUserEmail" placeholder="user@company.com">
+          </div>
+          <div class="field-group">
+            <label for="newUserDisplayName">Display Name</label>
+            <input type="text" id="newUserDisplayName" placeholder="Jane Doe">
+          </div>
+          <div class="field-group">
+            <label for="newUserPassword">Password</label>
+            <input type="password" id="newUserPassword" placeholder="Min 6 characters">
+          </div>
+          <div class="field-group">
+            <label for="newUserRole">Role</label>
+            <select id="newUserRole">
+              <option value="user">User</option>
+            </select>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" id="cancelAddUser">Cancel</button>
+            <button type="button" class="btn-primary" id="saveNewUser">Create User</button>
+          </div>
+          <div id="addUserFeedback" style="margin-top:12px;font-size:0.85rem;display:none;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== TAB 4: System Audit & Activity Log ===== -->
+    <div class="settings-card" id="tabAudit" role="tabpanel" data-admin-only="true">
+      <h2>System Audit &amp; Activity Log</h2>
+      <p class="subtitle">Track all changes made across the system. Filter by action type or entity.</p>
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <div class="field-group" style="flex:1;min-width:160px;margin-bottom:0;">
+          <label for="auditActionFilter">Action Type</label>
+          <select id="auditActionFilter">
+            <option value="">All actions</option>
+          </select>
+        </div>
+        <div class="field-group" style="flex:1;min-width:160px;margin-bottom:0;">
+          <label for="auditEntityFilter">Entity Type</label>
+          <select id="auditEntityFilter">
+            <option value="">All entities</option>
+            <option value="user">User</option>
+            <option value="client">Client</option>
+            <option value="job">Job</option>
+            <option value="payment">Payment</option>
+            <option value="settings">Settings</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:flex-end;gap:8px;">
+          <button type="button" class="btn-primary" id="applyAuditFilter" style="padding:10px 16px;">Apply</button>
+          <button type="button" class="btn-secondary" id="clearAuditFilter" style="padding:10px 16px;">Clear</button>
+          <button type="button" class="btn-secondary" id="refreshAuditLog" style="padding:10px 16px;">Refresh</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table id="auditTable" style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+          <thead>
+            <tr style="border-bottom:1px solid rgba(122,183,214,0.15);">
+              <th style="padding:8px;text-align:left;color:#94a3b8;font-weight:600;">Date</th>
+              <th style="padding:8px;text-align:left;color:#94a3b8;font-weight:600;">Action</th>
+              <th style="padding:8px;text-align:left;color:#94a3b8;font-weight:600;">Entity</th>
+              <th style="padding:8px;text-align:left;color:#94a3b8;font-weight:600;">Details</th>
+            </tr>
+          </thead>
+          <tbody id="auditTableBody">
+            <tr><td colspan="4" style="padding:24px;text-align:center;color:#64748b;">Loading activity log...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="auditPagination" style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:12px;">
+        <button type="button" class="btn-secondary" id="auditPrevPage" style="padding:6px 14px;" disabled>&larr; Previous</button>
+        <span id="auditPageInfo" style="font-size:0.85rem;color:#94a3b8;">Page 1</span>
+        <button type="button" class="btn-secondary" id="auditNextPage" style="padding:6px 14px;" disabled>Next &rarr;</button>
+      </div>
+    </div>
+
+    <!-- ===== TAB 5: Workflow ===== -->
+    <div class="settings-card" id="tabWorkflow" role="tabpanel" data-admin-only="true">
+      <h2>Platform Preferences</h2>
+      <p class="subtitle">Change your core operational model. The dashboard layout adjusts to match your selection.</p>
+      <div class="field-group">
+        <label for="workflowSelect">Operational Model</label>
+        <select id="workflowSelect">
+          <option value="single">Single Client Jobs &mdash; One-off project-based work</option>
+          <option value="returning">Returning Client Jobs &mdash; Recurring/retainer-based clients</option>
+          <option value="both">Both &mdash; Mix of single and returning clients</option>
+        </select>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-primary" id="saveWorkflowBtn">Save Preference</button>
+      </div>
+    </div>
+
+    <div id="formFeedback" role="alert"></div>
+  </div>
+
+  <script src="/js/settings-renderer.js"></script>
+</body>
+</html>

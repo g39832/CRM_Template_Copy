@@ -580,6 +580,18 @@ window.api = {
 
   async searchClients(term = '', options = {}) {
     const { signal } = options;
+    if (_filterActive) {
+      var params = 'q=' + encodeURIComponent(term);
+      if (_filterState.type) params += '&type=' + encodeURIComponent(_filterState.type);
+      if (_filterState.status) params += '&status=' + encodeURIComponent(_filterState.status);
+      if (_filterState.dateFrom) params += '&dateFrom=' + encodeURIComponent(_filterState.dateFrom);
+      if (_filterState.dateTo) params += '&dateTo=' + encodeURIComponent(_filterState.dateTo);
+      if (_filterState.revenueMin) params += '&revenueMin=' + encodeURIComponent(_filterState.revenueMin);
+      if (_filterState.revenueMax) params += '&revenueMax=' + encodeURIComponent(_filterState.revenueMax);
+      const res = await fetch('/api/search/filtered?' + params, { signal });
+      if (!res.ok) throw new Error("Filtered search failed");
+      return res.json();
+    }
     const res = await fetch(`/api/search?q=${encodeURIComponent(term)}`, { signal });
     if (!res.ok) throw new Error("Search failed");
     return res.json();
@@ -932,6 +944,12 @@ window.api = {
     }
     this._companyProfile = await res.json();
     return this._companyProfile;
+  },
+
+  async getDashboardStats() {
+    const res = await fetch('/api/v2/dashboard/stats');
+    if (!res.ok) return null;
+    return res.json();
   }
 };
 // ======================================================
@@ -1002,6 +1020,9 @@ let companyProfileLoading = false;
 let currentCompanyProfile = null;
 let mainDashboardRefreshTimer = null;
 let mainDashboardRefreshInFlight = false;
+let _platformFeatures = null;
+let _filterActive = false;
+let _filterState = { type: '', status: '', dateFrom: '', dateTo: '', revenueMin: '', revenueMax: '' };
 
 function isClientPanelOpen() {
   return projectPanel?.style.display === "block";
@@ -1327,6 +1348,65 @@ if (searchInput) {
 }
 
 // ======================================================
+// ADVANCED FILTERING
+// ======================================================
+var filterToggleBtn = document.getElementById('filterToggleBtn');
+var filterPanel = document.getElementById('filterPanel');
+var filterType = document.getElementById('filterType');
+var filterStatus = document.getElementById('filterStatus');
+var filterDateFrom = document.getElementById('filterDateFrom');
+var filterDateTo = document.getElementById('filterDateTo');
+var filterRevenueMin = document.getElementById('filterRevenueMin');
+var filterRevenueMax = document.getElementById('filterRevenueMax');
+var applyFilterBtn = document.getElementById('applyFilterBtn');
+var clearFilterBtn = document.getElementById('clearFilterBtn');
+
+function initAdvancedFiltering() {
+  if (!_platformFeatures || !_platformFeatures.advancedFiltering) {
+    if (filterToggleBtn) filterToggleBtn.style.display = 'none';
+    if (filterPanel) filterPanel.style.display = 'none';
+    return;
+  }
+  if (filterToggleBtn) filterToggleBtn.style.display = '';
+}
+
+if (filterToggleBtn) {
+  filterToggleBtn.addEventListener('click', function () {
+    var isVisible = filterPanel && filterPanel.style.display !== 'none';
+    if (filterPanel) filterPanel.style.display = isVisible ? 'none' : '';
+  });
+}
+
+if (applyFilterBtn) {
+  applyFilterBtn.addEventListener('click', function () {
+    _filterState = {
+      type: filterType ? filterType.value : '',
+      status: filterStatus ? filterStatus.value : '',
+      dateFrom: filterDateFrom ? filterDateFrom.value : '',
+      dateTo: filterDateTo ? filterDateTo.value : '',
+      revenueMin: filterRevenueMin ? filterRevenueMin.value : '',
+      revenueMax: filterRevenueMax ? filterRevenueMax.value : ''
+    };
+    _filterActive = true;
+    refreshList();
+  });
+}
+
+if (clearFilterBtn) {
+  clearFilterBtn.addEventListener('click', function () {
+    if (filterType) filterType.value = '';
+    if (filterStatus) filterStatus.value = '';
+    if (filterDateFrom) filterDateFrom.value = '';
+    if (filterDateTo) filterDateTo.value = '';
+    if (filterRevenueMin) filterRevenueMin.value = '';
+    if (filterRevenueMax) filterRevenueMax.value = '';
+    _filterState = { type: '', status: '', dateFrom: '', dateTo: '', revenueMin: '', revenueMax: '' };
+    _filterActive = false;
+    refreshList();
+  });
+}
+
+// ======================================================
 // ADD CLIENT
 // ======================================================
 if (intakeFormEl) {
@@ -1437,10 +1517,35 @@ function buildClientCard(c, term = "") {
     ? escapeHtml(displayPhone).replace(new RegExp(safeTerm, "ig"), (m) => `<mark>${m}</mark>`)
     : escapeHtml(displayPhone);
 
+  var clientTypeBadge = '';
+  if (c.client_type === 'recurring') {
+    clientTypeBadge = '<span class="client-type-badge recurring">Recurring</span>';
+  } else if (c.client_type === 'one-off') {
+    clientTypeBadge = '<span class="client-type-badge one-off">One-Off</span>';
+  }
+
+  // Portal link badge — only shown for recurring clients when
+  // the client portal platform feature is active.
+  // FUTURE: Replace with actual portal link once the client portal
+  // feature sprint is complete.  The badge serves as a visual anchor
+  // for the upcoming portal link feature.
+  var portalBadge = '';
+  if (c.client_type === 'recurring' && window._platformFeatures && window._platformFeatures.clientPortal === true) {
+    portalBadge = '<span class="client-type-badge portal" style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.25);">Portal</span>';
+  }
+
+  var retentionBadge = '';
+  if (c.client_type === 'recurring' && window._retentionRiskIds && window._retentionRiskIds.indexOf(c.id) !== -1) {
+    retentionBadge = '<span class="retention-risk-badge">Retention Risk</span>';
+  }
+
   return `
     <div class="client-card" data-id="${c.id}" data-name="${displayName}" style="border-left:4px solid ${color};">
       <div class="client-name">
         ${nameHighlighted}
+        ${clientTypeBadge}
+        ${portalBadge}
+        ${retentionBadge}
       </div>
 
       <div class="client-meta">
@@ -2663,6 +2768,13 @@ if (companyProfileBtn) {
   });
 }
 
+var userSettingsBtn = document.getElementById('userSettingsBtn');
+if (userSettingsBtn) {
+  userSettingsBtn.addEventListener('click', () => {
+    window.location.href = '/settings';
+  });
+}
+
 if (closeEmailSettingsBtn) {
   closeEmailSettingsBtn.addEventListener('click', closeEmailSettingsModal);
 }
@@ -3056,11 +3168,215 @@ document.addEventListener("keydown", async (e) => {
 });
 
 
+// ======================================================
+// DASHBOARD INITIALIZATION
+// ======================================================
+var _dashboardData = null;
+var _dashboardLoading = false;
+
+async function loadDashboardStats() {
+  if (_dashboardLoading) return;
+  _dashboardLoading = true;
+  try {
+    var result = await window.api.getDashboardStats();
+    if (!result || !result.success || !result.data) {
+      hideDashboardSection();
+      return;
+    }
+    _dashboardData = result.data;
+    _platformFeatures = result.data.platformFeatures || null;
+    renderDashboardStats(result.data);
+    renderWorkflowPanel(result.data);
+    applyBranding(result.data.branding);
+    window._retentionRiskIds = (result.data.retentionAlerts || []).map(function (a) { return a.id; });
+    initAdvancedFiltering();
+  } catch (e) {
+    hideDashboardSection();
+  } finally {
+    _dashboardLoading = false;
+  }
+}
+
+function hideDashboardSection() {
+  var el = document.getElementById('dashboardOverview');
+  if (el) el.style.display = 'none';
+}
+
+function renderDashboardStats(data) {
+  setStat('statTotalClients', data.totalClients);
+  setStat('statActiveJobs', data.activeJobs);
+  setStat('statOutstanding', data.outstandingInvoices);
+  setStat('statRevenue', '$' + formatMoney(data.thisMonthRevenue));
+}
+
+function setStat(id, val) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = val != null ? String(val) : '—';
+}
+
+function renderWorkflowPanel(data) {
+  var titleEl = document.getElementById('workflowPanelTitle');
+  var bodyEl = document.getElementById('workflowPanelBody');
+  if (!bodyEl || !titleEl) return;
+
+  var wf = data.workflow || 'both';
+  var title = 'Pipeline Overview';
+  if (wf === 'single') title = 'Job Pipeline';
+  else if (wf === 'returning') title = 'Recurring Clients';
+  titleEl.textContent = title;
+
+  var html = '';
+  if (wf === 'single' || wf === 'both') {
+    var statuses = ['Prospect', 'Approved', 'Completed', 'Invoice', 'Closed'];
+    html += '<div class="kanban-board">';
+    statuses.forEach(function (s) {
+      // Estimate counts from total — we don't have per-status counts on the server
+      html += '<div class="kanban-col"><div class="kanban-header">' + s + '</div><div class="kanban-count">—</div></div>';
+    });
+    html += '</div>';
+  }
+  if (wf === 'returning' || wf === 'both') {
+    var alerts = data.retentionAlerts || [];
+    html += '<div class="recurring-manager">';
+    if (alerts.length === 0) {
+      html += '<div class="empty">No retention risks. All recurring clients are in good standing.</div>';
+    } else {
+      alerts.slice(0, 5).forEach(function (a) {
+        html += '<div class="recurring-client-row"><span class="client-name">' + escapeHtml(a.name) + '</span><span class="client-status">At Risk</span></div>';
+      });
+    }
+    html += '</div>';
+  }
+  if (!html) {
+    html = '<div class="empty-panel-msg">No workflow data available.</div>';
+  }
+
+  // Revenue split
+  var rev = data.revenueSplit || { oneOffRevenue: 0, recurringRevenue: 0 };
+  var totalRev = rev.oneOffRevenue + rev.recurringRevenue;
+  var oneOffPct = totalRev > 0 ? Math.round((rev.oneOffRevenue / totalRev) * 100) : 0;
+  var recurringPct = totalRev > 0 ? Math.round((rev.recurringRevenue / totalRev) * 100) : 0;
+
+  html += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(122,183,214,0.12);">';
+  html += '<div style="font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">Revenue Split</div>';
+  html += '<div class="revenue-split-bar"><div class="one-off-bar" style="width:' + oneOffPct + '%"></div><div class="recurring-bar" style="width:' + recurringPct + '%"></div></div>';
+  html += '<div class="revenue-split-labels"><span>One-off $' + formatMoney(rev.oneOffRevenue) + '</span><span>Recurring $' + formatMoney(rev.recurringRevenue) + '</span></div>';
+  html += '</div>';
+
+  bodyEl.innerHTML = html;
+}
+
+function renderFeaturePanel(data) {
+  var bodyEl = document.getElementById('featurePanelBody');
+  if (!bodyEl) return;
+
+  var features = data.activeFeatures || [];
+  if (features.length === 0) {
+    bodyEl.innerHTML = '<div class="empty-panel-msg">No features active. Complete onboarding to enable features.</div>';
+    return;
+  }
+
+  var html = '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+  features.forEach(function (f) {
+    var label = (f.component_type || '').replace(/-/g, ' ');
+    html += '<span class="feature-chip ' + (f.is_active ? 'active' : 'inactive') + '">' + escapeHtml(label) + '</span>';
+  });
+  html += '</div>';
+  html += '<div style="margin-top:10px;font-size:0.78rem;color:var(--text-muted);">' + features.length + ' feature' + (features.length !== 1 ? 's' : '') + ' configured.</div>';
+  bodyEl.innerHTML = html;
+}
+
+function renderPlatformFeatures(data) {
+  var bodyEl = document.getElementById('platformFeaturePanelBody');
+  if (!bodyEl) return;
+
+  var pf = data.platformFeatures || {};
+  var features = [
+    { key: 'advancedFiltering', label: 'Advanced Filtering' },
+    { key: 'clientPortal', label: 'Client Portal' },
+    { key: 'emailTemplates', label: 'Email Templates' },
+    { key: 'multiCurrency', label: 'Multi-Currency' },
+    { key: 'recurringInvoices', label: 'Recurring Invoices' },
+    { key: 'exportReporting', label: 'Export & Reporting' },
+    { key: 'roleBasedAccess', label: 'Role-Based Access' },
+    { key: 'activityLog', label: 'Activity Log' }
+  ];
+
+  var html = '<div style="display:flex;flex-wrap:wrap;gap:4px;">';
+  features.forEach(function (f) {
+    var isActive = pf[f.key] === true || (f.key === 'currency' ? false : pf[f.key] === true);
+    // currency is a string, not boolean
+    if (f.key === 'multiCurrency') isActive = pf.multiCurrency === true;
+    html += '<span class="feature-chip ' + (isActive ? 'active' : 'inactive') + '">' + escapeHtml(f.label) + '</span>';
+  });
+  html += '</div>';
+
+  if (pf.currency && pf.currency !== 'USD') {
+    html += '<div style="margin-top:8px;font-size:0.78rem;color:var(--text-muted);">Base currency: <strong>' + escapeHtml(pf.currency) + '</strong></div>';
+  }
+
+  bodyEl.innerHTML = html;
+}
+
+function applyBranding(branding) {
+  if (!branding || !branding.companyName) return;
+
+  // Set page title
+  document.title = branding.companyName + ' — Dashboard';
+
+  // Update kicker
+  var kicker = document.querySelector('.page-kicker');
+  if (kicker) kicker.textContent = branding.companyName;
+
+  // Show logo if present in nav brand
+  var logoContainer = document.getElementById('brandLogoContainer');
+  var logoImg = document.getElementById('brandLogoImg');
+  var nameSpan = document.getElementById('brandCompanyName');
+  var brandFallback = document.getElementById('brandFallback');
+  if (logoContainer && logoImg && nameSpan) {
+    if (branding.logoUrl) {
+      logoImg.src = branding.logoUrl;
+      logoImg.style.display = 'inline';
+      logoContainer.style.display = 'flex';
+    }
+    nameSpan.textContent = branding.companyName;
+  }
+  if (brandFallback) brandFallback.style.display = 'none';
+
+  // Apply brand colors as CSS variables
+  if (branding.primaryColor) {
+    document.documentElement.style.setProperty('--primary', branding.primaryColor);
+    document.documentElement.style.setProperty('--brand-primary', branding.primaryColor);
+  }
+  if (branding.secondaryColor) {
+    document.documentElement.style.setProperty('--accent', branding.secondaryColor);
+    document.documentElement.style.setProperty('--brand-secondary', branding.secondaryColor);
+  }
+
+}
+
+// ======================================================
+// CONDITIONAL ADMIN NAV
+// ======================================================
+(function initAdminNav() {
+  var adminLink = document.getElementById('adminNavLink');
+  if (!adminLink) return;
+  if (window.__USER__ && window.__USER__.role === 'admin') {
+    adminLink.style.display = '';
+  } else {
+    adminLink.style.display = 'none';
+  }
+})();
+
+// ======================================================
+// INITIALIZATION
+// ======================================================
 // Ensure latest edits are sent before leaving the page
 
 refreshList();
+loadDashboardStats();
 
-// Set page title from company profile
+// Set page title from company profile (fallback if dashboard API fails)
 (async () => {
   try {
     const response = await window.api.getCompanyProfile();

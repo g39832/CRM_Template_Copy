@@ -34,7 +34,7 @@ const { startBackupScheduler } = require('./services/db-backup');
 
 const app = express();
 app.set('trust proxy', 1);
-const disableAuth = process.env.NODE_ENV !== 'production' || process.env.DISABLE_AUTH === 'true';
+const disableAuth = process.env.DISABLE_AUTH === 'true';
 const faviconSvg = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CRM Template">
   <defs>
@@ -109,6 +109,8 @@ app.use('/api', (req, res, next) => {
 // ===== API AUTH GUARD =====
 app.use('/api', (req, res, next) => {
   if (req.path === '/login' || req.path === '/change-password') return next();
+  // Allow unauthenticated access to v2 registration and login
+  if (req.path === '/v2/auth/register' || req.path === '/v2/auth/login') return next();
   return requireApiAuth(req, res, next);
 });
 
@@ -152,6 +154,32 @@ app.use('/api/supabase-config', supabaseConfigRoutes);
 app.use('/api/notes', notesRoutes);
 app.use('/api/jobs', jobsRoutes);
 
+// ===== V2 API ROUTES (multi-tenant onboarding system) =====
+const authSystemRoutes = require('./api/auth-system');
+const onboardingRoutes = require('./api/onboarding');
+const dashboardRoutes = require('./api/dashboard');
+
+app.use('/api/v2/auth', authSystemRoutes);
+app.use('/api/v2/onboarding', onboardingRoutes);
+app.use('/api/v2/dashboard', dashboardRoutes);
+
+// ===== PLATFORM FEATURE ROUTES =====
+const activityLogRoutes = require('./api/activity-log');
+const userManagementRoutes = require('./api/user-management');
+const emailTemplatesRoutes = require('./api/email-templates');
+const exportRoutes = require('./api/export');
+const portalRoutes = require('./api/portal');
+
+app.use('/api/v2/admin', activityLogRoutes.router);
+app.use('/api/v2/admin', userManagementRoutes);
+app.use('/api/v2/admin', emailTemplatesRoutes);
+app.use('/api/v2', exportRoutes);
+app.use('/api/v2', portalRoutes);
+
+// ===== ADMIN SETTINGS =====
+var adminSettingsRoutes = require('./api/admin-settings');
+app.use('/api/v2/admin', adminSettingsRoutes);
+
 // ===== BLOCK SENSITIVE FILES FROM STATIC ACCESS =====
 const blockedStaticPaths = [
   /^\/api\//i,
@@ -171,6 +199,21 @@ app.use((req, res, next) => {
 });
 
 // ===== STATIC FILES =====
+// Public assets (js, css) served from /public/ with absolute paths.
+// This MUST be registered before the root static middleware so that
+// /js/* and /css/* paths resolve correctly on ALL routes (fixes MIME
+// and 404 errors when loading assets from nested URLs like /onboarding/step1).
+app.use(express.static(path.join(__dirname, 'public'), {
+  index: false,
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.css')) res.type('text/css');
+    if (filePath.endsWith('.js')) res.type('application/javascript');
+    res.setHeader('Cache-Control', 'no-cache');
+  }
+}));
+
 app.use('/assets', express.static(path.join(__dirname, 'assets'), {
   maxAge: '1d',
   etag: true,
@@ -182,6 +225,7 @@ app.get('/favicon.ico', (req, res) => {
   res.send(faviconSvg);
 });
 app.use(express.static(path.join(__dirname), {
+  index: false,
   etag: true,
   lastModified: true,
   setHeaders: (res, filePath) => {
@@ -207,12 +251,40 @@ app.use(express.static(path.join(__dirname), {
 // ===== PAGE ROUTES =====
 app.get('/', (req, res) => {
   if (disableAuth) return res.sendFile(path.join(__dirname, 'main.html'));
-  res.sendFile(path.join(__dirname, 'login.html'));
+  if (req.session && req.session.user && req.session.authenticated) {
+    return res.redirect('/dashboard');
+  }
+  res.sendFile(path.join(__dirname, 'login-v2.html'));
 });
+
+// Cache main.html for user-data injection
+var _mainHtmlCache = null;
+function getMainHtmlWithUser(req) {
+  if (!_mainHtmlCache) {
+    _mainHtmlCache = fs.readFileSync(path.join(__dirname, 'main.html'), 'utf8');
+  }
+  var userData = JSON.stringify(req.session && req.session.user ? req.session.user : {});
+  return _mainHtmlCache.replace(
+    '</head>',
+    '<script>window.__USER__ = ' + userData + ';</script></head>'
+  );
+}
+
+var _settingsHtmlCache = null;
+function getSettingsHtmlWithUser(req) {
+  if (!_settingsHtmlCache) {
+    _settingsHtmlCache = fs.readFileSync(path.join(__dirname, 'settings.html'), 'utf8');
+  }
+  var userData = JSON.stringify(req.session && req.session.user ? req.session.user : {});
+  return _settingsHtmlCache.replace(
+    '</head>',
+    '<script>window.__USER__ = ' + userData + ';</script></head>'
+  );
+}
 
 app.get('/main', (req, res) => {
   if (!isAuthenticated(req)) return res.redirect('/');
-  res.sendFile(path.join(__dirname, 'main.html'));
+  res.send(getMainHtmlWithUser(req));
 });
 
 app.get('/finance', (req, res) => {
@@ -221,11 +293,52 @@ app.get('/finance', (req, res) => {
 });
 
 app.get('/main.html', requirePageAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'main.html'));
+  res.send(getMainHtmlWithUser(req));
 });
 
 app.get('/finance.html', requirePageAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'finance.html'));
+});
+
+// ===== V2 PAGE ROUTES (onboarding system) =====
+function requireV2Auth(req, res, next) {
+  if (req.session && req.session.user) return next();
+  return res.redirect('/login-v2');
+}
+
+app.get('/register', (req, res) => {
+  return res.redirect('/login-v2?setup=1');
+});
+
+app.get('/login-v2', (req, res) => {
+  if (req.session && req.session.user && req.session.authenticated) {
+    return res.redirect('/dashboard');
+  }
+  res.sendFile(path.join(__dirname, 'login-v2.html'));
+});
+
+app.get('/onboarding/step1', requireV2Auth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'onboarding-step1.html'));
+});
+
+app.get('/onboarding/step2', requireV2Auth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'onboarding-step2.html'));
+});
+
+app.get('/onboarding/step3', requireV2Auth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'onboarding-step3.html'));
+});
+
+app.get('/onboarding/step4', requireV2Auth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'onboarding-step4.html'));
+});
+
+app.get('/dashboard', requireV2Auth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'dashboard.html'));
+});
+
+app.get('/settings', requireV2Auth, (req, res) => {
+  res.send(getSettingsHtmlWithUser(req));
 });
 
 // ===== API ERROR HANDLER =====

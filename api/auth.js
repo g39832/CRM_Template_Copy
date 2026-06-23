@@ -6,7 +6,7 @@ const { asyncHandler, assertObject, parseStringField, AppError } = require('./re
 
 const router = express.Router();
 let passwordInitPromise = null;
-const disableAuth = process.env.NODE_ENV !== 'production' || process.env.DISABLE_AUTH === 'true';
+const disableAuth = process.env.DISABLE_AUTH === 'true';
 
 function getFallbackPassword() {
   const configured = String(process.env.DEFAULT_ADMIN_PASSWORD || '').trim();

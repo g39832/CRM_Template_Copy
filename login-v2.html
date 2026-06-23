@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In</title>
+  <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1b26;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      overflow-x: hidden;
+    }
+
+    .login-shell {
+      width: min(1040px, 100%);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 20px;
+    }
+
+    .hero-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: 24px;
+      border: 1px solid rgba(122, 183, 214, 0.16);
+      background: linear-gradient(180deg, rgba(44, 50, 74, 0.94), rgba(26, 27, 38, 0.96));
+      box-shadow: 0 30px 70px rgba(0, 0, 0, 0.4);
+      padding: 32px;
+    }
+
+    .brand-block {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    #logo_login {
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, rgba(111, 66, 193, 0.25), rgba(79, 140, 255, 0.24));
+      color: #fff;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      border: 1px solid rgba(111, 66, 193, 0.28);
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.03), 0 12px 28px rgba(111,66,193,0.18);
+    }
+
+    .brand-copy .brand-kicker {
+      font-size: 0.76rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: #a78bfa;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .brand-copy h1 {
+      margin: 0;
+      font-size: clamp(1.5rem, 2vw, 2.1rem);
+      line-height: 1.1;
+    }
+
+    .brand-copy p {
+      margin: 8px 0 0;
+      color: #aab3cf;
+      max-width: 58ch;
+      line-height: 1.55;
+    }
+
+    .panel-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      border-radius: 20px;
+      border: 1px solid rgba(122, 183, 214, 0.14);
+      background: rgba(19, 22, 35, 0.55);
+      backdrop-filter: blur(14px);
+      padding: 24px;
+      min-height: 100%;
+    }
+
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 1.05rem;
+    }
+
+    .panel p {
+      margin: 0 0 18px;
+      color: #94a3b8;
+      line-height: 1.5;
+      font-size: 0.94rem;
+    }
+
+    form {
+      display: grid;
+      gap: 12px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.84rem;
+      font-weight: 700;
+      color: #cbd5e1;
+      margin-bottom: 5px;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(122, 183, 214, 0.18);
+      background: rgba(255, 255, 255, 0.06);
+      color: #e2e8f0;
+      font: inherit;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    }
+
+    input::placeholder { color: #64748b; }
+    input:focus {
+      border-color: rgba(111, 66, 193, 0.75);
+      box-shadow: 0 0 0 3px rgba(111, 66, 193, 0.2);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s ease, opacity 0.2s ease;
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+
+    .btn-primary {
+      color: #fff;
+      background: linear-gradient(135deg, #6f42c1, #4f8cff);
+      box-shadow: 0 14px 28px rgba(79, 140, 255, 0.18);
+    }
+
+    .btn-secondary {
+      color: #dbe4ff;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .feedback {
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 0.88rem;
+      display: none;
+      line-height: 1.45;
+    }
+    .feedback.show { display: block; }
+    .feedback.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.14);
+      border: 1px solid rgba(239, 68, 68, 0.28);
+      color: #fecaca;
+    }
+    .feedback.success {
+      display: block;
+      background: rgba(5, 150, 105, 0.14);
+      border: 1px solid rgba(5, 150, 105, 0.28);
+      color: #86efac;
+    }
+
+    .quiet {
+      margin-top: 14px;
+      color: #94a3b8;
+      font-size: 0.84rem;
+      line-height: 1.5;
+    }
+
+    .setup-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(6, 10, 20, 0.7);
+      backdrop-filter: blur(10px);
+      z-index: 9999;
+    }
+
+    .setup-modal.open { display: flex; }
+
+    .setup-card {
+      width: min(560px, 100%);
+      border-radius: 22px;
+      border: 1px solid rgba(122, 183, 214, 0.16);
+      background: linear-gradient(180deg, rgba(44, 50, 74, 0.98), rgba(26, 27, 38, 0.98));
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+      padding: 24px;
+    }
+
+    .setup-card h2 { margin: 0 0 8px; font-size: 1.25rem; }
+    .setup-card p { margin: 0 0 18px; color: #aab3cf; line-height: 1.55; font-size: 0.94rem; }
+
+    .setup-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .setup-grid .full { grid-column: 1 / -1; }
+
+    @media (max-width: 860px) {
+      .panel-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 640px) {
+      body { padding: 14px; }
+      .hero-card { padding: 22px; }
+      .panel, .setup-card { padding: 18px; }
+      .setup-grid { grid-template-columns: 1fr; }
+      .brand-block { align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="login-shell">
+    <div class="hero-card">
+      <div class="brand-block">
+        <div id="logo_login" aria-hidden="true">CRM</div>
+        <div class="brand-copy">
+          <div class="brand-kicker">Multi-Tenant Platform</div>
+          <h1>Sign in</h1>
+          <p>Access your company dashboard. If this is the first time this domain has been used, we’ll prompt for the admin setup automatically.</p>
+        </div>
+      </div>
+
+      <div class="panel-grid">
+        <section class="panel">
+          <h2>Existing account</h2>
+          <p>Use your email and password to log in.</p>
+
+          <form id="loginForm">
+            <div>
+              <label class="sr-only" for="email">Email</label>
+              <input type="email" id="email" placeholder="Email address" autocomplete="email" required>
+            </div>
+
+            <div>
+              <label class="sr-only" for="password">Password</label>
+              <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+            </div>
+
+            <div class="actions">
+              <button type="submit" id="loginBtn" class="btn-primary">Sign In</button>
+              <button type="button" id="showSetupBtn" class="btn-secondary">First-time setup</button>
+            </div>
+          </form>
+
+          <div id="loginFeedback" class="feedback"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Admin controls</h2>
+          <p>Admins can invite team members, manage access, and change features after setup is complete. Normal users only see the tools they’re allowed to use.</p>
+          <div class="quiet">
+            This screen will automatically switch to setup mode when the current domain does not yet have a company/admin attached to it.
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div class="setup-modal" id="setupModal" aria-hidden="true">
+    <div class="setup-card">
+      <h2>Create the first admin</h2>
+      <p>Set up the company for this domain. This only happens once. After this, the domain will use normal sign-in for admins and users.</p>
+
+      <form id="setupForm">
+        <div class="setup-grid">
+          <div class="full">
+            <label for="companyName">Company name</label>
+            <input type="text" id="companyName" placeholder="Your company name" maxlength="200" required>
+          </div>
+          <div>
+            <label for="displayName">Admin name</label>
+            <input type="text" id="displayName" placeholder="Your name" maxlength="200">
+          </div>
+          <div>
+            <label for="setupEmail">Admin email</label>
+            <input type="email" id="setupEmail" placeholder="you@example.com" maxlength="254" required>
+          </div>
+          <div class="full">
+            <label for="setupPassword">Admin password</label>
+            <input type="password" id="setupPassword" placeholder="Create a password" minlength="6" maxlength="128" required>
+          </div>
+        </div>
+
+        <div class="actions" style="margin-top:16px;">
+          <button type="submit" id="setupBtn" class="btn-primary">Create Admin</button>
+          <button type="button" id="cancelSetupBtn" class="btn-secondary">Cancel</button>
+        </div>
+      </form>
+
+      <div id="setupFeedback" class="feedback"></div>
+    </div>
+  </div>
+
+  <script src="/js/onboarding-bg.js" defer></script>
+  <script>
+    (function () {
+      var loginForm = document.getElementById('loginForm');
+      var setupForm = document.getElementById('setupForm');
+      var loginBtn = document.getElementById('loginBtn');
+      var setupBtn = document.getElementById('setupBtn');
+      var showSetupBtn = document.getElementById('showSetupBtn');
+      var cancelSetupBtn = document.getElementById('cancelSetupBtn');
+      var setupModal = document.getElementById('setupModal');
+      var loginFeedback = document.getElementById('loginFeedback');
+      var setupFeedback = document.getElementById('setupFeedback');
+      var companyNameInput = document.getElementById('companyName');
+      var displayNameInput = document.getElementById('displayName');
+      var setupEmailInput = document.getElementById('setupEmail');
+      var setupPasswordInput = document.getElementById('setupPassword');
+
+      function showFeedback(node, message, type) {
+        if (!node) return;
+        node.textContent = message;
+        node.className = 'feedback show ' + (type || '');
+      }
+
+      function clearFeedback(node) {
+        if (!node) return;
+        node.textContent = '';
+        node.className = 'feedback';
+      }
+
+      function openSetupModal(prefill) {
+        if (prefill && companyNameInput && prefill.companyName) companyNameInput.value = prefill.companyName;
+        if (prefill && setupEmailInput && prefill.contactEmail) setupEmailInput.value = prefill.contactEmail;
+        setupModal.classList.add('open');
+        setupModal.setAttribute('aria-hidden', 'false');
+        setTimeout(function () {
+          if (companyNameInput && !companyNameInput.value) companyNameInput.focus();
+          else if (setupEmailInput && !setupEmailInput.value) setupEmailInput.focus();
+          else if (setupPasswordInput) setupPasswordInput.focus();
+        }, 0);
+      }
+
+      function closeSetupModal() {
+        setupModal.classList.remove('open');
+        setupModal.setAttribute('aria-hidden', 'true');
+      }
+
+      function setBusy(button, busy, label) {
+        if (!button) return;
+        button.disabled = busy;
+        if (label) button.textContent = busy ? label : button.dataset.originalLabel;
+      }
+
+      if (showSetupBtn) {
+        showSetupBtn.addEventListener('click', function () {
+          openSetupModal({});
+        });
+      }
+
+      if (cancelSetupBtn) {
+        cancelSetupBtn.addEventListener('click', function () {
+          closeSetupModal();
+        });
+      }
+
+      if (setupModal) {
+        setupModal.addEventListener('click', function (e) {
+          if (e.target === setupModal) closeSetupModal();
+        });
+      }
+
+      async function loadTenantStatus() {
+        try {
+          var res = await fetch('/api/v2/auth/tenant-status', { credentials: 'same-origin' });
+          var data = await res.json();
+          if (!res.ok || !data.success) return;
+          var status = data.data || {};
+          if (status.setupRequired) {
+            openSetupModal(status.company || {});
+            if (showSetupBtn) {
+              showSetupBtn.style.display = '';
+              showSetupBtn.textContent = status.tenantExists ? 'Edit setup' : 'First-time setup';
+            }
+          } else if (showSetupBtn) {
+            showSetupBtn.style.display = 'none';
+          }
+          if (status.company && status.company.name && companyNameInput && !companyNameInput.value) {
+            companyNameInput.value = status.company.name;
+          }
+        } catch (_) {
+          // If tenant status fails, leave the login page usable.
+        }
+      }
+
+      if (loginForm) {
+        loginForm.addEventListener('submit', async function (e) {
+          e.preventDefault();
+          clearFeedback(loginFeedback);
+
+          var email = document.getElementById('email').value.trim();
+          var password = document.getElementById('password').value;
+
+          if (!email || !password) {
+            showFeedback(loginFeedback, 'Email and password are required.', 'error');
+            return;
+          }
+
+          loginBtn.disabled = true;
+          try {
+            var res = await fetch('/api/v2/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: email, password: password })
+            });
+            var data = await res.json();
+            if (!res.ok || !data.success) {
+              throw new Error(data.error || data.message || 'Login failed');
+            }
+
+            if (data.role === 'admin' && data.onboardingComplete === false) {
+              var step = data.onboardingStep || 1;
+              if (step < 1) step = 1;
+              if (step > 4) step = 4;
+              window.location.href = '/onboarding/step' + step;
+              return;
+            }
+
+            window.location.href = '/dashboard';
+          } catch (err) {
+            showFeedback(loginFeedback, err.message || 'Login failed', 'error');
+          } finally {
+            loginBtn.disabled = false;
+          }
+        });
+      }
+
+      if (setupForm) {
+        setupForm.addEventListener('submit', async function (e) {
+          e.preventDefault();
+          clearFeedback(setupFeedback);
+
+          var companyName = companyNameInput ? companyNameInput.value.trim() : '';
+          var displayName = displayNameInput ? displayNameInput.value.trim() : '';
+          var email = setupEmailInput ? setupEmailInput.value.trim() : '';
+          var password = setupPasswordInput ? setupPasswordInput.value : '';
+
+          if (!companyName || !email || !password) {
+            showFeedback(setupFeedback, 'Company name, email, and password are required.', 'error');
+            return;
+          }
+          if (password.length < 6) {
+            showFeedback(setupFeedback, 'Password must be at least 6 characters.', 'error');
+            return;
+          }
+
+          setupBtn.dataset.originalLabel = setupBtn.dataset.originalLabel || setupBtn.textContent;
+          setBusy(setupBtn, true, 'Creating...');
+
+          try {
+            var res = await fetch('/api/v2/auth/register', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                companyName: companyName,
+                displayName: displayName,
+                email: email,
+                password: password
+              })
+            });
+            var data = await res.json();
+            if (!res.ok || !data.success) {
+              throw new Error(data.error || data.message || 'Setup failed');
+            }
+
+            showFeedback(setupFeedback, 'Admin created. Redirecting to onboarding...', 'success');
+            setTimeout(function () {
+              window.location.href = '/onboarding/step1';
+            }, 600);
+          } catch (err) {
+            showFeedback(setupFeedback, err.message || 'Setup failed', 'error');
+          } finally {
+            setBusy(setupBtn, false);
+          }
+        });
+      }
+
+      loadTenantStatus();
+    })();
+  </script>
+</body>
+</html>

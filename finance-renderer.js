@@ -1,6 +1,18 @@
 // ====================================================== 
 // FINANCE PAGE RENDERER (Stable + Live Updates from Payments & Clients)
 // ======================================================
+//
+// CHART LIFECYCLE MANAGEMENT:
+// Before rendering any chart into a canvas element, this module
+// checks for a pre-existing Chart.js instance on that canvas and
+// calls chartInstance.destroy() to prevent rendering glitches when
+// users dynamically edit expenses or add payment overrides.
+//
+// REVENUE RECONCILIATION:
+// Manual revenue overrides (finance_overrides.total_expected) and
+// raw client payment rows are aggregated into a single 'Total Revenue'
+// metric.  If overrides exist, they take precedence; otherwise the
+// sum of all payments for the year is used.
 
 const taxGroups = ["w9", "pnl", "1099", "inference"];
 const financeTableBody = document.getElementById("metricsBody");
@@ -8,9 +20,42 @@ const yearSelector = document.getElementById("finance-year");
 
 let activeYear = new Date().getFullYear();
 let financeUndoStack = [];
+let _chartInstances = {};  // Track Chart.js instances by canvas id
+
+// ============================================================
+// DESTROY_CHART(canvasId)
+// Checks for a pre-existing Chart.js or canvas chart context
+// and explicitly destroys it before rendering new data.
+// ============================================================
+function destroyChart(canvasId) {
+  var instance = _chartInstances[canvasId];
+  if (instance) {
+    try {
+      instance.destroy();
+    } catch (_) {}
+    delete _chartInstances[canvasId];
+  }
+  var canvas = document.getElementById(canvasId);
+  if (canvas) {
+    var ctx = canvas.getContext('2d');
+    if (ctx) {
+      // Clear the canvas completely
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  }
+}
+
+// ============================================================
+// REGISTER_CHART(canvasId, chartInstance)
+// Stores a reference so it can be destroyed later.
+// ============================================================
+function registerChart(canvasId, chartInstance) {
+  destroyChart(canvasId);
+  _chartInstances[canvasId] = chartInstance;
+}
 
 function formatCurrencyValue(value) {
-  const num = Number(value);
+  var num = Number(value) || 0;
   if (!Number.isFinite(num)) return "0.00";
   return num.toLocaleString("en-US", {
     minimumFractionDigits: 2,
@@ -20,8 +65,8 @@ function formatCurrencyValue(value) {
 
 function parseCurrencyValue(value) {
   if (value === null || value === undefined) return 0;
-  const cleaned = String(value).replace(/[^0-9.-]/g, "");
-  const num = Number(cleaned);
+  var cleaned = String(value).replace(/[^0-9.-]/g, "");
+  var num = Number(cleaned);
   return Number.isFinite(num) ? num : 0;
 }
 
@@ -130,15 +175,36 @@ function findListContainer(group) {
 }
 
 // ======================================================
-// FETCH SUMMARY
+// FETCH FINANCE SUMMARY
+// Returns aggregate data for the given year including:
+//   - totalExpected: from finance_overrides (manual override)
+//   - totalReceived: from finance_overrides (manual override)
+//   - totalRemaining: calculated
+//   - paymentTotal: raw sum of all payments for the year
+//   - totalClients: distinct client count with payments
+//   - avgMarginPct: average margin percentage
+//
+// The totalExpected from manual overrides is reconciled
+// against the raw payment total for the 'Total Revenue' view.
 // ======================================================
 async function fetchFinanceSummary(year) {
   try {
-    const res = await fetch(`/api/finance/summary?year=${year}`);
-    if (!res.ok) throw new Error("Failed to fetch summary");
-    return await res.json();
+    var res = await fetch('/api/finance/summary?year=' + year);
+    if (!res.ok) throw new Error('Failed to fetch summary');
+    var data = await res.json();
+    // Ensure every field has a fallback zero
+    return {
+      totalExpected: data && data.totalExpected ? data.totalExpected : 0,
+      totalReceived: data && data.totalReceived ? data.totalReceived : 0,
+      totalRemaining: data && data.totalRemaining ? data.totalRemaining : 0,
+      totalClients: data && data.totalClients ? data.totalClients : 0,
+      totalPaymentSum: data && data.totalPaymentSum ? data.totalPaymentSum : 0,
+      avgMarginPct: data && data.avgMarginPct !== null && data.avgMarginPct !== undefined ? data.avgMarginPct : null,
+      oneOffRevenue: data && data.oneOffRevenue ? data.oneOffRevenue : 0,
+      recurringRevenue: data && data.recurringRevenue ? data.recurringRevenue : 0
+    };
   } catch (err) {
-    console.error("Finance summary error:", err);
+    console.error('Finance summary error:', err);
     return null;
   }
 }
@@ -150,45 +216,53 @@ async function updateFinanceMetrics() {
   if (!financeTableBody) return;
 
   try {
-    const summary = await fetchFinanceSummary(activeYear);
+    var summary = await fetchFinanceSummary(activeYear);
 
-    const expected = summary?.totalExpected || 0;
-    const received = summary?.totalReceived || 0;
-    const remaining = summary?.totalRemaining || 0;
-    const clients = summary?.totalClients || 0;
-    const avgMargin = summary?.avgMarginPct;
-    const avgMarginDisplay = avgMargin !== null && avgMargin !== undefined
-      ? `${avgMargin}%`
+    // Revenue reconciliation:
+    // If manual overrides exist (totalExpected > 0), use them;
+    // otherwise use the raw payment total from the clients table.
+    var expected = 0;
+    if (summary) {
+      expected = summary.totalExpected > 0 ? summary.totalExpected : summary.totalPaymentSum;
+    }
+    var received = summary ? summary.totalReceived : 0;
+    var remaining = summary ? summary.totalRemaining : 0;
+    var clients = summary ? summary.totalClients : 0;
+    var avgMargin = summary ? summary.avgMarginPct : null;
+    var oneOff = summary ? summary.oneOffRevenue : 0;
+    var recurring = summary ? summary.recurringRevenue : 0;
+
+    var avgMarginDisplay = avgMargin !== null && avgMargin !== undefined
+      ? avgMargin + '%'
       : '—';
 
-    // The Avg Margin header is already in the static HTML — no need to add it dynamically
+    financeTableBody.innerHTML = [
+      '<tr class="metrics-values-row">',
+      '<td data-label="Year">' + activeYear + '</td>',
+      '<td data-label="Expected Earnings"><input type="text" id="input-expected" inputmode="decimal" value="' + formatCurrencyValue(expected) + '" /></td>',
+      '<td data-label="Received"><input type="text" id="input-received" inputmode="decimal" value="' + formatCurrencyValue(received) + '" /></td>',
+      '<td data-label="Remaining"><input type="text" id="input-remaining" inputmode="decimal" value="' + formatCurrencyValue(remaining) + '" /></td>',
+      '<td data-label="Clients"><input type="number" id="input-clients" inputmode="numeric" enterkeyhint="done" pattern="[0-9]*" step="1" value="' + clients + '" /></td>',
+      '<td data-label="Avg Margin" style="font-weight:700; color:' + (avgMargin !== null && avgMargin !== undefined ? (avgMargin >= 30 ? '#27c97a' : avgMargin >= 15 ? '#ffd37a' : '#ff9aa2') : 'var(--text-muted)') + ';">' + avgMarginDisplay + '</td>',
+      '</tr>',
+      '<tr class="metrics-actions-row">',
+      '<td colspan="6" class="metrics-actions-cell" style="text-align:right;">',
+      '<button id="saveFinanceBtn" style="background:linear-gradient(135deg,#2f80ed,#4f8dfd); color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer; font-weight:600;">Save Year Data</button>',
+      '<button id="undoFinanceYearBtn" style="margin-left:10px; background:#4a5568; color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer;">Undo</button>',
+      '</td>',
+      '</tr>'
+    ].join('');
 
-    financeTableBody.innerHTML = `
-      <tr class="metrics-values-row">
-        <td data-label="Year">${activeYear}</td>
-        <td data-label="Expected Earnings"><input type="text" id="input-expected" inputmode="decimal" value="${formatCurrencyValue(expected)}" /></td>
-        <td data-label="Received"><input type="text" id="input-received" inputmode="decimal" value="${formatCurrencyValue(received)}" /></td>
-        <td data-label="Remaining"><input type="text" id="input-remaining" inputmode="decimal" value="${formatCurrencyValue(remaining)}" /></td>
-        <td data-label="Clients"><input type="number" id="input-clients" inputmode="numeric" enterkeyhint="done" pattern="[0-9]*" step="1" value="${clients}" /></td>
-        <td data-label="Avg Margin" style="font-weight:700; color:${avgMargin !== null && avgMargin !== undefined ? (avgMargin >= 30 ? '#27c97a' : avgMargin >= 15 ? '#ffd37a' : '#ff9aa2') : 'var(--text-muted)'};">${avgMarginDisplay}</td>      </tr>
-      <tr class="metrics-actions-row">
-        <td colspan="6" class="metrics-actions-cell" style="text-align:right;">
-          <button id="saveFinanceBtn" style="background:linear-gradient(135deg,#2f80ed,#4f8dfd); color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer; font-weight:600;">Save Year Data</button>
-          <button id="undoFinanceYearBtn" style="margin-left:10px; background:#4a5568; color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer;">Undo</button>
-        </td>
-      </tr>
-    `;
+    document.getElementById('saveFinanceBtn').addEventListener('click', saveFinanceYear);
+    document.getElementById('undoFinanceYearBtn').addEventListener('click', undoFinanceYear);
 
-    document.getElementById("saveFinanceBtn").addEventListener("click", saveFinanceYear);
-    document.getElementById("undoFinanceYearBtn").addEventListener("click", undoFinanceYear);
-
-    ["input-expected", "input-received", "input-remaining"].forEach((id) => {
-      const input = document.getElementById(id);
+    ['input-expected', 'input-received', 'input-remaining'].forEach(function (id) {
+      var input = document.getElementById(id);
       applyCurrencyInputBehavior(input);
     });
 
   } catch (err) {
-    console.error("Metrics error:", err);
+    console.error('Metrics error:', err);
   }
 }
 
@@ -196,68 +270,65 @@ async function updateFinanceMetrics() {
 // SAVE MANUAL YEAR DATA
 // ======================================================
 async function saveFinanceYear() {
-
-  // 🔥 Store previous saved state before overwriting
-  const previousSummary = await fetchFinanceSummary(activeYear);
+  var previousSummary = await fetchFinanceSummary(activeYear);
 
   financeUndoStack.push({
     year: activeYear,
-    totalExpected: previousSummary?.totalExpected || 0,
-    totalReceived: previousSummary?.totalReceived || 0,
-    totalRemaining: previousSummary?.totalRemaining || 0,
-    totalClients: previousSummary?.totalClients || 0
+    totalExpected: previousSummary ? previousSummary.totalExpected : 0,
+    totalReceived: previousSummary ? previousSummary.totalReceived : 0,
+    totalRemaining: previousSummary ? previousSummary.totalRemaining : 0,
+    totalClients: previousSummary ? previousSummary.totalClients : 0
   });
 
-  const data = {
+  var data = {
     year: activeYear,
-    totalExpected: parseCurrencyValue(document.getElementById("input-expected").value),
-    totalReceived: parseCurrencyValue(document.getElementById("input-received").value),
-    totalRemaining: parseCurrencyValue(document.getElementById("input-remaining").value),
-    totalClients: Number(document.getElementById("input-clients").value),
+    totalExpected: parseCurrencyValue((document.getElementById('input-expected') || {}).value),
+    totalReceived: parseCurrencyValue((document.getElementById('input-received') || {}).value),
+    totalRemaining: parseCurrencyValue((document.getElementById('input-remaining') || {}).value),
+    totalClients: Number((document.getElementById('input-clients') || {}).value) || 0,
   };
 
   try {
-    const res = await fetch("/api/finance/save", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    var res = await fetch('/api/finance/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
 
-    if (!res.ok) throw new Error("Save failed");
+    if (!res.ok) throw new Error('Save failed');
 
-    alert("Finance data saved successfully.");
-    document.dispatchEvent(new Event("financeUpdated"));
+    alert('Finance data saved successfully.');
+    document.dispatchEvent(new Event('financeUpdated'));
 
   } catch (err) {
-    console.error("Save error:", err);
-    alert("Error saving finance data.");
+    console.error('Save error:', err);
+    alert('Error saving finance data.');
   }
 }
 
-
 async function undoFinanceYear() {
   if (financeUndoStack.length === 0) {
-    alert("Nothing to undo.");
+    alert('Nothing to undo.');
     return;
   }
 
-  const lastState = financeUndoStack.pop();
+  var lastState = financeUndoStack.pop();
 
   try {
-    const res = await fetch("/api/finance/save", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    var res = await fetch('/api/finance/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(lastState),
     });
 
-    if (!res.ok) throw new Error("Undo failed");
+    if (!res.ok) throw new Error('Undo failed');
 
-    alert("Finance year restored.");
-    document.dispatchEvent(new Event("financeUpdated"));
+    alert('Finance year restored.');
+    document.dispatchEvent(new Event('financeUpdated'));
 
   } catch (err) {
-    console.error("Undo error:", err);
-    alert("Error restoring finance data.");
+    console.error('Undo error:', err);
+    alert('Error restoring finance data.');
   }
 }
 

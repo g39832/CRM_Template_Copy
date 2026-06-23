@@ -3,6 +3,41 @@
   const yearInput = document.getElementById('finance-year');
   if (!root) return;
 
+  // ============================================================
+  // CHART LIFECYCLE MANAGEMENT
+  // ============================================================
+  // Track all Chart.js or canvas-rendered chart instances so they
+  // can be explicitly destroyed before a re-render.  This prevents
+  // visual glitches when users dynamically edit expenses or add new
+  // margins, which would otherwise create overlapping chart layers.
+  var _chartInstances = {};
+
+  function destroyChart(canvasId) {
+    var instance = _chartInstances[canvasId];
+    if (instance) {
+      try { instance.destroy(); } catch (_) {}
+      delete _chartInstances[canvasId];
+    }
+    var canvas = document.getElementById(canvasId);
+    if (canvas) {
+      var ctx = canvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, canvas.width || 300, canvas.height || 150);
+    }
+  }
+
+  function registerChart(canvasId, chartInstance) {
+    destroyChart(canvasId);
+    _chartInstances[canvasId] = chartInstance;
+  }
+
+  // Destroy all tracked charts (called before each render)
+  function destroyAllCharts() {
+    var ids = Object.keys(_chartInstances);
+    for (var i = 0; i < ids.length; i++) {
+      destroyChart(ids[i]);
+    }
+  }
+
   const currency = new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
@@ -53,7 +88,7 @@
       const params = new URLSearchParams(window.location.search);
       const raw = params.get('demo') || params.get('mock') || localStorage.getItem('marginTrackerDemo');
       return ['1', 'true', 'yes', 'on'].includes(String(raw).toLowerCase());
-    } catch {
+    } catch (e) {
       return false;
     }
   }
@@ -453,6 +488,7 @@
     const clients = (rawPayload?.clients || []).map(normalizeClient);
     const payments = (rawPayload?.payments || []).map(normalizePayment);
     const expenses = (rawPayload?.expenses || []).map(normalizeExpense);
+    const overrides = rawPayload?.overrides || null;
     const nameById = new Map(clients.map((client) => [Number(client.id), client.name]));
     const idByName = new Map(clients.map((client) => [client.name.toLowerCase(), Number(client.id)]));
 
@@ -840,10 +876,15 @@
       marginPct: bucket.marginPct
     }));
 
+    const overrideRevenue = overrides?.totalExpected || 0;
+    const overrideReceived = overrides?.totalReceived || 0;
+    const adjustedSeriesTotal = Math.max(currentSeriesTotal, overrideRevenue, overrideReceived);
+
     return {
       clients,
       payments,
       expenses,
+      overrides,
       nameById,
       filteredClients,
       visibleRows,
@@ -851,10 +892,10 @@
       previousBuckets,
       categoryItems,
       periodTitle,
-      currentSeriesTotal,
+      currentSeriesTotal: adjustedSeriesTotal,
       currentExpenseTotal,
-      currentProfitTotal,
-      currentMarginPct,
+      currentProfitTotal: adjustedSeriesTotal - currentExpenseTotal,
+      currentMarginPct: adjustedSeriesTotal > 0 ? ((adjustedSeriesTotal - currentExpenseTotal) / adjustedSeriesTotal) * 100 : 0,
       previousSeriesTotal,
       previousExpenseTotal,
       previousProfitTotal,
@@ -1065,6 +1106,9 @@
   }
 
   function render() {
+    // Destroy all existing chart instances before re-rendering
+    destroyAllCharts();
+
     if (state.loading) {
       loadSkeleton();
       return;
@@ -1453,6 +1497,11 @@
     const valuesA = series.map((item) => toNumber(item[keyA]));
     const valuesB = keyB ? series.map((item) => toNumber(item[keyB])) : [];
     const labels = series.map((item) => item.label);
+    const hasDataA = valuesA.some(v => v !== 0);
+    const hasDataB = keyB ? valuesB.some(v => v !== 0) : false;
+    if (!hasDataA && !hasDataB) {
+      return `<div class="mt-empty">No data available for the selected period. Add payments or margin entries to see charts.</div>`;
+    }
     const pointsA = buildPath(valuesA, 700, 220, labels);
     const pointsB = keyB ? buildPath(valuesB, 700, 220, labels) : null;
     const max = Math.max(...valuesA, ...valuesB, 1);
@@ -1495,10 +1544,12 @@
     }));
     const line = points.map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
     const area = `${line} L ${width} ${height - 18} L 0 ${height - 18} Z`;
+    const isCurrency = values.some(v => v > 100);
     const circles = points.map((point, idx) => `
-      <circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="4.5" fill="#ffffff" stroke="#72edc7" stroke-width="2">
-        <title>${escapeHtml(`${labels[idx] || `Point ${idx + 1}`}: ${formatMoney(values[idx])}`)}</title>
+      <circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="5" fill="#ffffff" stroke="#72edc7" stroke-width="2.5" style="cursor:pointer;">
+        <title>${escapeHtml(`${labels[idx] || `Point ${idx + 1}`}: ${isCurrency ? formatMoney(values[idx]) : percentFmt.format(values[idx]) + '%'}`)}</title>
       </circle>
+      <text x="${Math.min(point.x + 8, width - 50)}" y="${Math.max(point.y - 10, 14)}" fill="rgba(255,255,255,0.7)" font-size="10" font-family="inherit" font-weight="600">${escapeHtml(isCurrency ? formatMoney(values[idx]) : percentFmt.format(values[idx]) + '%')}</text>
     `).join('');
     return { line, area, circles };
   }
@@ -1506,7 +1557,12 @@
   function gridLines(max) {
     return [0.2, 0.4, 0.6, 0.8].map((step) => {
       const y = 220 - 24 - (220 - 56) * step;
-      return `<line x1="18" x2="682" y1="${y}" y2="${y}" stroke="rgba(255,255,255,0.05)" stroke-width="1"></line>`;
+      const value = max * step;
+      const label = currency.format(value);
+      return `
+        <line x1="62" x2="690" y1="${y}" y2="${y}" stroke="rgba(255,255,255,0.06)" stroke-width="1"></line>
+        <text x="8" y="${y + 4}" fill="rgba(255,255,255,0.4)" font-size="10" font-family="inherit">${label}</text>
+      `;
     }).join('');
   }
 
@@ -2190,5 +2246,5 @@
   root.addEventListener('input', handleInteraction);
   root.addEventListener('submit', handleInteraction);
 
-  refreshDashboard();
+  scheduleRefreshDashboard();
 })();

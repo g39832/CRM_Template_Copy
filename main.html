@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CRM Template - Clients</title>
+  <title>Dashboard | CRM Template</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/style.css">
   <style>
     .page-header {
       display: flex;
@@ -279,6 +279,46 @@
       flex: 1; /* Make it take full width on the right */
     }
 
+    /* ===== TOP NAVIGATION BAR ===== */
+    .top-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 24px;
+      background: rgba(15, 32, 39, 0.98);
+      border-bottom: 1px solid rgba(122, 183, 214, 0.10);
+    }
+    .top-nav .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--text-main);
+    }
+    .top-nav .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .top-nav .nav-links a {
+      text-decoration: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      color: #94a3b8;
+      font-size: 0.88rem;
+      font-weight: 600;
+      transition: background 0.2s, color 0.2s;
+    }
+    .top-nav .nav-links a:hover {
+      background: rgba(255,255,255,0.06);
+      color: #e2e8f0;
+    }
+    .top-nav .nav-links a.active {
+      background: rgba(37,99,235,0.15);
+      color: #60a5fa;
+    }
+
     .close-x {
       color: var(--accent);
       font-size: 1.5rem;
@@ -316,7 +356,54 @@
       margin-top: 15px;
       opacity: 0;
       animation: fadeIn 0.3s ease forwards 0.2s;
+      display: flex;
+      gap: 6px;
+      align-items: stretch;
     }
+    .sidebar .search-bar input { flex: 1; }
+    .filter-toggle-btn {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: var(--text-main);
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 0 10px;
+      line-height: 1;
+      transition: background 0.2s;
+    }
+    .filter-toggle-btn:hover { background: rgba(255,255,255,0.2); }
+    .filter-panel {
+      padding: 10px 8px;
+      margin: 0 8px 6px;
+      background: rgba(15,32,39,0.6);
+      border-radius: 10px;
+      border: 1px solid rgba(122,183,214,0.12);
+      opacity: 0;
+      animation: fadeIn 0.3s ease forwards;
+    }
+    .filter-row { display:flex; gap:6px; margin-bottom:6px; }
+    .filter-row:last-child { margin-bottom:0; }
+    .filter-row select, .filter-row input {
+      flex: 1;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(0,0,0,0.25);
+      color: var(--text-main);
+      font-size: 0.82rem;
+    }
+    .filter-row select option { background: #1a2c33; }
+    .filter-actions button { padding: 6px 10px; border-radius: 6px; font-size: 0.82rem; }
+    .btn-secondary {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: var(--text-main);
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.2); }
 
     .client-list {
       margin-top: 10px;
@@ -432,6 +519,47 @@
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }
     }
+
+    /* ===== DASHBOARD OVERVIEW ===== */
+    #dashboardOverview { display: block; margin: 0 auto; width: min(960px, calc(100% - 32px)); max-width: 960px; padding: 0 16px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+    .stat-card { background: linear-gradient(180deg, rgba(44,83,100,0.92), rgba(32,58,67,0.95)); border: 1px solid rgba(122,183,214,0.18); border-radius: 14px; padding: 16px 18px; box-shadow: 0 10px 18px rgba(0,0,0,0.16); }
+    .stat-card .stat-label { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; margin-bottom: 4px; }
+    .stat-card .stat-value { font-size: 1.65rem; font-weight: 800; color: var(--text-main); line-height: 1.1; }
+    .stat-card .stat-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
+    .dashboard-panels { display: block; margin-bottom: 20px; }
+    .dashboard-panel { background: linear-gradient(180deg, rgba(44,83,100,0.92), rgba(32,58,67,0.95)); border: 1px solid rgba(122,183,214,0.18); border-radius: 14px; padding: 16px 18px; box-shadow: 0 10px 18px rgba(0,0,0,0.16); }
+    .dashboard-panel h3 { font-size: 0.85rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); font-weight: 700; margin-bottom: 10px; }
+    .kanban-board { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
+    .kanban-col { flex: 1; min-width: 100px; background: rgba(15,32,39,0.28); border-radius: 10px; padding: 8px 10px; border: 1px solid rgba(122,183,214,0.08); }
+    .kanban-col .kanban-header { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; text-align: center; }
+    .kanban-col .kanban-count { font-size: 1.2rem; font-weight: 800; text-align: center; }
+    .recurring-manager { display: flex; flex-direction: column; gap: 6px; }
+    .recurring-manager .empty { color: var(--text-muted); font-size: 0.82rem; text-align: center; padding: 16px 0; }
+    .client-type-badge { display: inline-block; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; margin-left: 5px; vertical-align: middle; }
+    .client-type-badge.one-off { background: rgba(71,167,245,0.15); color: var(--accent); border: 1px solid rgba(71,167,245,0.25); }
+    .client-type-badge.recurring { background: rgba(15,155,88,0.15); color: #27c97a; border: 1px solid rgba(15,155,88,0.25); }
+    .retention-risk-badge { display: inline-block; font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 999px; margin-left: 4px; background: rgba(255,68,68,0.2); color: #ff6b6b; border: 1px solid rgba(255,68,68,0.4); animation: retentionPulse 1.8s ease-in-out infinite; }
+    @keyframes retentionPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+    .feature-chip { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin: 2px 3px; }
+    .feature-chip.active { background: rgba(71,167,245,0.18); color: var(--accent); border: 1px solid rgba(71,167,245,0.3); }
+    .feature-chip.inactive { background: rgba(255,255,255,0.06); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.08); }
+    #brandLogoImg { max-height: 32px; max-width: 120px; border-radius: 6px; margin-right: 10px; vertical-align: middle; display: none; }
+    .revenue-split-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; margin-top: 8px; background: rgba(255,255,255,0.06); }
+    .revenue-split-bar .one-off-bar { background: var(--accent); transition: width 0.5s ease; }
+    .revenue-split-bar .recurring-bar { background: #27c97a; transition: width 0.5s ease; }
+    .revenue-split-labels { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
+    .empty-panel-msg { color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 20px 0; }
+    #brandLogoContainer { display: none; align-items: center; }
+    #brandLogoContainer img { max-height: 34px; max-width: 130px; border-radius: 6px; }
+    #brandLogoContainer span { font-weight: 700; font-size: 1.05rem; color: var(--text-main); }
+
+    @media (max-width: 768px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+      #dashboardOverview { width: calc(100% - 16px); padding: 0 8px; }
+      .top-nav { flex-wrap: wrap; gap: 8px; padding: 8px 14px; }
+      .top-nav .nav-links a { padding: 6px 12px; font-size: 0.82rem; }
+    }
   </style>
 
   <!-- PDF.js library -->
@@ -440,7 +568,24 @@
 </head>
 <body class="dashboard-body">
 
-  <!-- Top header with toggle button -->
+  <!-- Top navigation bar -->
+  <nav class="top-nav">
+    <div class="nav-brand">
+      <div id="brandLogoContainer" style="display:none;align-items:center;gap:6px;">
+        <img id="brandLogoImg" src="" alt="Company logo" style="display:none;max-height:28px;max-width:100px;border-radius:4px;">
+        <span id="brandCompanyName" style="font-weight:700;font-size:0.95rem;color:var(--text-main);"></span>
+      </div>
+      <span id="brandFallback" style="font-weight:700;font-size:0.95rem;color:var(--text-main);">CRM Template</span>
+    </div>
+    <div class="nav-links">
+      <a href="/main" class="active">Dashboard</a>
+      <a href="/finance" id="navFinanceLink">Finance</a>
+      <a href="/settings" id="userSettingsNavLink">Settings</a>
+      <a href="/settings" id="adminNavLink" style="display:none;">&#9881; Admin Settings</a>
+    </div>
+  </nav>
+
+  <!-- Page header with action buttons -->
   <header id="Main_header" class="page-header">
     <div class="page-header-copy">
       <span class="page-kicker">CRM Template</span>
@@ -448,11 +593,29 @@
       <p class="page-subtitle">Track leads, notes, files, and project details from one workspace.</p>
     </div>
     <div class="page-header-actions">
+        <button id="userSettingsBtn" class="secondary">Settings</button>
         <button id="emailSettingsBtn" class="secondary">Email Setup</button>
         <button id="companyProfileBtn" class="secondary">Company Profile</button>
-        <button id="toggleFinance">Finance Dashboard</button>
     </div>
   </header>
+
+  <!-- ===== DASHBOARD OVERVIEW (stats + panels) ===== -->
+  <div id="dashboardOverview">
+    <div class="stats-grid" id="statsGrid">
+      <div class="stat-card"><div class="stat-label">Total Clients</div><div class="stat-value" id="statTotalClients">—</div><div class="stat-sub">All time</div></div>
+      <div class="stat-card"><div class="stat-label">Active Jobs</div><div class="stat-value" id="statActiveJobs">—</div><div class="stat-sub">Not closed</div></div>
+      <div class="stat-card"><div class="stat-label">Outstanding</div><div class="stat-value" id="statOutstanding">—</div><div class="stat-sub">Unpaid invoices</div></div>
+      <div class="stat-card"><div class="stat-label">This Month</div><div class="stat-value" id="statRevenue">—</div><div class="stat-sub">Revenue</div></div>
+    </div>
+
+    <div class="dashboard-panels" id="dashboardPanels">
+      <div class="dashboard-panel" id="workflowPanel">
+        <h3 id="workflowPanelTitle">Pipeline Overview</h3>
+        <div id="workflowPanelBody"><div class="empty-panel-msg">Loading...</div></div>
+      </div>
+    </div>
+  </div>
+  <!-- ===== END DASHBOARD OVERVIEW ===== -->
 
   <div class="crm-dashboard">
     <!-- Sidebar: Lead & Client Management -->
@@ -473,6 +636,26 @@
 
         <div class="search-bar">
           <input type="text" id="searchClients" placeholder="Search name, phone, or email...">
+          <button type="button" id="filterToggleBtn" class="filter-toggle-btn" title="Advanced Filters" style="display:none;">⚙</button>
+        </div>
+
+        <div id="filterPanel" class="filter-panel" style="display:none;">
+          <div class="filter-row">
+            <select id="filterType"><option value="">All types</option><option value="one-off">One-off</option><option value="recurring">Recurring</option></select>
+            <select id="filterStatus"><option value="">All statuses</option><option value="Lead">Lead</option><option value="Prospect">Prospect</option><option value="Approved">Approved</option><option value="Completed">Completed</option><option value="Invoice">Invoice</option><option value="Closed">Closed</option></select>
+          </div>
+          <div class="filter-row">
+            <input type="date" id="filterDateFrom" placeholder="From date">
+            <input type="date" id="filterDateTo" placeholder="To date">
+          </div>
+          <div class="filter-row">
+            <input type="number" id="filterRevenueMin" placeholder="Min revenue" step="0.01">
+            <input type="number" id="filterRevenueMax" placeholder="Max revenue" step="0.01">
+          </div>
+          <div class="filter-row filter-actions">
+            <button type="button" id="applyFilterBtn" class="btn-primary" style="flex:1;">Apply</button>
+            <button type="button" id="clearFilterBtn" class="btn-secondary" style="flex:1;">Clear</button>
+          </div>
         </div>
 
         <!-- Scrollable List of Clients -->
@@ -634,13 +817,15 @@
   </div>
 
   <!-- Renderer script -->
-  <script src="main-renderer.js?v=2" defer></script>
+  <script src="/main-renderer.js?v=2" defer></script>
   <script>
-    // Toggle button to finance page
+    // Toggle button to finance page (if element exists)
     const toggleBtn = document.getElementById('toggleFinance');
-    toggleBtn.addEventListener('click', () => {
-        window.location.href = 'finance.html';
-    });
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+          window.location.href = 'finance.html';
+      });
+    }
 
     // PDF.js worker
     if (typeof pdfjsLib !== 'undefined') {

@@ -27,6 +27,8 @@ services:
         sync: false
       - key: ENABLE_DB_BACKUPS
         value: false
+      - key: CRON_SECRET
+        sync: false
       - key: DISABLE_AUTH
         value: false
       - key: NODE_ENV

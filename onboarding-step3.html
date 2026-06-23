@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Onboarding - Features</title>
+  <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #0f2027;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .step-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 32px;
+    }
+
+    .step-dot {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+
+    .step-dot.active {
+      background: #2563eb;
+      color: #fff;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.35);
+    }
+
+    .step-dot.done {
+      background: #059669;
+      color: #fff;
+    }
+
+    .step-dot.pending {
+      background: transparent;
+      border: 2px solid #475569;
+      color: #64748b;
+    }
+
+    .step-line {
+      width: 40px;
+      height: 2px;
+      background: #475569;
+    }
+
+    .step-line.done {
+      background: #059669;
+    }
+
+    .onboarding-card {
+      width: 100%;
+      max-width: 720px;
+      background: linear-gradient(180deg, rgba(28, 58, 67, 0.97), rgba(15, 32, 39, 0.97));
+      border: 1px solid rgba(122, 183, 214, 0.15);
+      border-radius: 18px;
+      padding: 40px 36px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+    }
+
+    .onboarding-card h1 {
+      font-size: 1.5rem;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+
+    .onboarding-card .subtitle {
+      color: #94a3b8;
+      font-size: 0.92rem;
+      line-height: 1.5;
+      margin-bottom: 28px;
+    }
+
+    /* ---------- feature list ---------- */
+    .feature-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 28px;
+    }
+
+    .feature-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border: 1px solid rgba(122, 183, 214, 0.12);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .feature-item:hover {
+      border-color: rgba(122, 183, 214, 0.3);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .feature-item.inactive {
+      opacity: 0.55;
+    }
+
+    .feature-order {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .feature-order button {
+      width: 24px;
+      height: 18px;
+      border: 1px solid rgba(122, 183, 214, 0.15);
+      border-radius: 4px;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 0.7rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .feature-order button:hover:not(:disabled) {
+      background: rgba(37, 99, 235, 0.15);
+      color: #3b82f6;
+    }
+
+    .feature-order button:disabled {
+      opacity: 0.25;
+      cursor: not-allowed;
+    }
+
+    .feature-toggle {
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .feature-toggle input {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .feature-toggle label {
+      display: block;
+      width: 40px;
+      height: 22px;
+      border-radius: 12px;
+      background: #475569;
+      cursor: pointer;
+      transition: background 0.2s;
+      position: relative;
+    }
+
+    .feature-toggle label::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      transition: transform 0.2s, background 0.2s;
+    }
+
+    .feature-toggle input:checked + label {
+      background: #059669;
+    }
+
+    .feature-toggle input:checked + label::after {
+      transform: translateX(18px);
+      background: #fff;
+    }
+
+    .feature-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .feature-info .name {
+      font-weight: 600;
+      font-size: 0.92rem;
+      text-transform: capitalize;
+    }
+
+    .feature-info .desc {
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    .feature-number {
+      font-size: 0.78rem;
+      color: #475569;
+      font-weight: 700;
+      min-width: 22px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    /* ---------- buttons ---------- */
+    .form-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .btn-primary {
+      flex: 1;
+      padding: 14px 20px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s;
+    }
+
+    .btn-primary:hover {
+      opacity: 0.92;
+      transform: translateY(-1px);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-secondary {
+      padding: 14px 20px;
+      border: 1px solid rgba(122, 183, 214, 0.2);
+      border-radius: 12px;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    /* ---------- feedback ---------- */
+    #formFeedback {
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      display: none;
+    }
+
+    #formFeedback.success {
+      display: block;
+      background: rgba(5, 150, 105, 0.15);
+      border: 1px solid rgba(5, 150, 105, 0.3);
+      color: #6ee7b7;
+    }
+
+    #formFeedback.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    /* ---------- loading overlay ---------- */
+    .loading-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+
+    .loading-overlay.visible {
+      display: flex;
+    }
+
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid rgba(255, 255, 255, 0.15);
+      border-top: 4px solid #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 520px) {
+      .onboarding-card {
+        padding: 28px 20px;
+      }
+      .feature-item {
+        flex-wrap: wrap;
+        padding: 12px;
+      }
+      .form-actions {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+  </div>
+
+  <div class="step-bar" aria-label="Onboarding progress">
+    <span class="step-dot done" aria-label="Step 1 complete">&#10003;</span>
+    <span class="step-line done" aria-hidden="true"></span>
+    <span class="step-dot done" aria-label="Step 2 complete">&#10003;</span>
+    <span class="step-line done" aria-hidden="true"></span>
+    <span class="step-dot active" aria-current="step">3</span>
+    <span class="step-line" aria-hidden="true"></span>
+    <span class="step-dot pending">4</span>
+  </div>
+
+  <div class="onboarding-card">
+    <h1>Choose your features</h1>
+    <p class="subtitle">
+      Enable the sections you want to use. Use the arrows to reorder
+      them as needed.
+    </p>
+
+    <div id="formFeedback" role="alert"></div>
+    <div class="feature-list" id="featureList"></div>
+
+    <div class="form-actions">
+      <a href="/onboarding/step2" class="btn-secondary">Back</a>
+      <button type="button" class="btn-primary" id="completeBtn">Complete Onboarding</button>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var featureList = document.getElementById('featureList');
+      var completeBtn = document.getElementById('completeBtn');
+      var feedback = document.getElementById('formFeedback');
+      var loadingOverlay = document.getElementById('loadingOverlay');
+
+      var SITE_TYPES = ['hero', 'about', 'services', 'testimonials', 'contact-form', 'faq', 'gallery', 'newsletter'];
+
+      var DESCRIPTIONS = {
+        hero: 'Large headline section with call-to-action button',
+        about: 'Your company description and story',
+        services: 'Grid of service offerings with descriptions',
+        testimonials: 'Client testimonials with quotes',
+        'contact-form': 'Contact form that emails your company inbox',
+        faq: 'Expandable frequently asked questions',
+        gallery: 'Photo grid showcasing your work',
+        newsletter: 'Email signup form for updates'
+      };
+
+      var features = [];
+
+      // ---------- load ----------
+      function loadFeatures() {
+        showLoading(true);
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/api/v2/onboarding/features', true);
+        xhr.onload = function () {
+          showLoading(false);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            var data = JSON.parse(xhr.responseText);
+            if (data.success) {
+              features = data.features;
+              if (!data.isDefault) {
+                // Sort by display_order
+                features.sort(function (a, b) { return (a.display_order || 0) - (b.display_order || 0); });
+              }
+              render();
+            } else {
+              showError(data.error || 'Failed to load features');
+            }
+          } else {
+            showError('Failed to load features (status ' + xhr.status + ')');
+          }
+        };
+        xhr.onerror = function () {
+          showLoading(false);
+          showError('Network error loading features');
+        };
+        xhr.send();
+      }
+
+      function isSiteType(type) {
+        return SITE_TYPES.indexOf(type) !== -1;
+      }
+
+      // ---------- render (site features only) ----------
+      function render() {
+        var siteFeatures = [];
+        features.forEach(function (f) {
+          if (isSiteType(f.component_type)) {
+            siteFeatures.push(f);
+          }
+        });
+
+        var html = '';
+        siteFeatures.forEach(function (f, i) {
+          var type = f.component_type || 'unknown';
+          var active = f.is_active !== false;
+          var desc = DESCRIPTIONS[type] || '';
+          var first = i === 0;
+          var last = i === siteFeatures.length - 1;
+
+          html += '<div class="feature-item' + (active ? '' : ' inactive') + '" data-site="' + i + '">' +
+            '<div class="feature-number">#' + (i + 1) + '</div>' +
+            '<div class="feature-order">' +
+              '<button type="button" class="order-up" data-site="' + i + '"' + (first ? ' disabled' : '') + '>&#9650;</button>' +
+              '<button type="button" class="order-down" data-site="' + i + '"' + (last ? ' disabled' : '') + '>&#9660;</button>' +
+            '</div>' +
+            '<div class="feature-toggle">' +
+              '<input type="checkbox" id="stoggle-' + i + '"' + (active ? ' checked' : '') + ' data-site="' + i + '">' +
+              '<label for="stoggle-' + i + '"></label>' +
+            '</div>' +
+            '<div class="feature-info">' +
+              '<div class="name">' + type.replace(/-/g, ' ') + '</div>' +
+              '<div class="desc">' + desc + '</div>' +
+            '</div>' +
+          '</div>';
+        });
+        featureList.innerHTML = html;
+
+        // Attach event listeners for site features
+        featureList.querySelectorAll('.order-up').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            moveSiteUp(parseInt(this.getAttribute('data-site')));
+          });
+        });
+        featureList.querySelectorAll('.order-down').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            moveSiteDown(parseInt(this.getAttribute('data-site')));
+          });
+        });
+        featureList.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+          cb.addEventListener('change', function () {
+            var idx = siteFeatureIndex(parseInt(this.getAttribute('data-site')));
+            if (idx !== -1) {
+              features[idx].is_active = this.checked;
+              var item = this.closest('.feature-item');
+              if (item) {
+                item.classList.toggle('inactive', !this.checked);
+              }
+            }
+          });
+        });
+      }
+
+      function siteFeatureIndex(sitePos) {
+        var count = 0;
+        for (var i = 0; i < features.length; i++) {
+          if (isSiteType(features[i].component_type)) {
+            if (count === sitePos) return i;
+            count++;
+          }
+        }
+        return -1;
+      }
+
+      function moveSiteUp(sitePos) {
+        if (sitePos <= 0) return;
+        var a = siteFeatureIndex(sitePos);
+        var b = siteFeatureIndex(sitePos - 1);
+        if (a === -1 || b === -1) return;
+        swapGlobal(a, b);
+      }
+
+      function moveSiteDown(sitePos) {
+        var siteFeatures = features.filter(function (f) { return isSiteType(f.component_type); });
+        if (sitePos >= siteFeatures.length - 1) return;
+        var a = siteFeatureIndex(sitePos);
+        var b = siteFeatureIndex(sitePos + 1);
+        if (a === -1 || b === -1) return;
+        swapGlobal(a, b);
+      }
+
+      function swapGlobal(a, b) {
+        var tmp = features[a];
+        features[a] = features[b];
+        features[b] = tmp;
+        features.forEach(function (f, i) { f.display_order = i; });
+        render();
+      }
+
+      // ---------- save ----------
+      completeBtn.addEventListener('click', function () {
+        var payload = features.map(function (f, i) {
+          return {
+            component_type: f.component_type,
+            is_active: f.is_active !== false,
+            display_order: i,
+            config: f.config || {}
+          };
+        });
+
+        showLoading(true);
+        hideFeedback();
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/v2/onboarding/features', true);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.onload = function () {
+          showLoading(false);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            var data = JSON.parse(xhr.responseText);
+            if (data.success) {
+              showSuccess('Onboarding complete!');
+              setTimeout(function () {
+                window.location.href = '/onboarding/step4';
+              }, 1200);
+            } else {
+              showError(data.error || 'Failed to save features');
+            }
+          } else {
+            showError('Failed to save features (status ' + xhr.status + ')');
+          }
+        };
+        xhr.onerror = function () {
+          showLoading(false);
+          showError('Network error saving features');
+        };
+        xhr.send(JSON.stringify({ features: payload }));
+      });
+
+      // ---------- helpers ----------
+      function showLoading(visible) {
+        loadingOverlay.classList.toggle('visible', visible);
+      }
+
+      function showError(msg) {
+        feedback.className = 'error';
+        feedback.textContent = msg;
+      }
+
+      function showSuccess(msg) {
+        feedback.className = 'success';
+        feedback.textContent = msg;
+      }
+
+      function hideFeedback() {
+        feedback.className = '';
+        feedback.textContent = '';
+        feedback.style.display = 'none';
+        setTimeout(function () { feedback.style.display = ''; }, 0);
+      }
+
+      // ---------- init ----------
+      loadFeatures();
+    })();
+  </script>
+  <script src="/js/onboarding-bg.js" defer></script>
+</body>
+</html>

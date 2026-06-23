@@ -84,6 +84,60 @@ async function updateFinanceTotalsSafe(year, context = 'finance totals') {
 // ======================================================
 // SEARCH CLIENTS
 // ======================================================
+router.get('/search/filtered', asyncHandler(async (req, res) => {
+  var term = String(req.query.q || '').slice(0, 200);
+  var clientType = String(req.query.type || '').trim();
+  var status = String(req.query.status || '').trim();
+  var dateFrom = String(req.query.dateFrom || '').trim();
+  var dateTo = String(req.query.dateTo || '').trim();
+  var revenueMin = req.query.revenueMin ? Number(req.query.revenueMin) : null;
+  var revenueMax = req.query.revenueMax ? Number(req.query.revenueMax) : null;
+
+  await db.schemaReady;
+  var conditions = [];
+  var params = [];
+  var pIdx = 1;
+
+  if (term) {
+    var like = '%' + term + '%';
+    conditions.push('(clients.name ILIKE $' + pIdx + ' OR clients.phone ILIKE $' + (pIdx + 1) + ' OR clients.email ILIKE $' + (pIdx + 2) + ' OR clients.address ILIKE $' + (pIdx + 3) + ')');
+    params.push(like, like, like, like);
+    pIdx += 4;
+  }
+  if (clientType === 'one-off' || clientType === 'recurring') {
+    conditions.push('clients.client_type = $' + pIdx++);
+    params.push(clientType);
+  }
+  if (status) {
+    conditions.push('clients.status = $' + pIdx++);
+    params.push(status);
+  }
+  if (dateFrom) {
+    conditions.push('clients.created_at >= $' + pIdx++);
+    params.push(dateFrom);
+  }
+  if (dateTo) {
+    conditions.push('clients.created_at <= $' + pIdx++ + '::date + interval \'1 day\'');
+    params.push(dateTo);
+  }
+  if (revenueMin !== null && Number.isFinite(revenueMin)) {
+    conditions.push('clients.total_due >= $' + pIdx++);
+    params.push(revenueMin);
+  }
+  if (revenueMax !== null && Number.isFinite(revenueMax)) {
+    conditions.push('clients.total_due <= $' + pIdx++);
+    params.push(revenueMax);
+  }
+
+  var sql = 'SELECT * FROM clients';
+  if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
+  sql += ' ORDER BY clients.created_at DESC LIMIT $' + pIdx++ + ' OFFSET $' + pIdx;
+  params.push(500, 0);
+
+  var { rows } = await db.query(sql, params);
+  return res.json(rows);
+}));
+
 router.get('/search', asyncHandler(async (req, res) => {
   const term = parseStringField(req.query.q ?? '', 'q', { required: false, maxLength: 200, defaultValue: '' });
   const limit = parseOptionalPagination(req.query.limit, 500);
@@ -654,6 +708,23 @@ router.get('/finance/margin/dashboard', asyncHandler(async (req, res) => {
     const clientNameLookup = new Map(baseData.clients.map((client) => [Number(client.id), client.name || '']));
     const expenses = baseData.expenses.map((row) => normalizeMarginEntryRow(row, clientNameLookup));
 
+    let override = null;
+    try {
+      const overrideResult = await db.query('SELECT * FROM finance_overrides WHERE year = $1', [year]);
+      if (overrideResult.rows.length > 0) {
+        const row = overrideResult.rows[0];
+        override = {
+          year: Number(row.year),
+          totalExpected: Number(row.total_expected || 0),
+          totalReceived: Number(row.total_received || 0),
+          totalRemaining: Number(row.total_remaining || 0),
+          totalClients: Number(row.total_clients || 0)
+        };
+      }
+    } catch (e) {
+      // finance_overrides table may not exist — silently skip
+    }
+
     return res.json({
       year,
       previousYear: year - 1,
@@ -661,7 +732,8 @@ router.get('/finance/margin/dashboard', asyncHandler(async (req, res) => {
       invoiceStatuses: MARGIN_INVOICE_STATUSES,
       clients: baseData.clients,
       payments: baseData.payments,
-      expenses
+      expenses,
+      overrides: override
     });
   } catch (err) {
     console.error('Margin dashboard error:', err);
