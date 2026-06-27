@@ -320,6 +320,34 @@ SELECT EXISTS (
   WHERE indexname = 'users_single_admin_idx'
 ) AS single_admin_index_exists;
 
+-- ======================================================
+-- SERVICES PRESETS TABLE
+-- ======================================================
+CREATE TABLE IF NOT EXISTS public.services (
+  id BIGSERIAL PRIMARY KEY,
+  company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+  name VARCHAR(200) NOT NULL,
+  description TEXT DEFAULT '',
+  default_rate DECIMAL(10,2) DEFAULT 0,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ======================================================
+-- CLIENT-SERVICE PIVOT TABLE (scope line items)
+-- ======================================================
+CREATE TABLE IF NOT EXISTS public.client_service (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+  service_id BIGINT NOT NULL REFERENCES public.services(id) ON DELETE CASCADE,
+  custom_rate DECIMAL(10,2) DEFAULT NULL,
+  notes TEXT DEFAULT '',
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(client_id, service_id)
+);
+
 -- Force schema cache refresh (run these separately if columns still missing):
 --   NOTIFY pgrst, 'reload schema';
 -- Or select from each table to trigger cache refresh:

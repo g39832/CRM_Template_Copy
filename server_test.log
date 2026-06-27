@@ -1,0 +1,4 @@
+Uploads folder is ready
+Server running on http://localhost:3000
+[admin-guard] admin_claimed = false
+[API] POST /api/v2/auth/register -> 500 (296ms)

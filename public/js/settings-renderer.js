@@ -332,7 +332,7 @@
   function loadUsers() {
     var tbody = document.getElementById('usersTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:#64748b;">Loading users...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:#94a3b8;">Loading users...</td></tr>';
     var xhr = new XMLHttpRequest();
     xhr.open('GET', USERS_API, true);
     xhr.onload = function () {
@@ -340,7 +340,7 @@
         var resp = JSON.parse(xhr.responseText);
         var users = resp.data || [];
         if (users.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:#64748b;">No users found.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:#94a3b8;">No users found.</td></tr>';
           return;
         }
         var html = '';
@@ -358,7 +358,7 @@
           if (u.role !== 'admin') {
             html += '<button type="button" class="delete-user-btn" data-id="' + u.id + '" data-email="' + escapeHtml(u.email) + '" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;">Delete</button>';
           } else {
-            html += '<span style="color:#64748b;font-size:0.78rem;">—</span>';
+            html += '<span style="color:#94a3b8;font-size:0.78rem;">—</span>';
           }
           html += '</td></tr>';
         });
@@ -533,7 +533,7 @@
   function loadAuditLog() {
     var tbody = document.getElementById('auditTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:#64748b;">Loading activity log...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:#94a3b8;">Loading activity log...</td></tr>';
 
     var params = '?page=' + auditPage + '&limit=20';
     if (auditActionFilter) params += '&action=' + encodeURIComponent(auditActionFilter);
@@ -555,7 +555,7 @@
         if (nextBtn) nextBtn.disabled = auditPage * 20 >= total;
 
         if (entries.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:#64748b;">No activity log entries found.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:#94a3b8;">No activity log entries found.</td></tr>';
           return;
         }
 

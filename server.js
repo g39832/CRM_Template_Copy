@@ -61,6 +61,7 @@ const loginLimiter = rateLimit({
   message: { success: false, error: 'Too many login attempts. Try again in 15 minutes.' }
 });
 app.use('/api/login', loginLimiter);
+app.use('/api/v2/auth/login', loginLimiter);
 
 // ===== SESSION =====
 const sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
@@ -109,8 +110,8 @@ app.use('/api', (req, res, next) => {
 // ===== API AUTH GUARD =====
 app.use('/api', (req, res, next) => {
   if (req.path === '/login' || req.path === '/change-password') return next();
-  // Allow unauthenticated access to v2 registration and login
-  if (req.path === '/v2/auth/register' || req.path === '/v2/auth/login') return next();
+  // Allow unauthenticated access to all v2 auth endpoints (register, login, tenant-status, me)
+  if (req.path.startsWith('/v2/auth/')) return next();
   return requireApiAuth(req, res, next);
 });
 
@@ -176,6 +177,10 @@ app.use('/api/v2/admin', emailTemplatesRoutes);
 app.use('/api/v2', exportRoutes);
 app.use('/api/v2', portalRoutes);
 
+// ===== SERVICES & SCOPES =====
+var servicesRoutes = require('./api/services');
+app.use('/api/v2', servicesRoutes);
+
 // ===== ADMIN SETTINGS =====
 var adminSettingsRoutes = require('./api/admin-settings');
 app.use('/api/v2/admin', adminSettingsRoutes);
@@ -188,7 +193,13 @@ const blockedStaticPaths = [
   /^\/server\.js$/i,
   /^\/forge\.config\.js$/i,
   /^\/(?:init-db|update-db)\.js$/i,
-  /\.db(?:-wal|-shm)?$/i
+  /\.db(?:-wal|-shm)?$/i,
+  /^\/\.env/i,
+  /^\/\.git(?:\/|$)/i,
+  /^\/uploads\//i,
+  /^\/scripts\//i,
+  /\.(?:key|pem|crt|p12|pfx|csr)$/i,
+  /\.sql$/i
 ];
 
 app.use((req, res, next) => {
@@ -224,31 +235,8 @@ app.get('/favicon.ico', (req, res) => {
   res.type('image/svg+xml');
   res.send(faviconSvg);
 });
-app.use(express.static(path.join(__dirname), {
-  index: false,
-  etag: true,
-  lastModified: true,
-  setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.css')) {
-      res.type('text/css');
-      res.setHeader('Cache-Control', 'no-cache');
-      return;
-    }
-    if (filePath.endsWith('.js')) {
-      res.type('application/javascript');
-      res.setHeader('Cache-Control', 'no-cache');
-      return;
-    }
-    if (filePath.endsWith('.html')) {
-      res.type('text/html');
-      res.setHeader('Cache-Control', 'no-cache');
-      return;
-    }
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-  }
-}));
 
-// ===== PAGE ROUTES =====
+// ===== PAGE ROUTES (must be before root static middleware) =====
 app.get('/', (req, res) => {
   if (disableAuth) return res.sendFile(path.join(__dirname, 'main.html'));
   if (req.session && req.session.user && req.session.authenticated) {
@@ -287,13 +275,14 @@ app.get('/main', (req, res) => {
   res.send(getMainHtmlWithUser(req));
 });
 
+app.get('/main.html', (req, res) => {
+  if (!isAuthenticated(req)) return res.redirect('/');
+  res.send(getMainHtmlWithUser(req));
+});
+
 app.get('/finance', (req, res) => {
   if (!isAuthenticated(req)) return res.redirect('/');
   res.sendFile(path.join(__dirname, 'finance.html'));
-});
-
-app.get('/main.html', requirePageAuth, (req, res) => {
-  res.send(getMainHtmlWithUser(req));
 });
 
 app.get('/finance.html', requirePageAuth, (req, res) => {
@@ -340,6 +329,30 @@ app.get('/dashboard', requireV2Auth, (req, res) => {
 app.get('/settings', requireV2Auth, (req, res) => {
   res.send(getSettingsHtmlWithUser(req));
 });
+
+app.use(express.static(path.join(__dirname), {
+  index: false,
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.css')) {
+      res.type('text/css');
+      res.setHeader('Cache-Control', 'no-cache');
+      return;
+    }
+    if (filePath.endsWith('.js')) {
+      res.type('application/javascript');
+      res.setHeader('Cache-Control', 'no-cache');
+      return;
+    }
+    if (filePath.endsWith('.html')) {
+      res.type('text/html');
+      res.setHeader('Cache-Control', 'no-cache');
+      return;
+    }
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+  }
+}));
 
 // ===== API ERROR HANDLER =====
 app.use((err, req, res, next) => {

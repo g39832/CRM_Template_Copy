@@ -56,6 +56,12 @@
 (function () {
   'use strict';
 
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+  }
+
   // =============================================================
   // FEATURE 1: BRANDING HEADER
   // Reads company profile from the stats endpoint and injects the
@@ -211,7 +217,7 @@
           var active = f.is_active !== false;
           return '<span class="feature-chip ' + (active ? 'active' : 'inactive') + '">' +
             (active ? '\u2713 ' : '\u2717 ') +
-            f.component_type.replace(/-/g, ' ') +
+            escapeHtml(f.component_type.replace(/-/g, ' ')) +
             '</span>';
         }).join('');
       } else {

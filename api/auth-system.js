@@ -33,22 +33,30 @@ async function getTenantByHost(supabase, host) {
   var variants = hostVariants(host);
   if (variants.length === 0) return null;
 
-  var { data: companies, error } = await supabase
+  // Query for a company matching slug or contact_email
+  for (var i = 0; i < variants.length; i++) {
+    var variant = variants[i];
+    var { data: companies, error } = await supabase
+      .from('companies')
+      .select('*')
+      .or('slug.eq.' + variant + ',contact_email.eq.' + variant)
+      .limit(1);
+
+    if (error) throw new AppError(500, 'Failed to resolve tenant: ' + error.message);
+    if (companies && companies.length > 0) return companies[0];
+  }
+
+  // Fallback: if only one company exists, return it (development convenience)
+  var { count, error: countErr } = await supabase
     .from('companies')
-    .select('*')
-    .order('created_at', { ascending: true });
+    .select('id', { count: 'exact', head: true });
+  if (countErr) throw new AppError(500, 'Failed to check companies: ' + countErr.message);
+  if (count === 1) {
+    var { data: single } = await supabase.from('companies').select('*').limit(1).single();
+    return single || null;
+  }
 
-  if (error) throw new AppError(500, 'Failed to resolve tenant: ' + error.message);
-  if (!companies || companies.length === 0) return null;
-
-  return companies.find(function (company) {
-    var keys = [company.slug, company.company_domain, company.contact_email]
-      .filter(Boolean)
-      .map(function (v) { return String(v).trim().toLowerCase(); });
-    return variants.some(function (variant) {
-      return keys.indexOf(variant) !== -1;
-    });
-  }) || null;
+  return null;
 }
 
 async function getCompanyAdminCount(supabase, companyId) {

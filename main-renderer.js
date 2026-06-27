@@ -11,6 +11,61 @@ function escapeHtml(str) {
 }
 
 // ======================================================
+// CUSTOM PROMPT DIALOG (replaces window.prompt for CSP safety)
+// ======================================================
+function customPrompt(message, defaultValue) {
+  return new Promise(function (resolve) {
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:99999;';
+
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#1e1e2f;border:1px solid rgba(122,183,214,0.2);border-radius:12px;padding:24px;min-width:320px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.5);';
+
+    var label = document.createElement('p');
+    label.textContent = message;
+    label.style.cssText = 'margin:0 0 14px;color:var(--text-main,#e0e0e0);font-size:0.95rem;';
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.value = defaultValue || '';
+    input.style.cssText = 'width:100%;padding:10px 12px;border-radius:8px;border:1px solid rgba(122,183,214,0.2);background:#2a2a40;color:#e0e0e0;font-size:0.9rem;box-sizing:border-box;outline:none;';
+
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px;';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'padding:8px 16px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#aaa;cursor:pointer;font-size:0.85rem;';
+
+    var okBtn = document.createElement('button');
+    okBtn.textContent = 'OK';
+    okBtn.style.cssText = 'padding:8px 16px;border-radius:8px;border:none;background:#2f80ed;color:#fff;cursor:pointer;font-size:0.85rem;font-weight:600;';
+
+    function close(val) {
+      overlay.remove();
+      resolve(val);
+    }
+
+    cancelBtn.onclick = function () { close(null); };
+    okBtn.onclick = function () { close(input.value); };
+    input.onkeydown = function (e) {
+      if (e.key === 'Enter') close(input.value);
+      if (e.key === 'Escape') close(null);
+    };
+    overlay.onclick = function (e) { if (e.target === overlay) close(null); };
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(okBtn);
+    box.appendChild(label);
+    box.appendChild(input);
+    box.appendChild(btnRow);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    setTimeout(function () { input.focus(); input.select(); }, 50);
+  });
+}
+
+// ======================================================
 // STATUS CONFIG
 // ======================================================
 const STATUS_ORDER = [
@@ -950,6 +1005,84 @@ window.api = {
     const res = await fetch('/api/v2/dashboard/stats');
     if (!res.ok) return null;
     return res.json();
+  },
+
+  // ==========================
+  // SERVICES API
+  // ==========================
+  async listServices(all = false) {
+    const res = await fetch('/api/v2/services' + (all ? '?all=true' : ''));
+    if (!res.ok) throw new Error('Failed to list services');
+    return res.json();
+  },
+
+  async createService(payload) {
+    const res = await fetch('/api/v2/services', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Failed to create service');
+    }
+    return res.json();
+  },
+
+  async updateService(id, payload) {
+    const res = await fetch('/api/v2/services/' + id, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Failed to update service');
+    }
+    return res.json();
+  },
+
+  async deleteService(id) {
+    const res = await fetch('/api/v2/services/' + id, { method: 'DELETE' });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Failed to delete service');
+    }
+    return res.json();
+  },
+
+  async listClientServices(clientId) {
+    const res = await fetch('/api/v2/clients/' + clientId + '/services');
+    if (!res.ok) throw new Error('Failed to list client services');
+    return res.json();
+  },
+
+  async assignClientServices(clientId, serviceIds) {
+    const res = await fetch('/api/v2/clients/' + clientId + '/services', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serviceIds })
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Failed to assign services');
+    }
+    return res.json();
+  },
+
+  async removeClientService(clientId, assignmentId) {
+    const res = await fetch('/api/v2/clients/' + clientId + '/services/' + assignmentId, { method: 'DELETE' });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Failed to remove service');
+    }
+    return res.json();
+  },
+
+  async getClientCashAggregate(clientId) {
+    const res = await fetch('/api/v2/clients/' + clientId + '/cash-aggregate');
+    if (!res.ok) return { totalCashCollected: 0, jobCount: 0 };
+    return res.json();
   }
 };
 // ======================================================
@@ -1629,6 +1762,33 @@ async function openClient(id) {
         </header>
 
         <div class="details-grid panel-grid">
+
+          <!-- ===== QUICK ADD JOB ===== -->
+          <div class="panel-full-span" style="margin-bottom:2px;">
+            <div style="display:flex; gap:8px; align-items:center;">
+              <input type="text" id="quick-job-title" placeholder="New job title..."
+                style="flex:1; padding:10px 14px; border-radius:10px; border:1px solid rgba(122,183,214,0.22); background:rgba(32,58,67,0.96); color:var(--text-main); font-size:0.95rem;">
+              <button id="quick-add-job-btn" class="btn-primary"
+                style="background:linear-gradient(135deg,#0f9b58,#27c97a); padding:10px 18px; white-space:nowrap; font-weight:700;">
+                + New Job
+              </button>
+            </div>
+          </div>
+
+          <!-- ===== CASH AGGREGATE TRACKER ===== -->
+          <div class="panel-section panel-full-span" style="padding-top:0; padding-bottom:0; margin-bottom:6px;">
+            <div class="panel-balance-row" style="background:rgba(15,32,39,0.28); border:1px solid rgba(122,183,214,0.12); border-radius:12px; padding:10px 16px;">
+              <div class="panel-metric">
+                <span>Total Cash Collected</span>
+                <strong id="cashAggregateDisplay" style="font-family:'Courier New',monospace; font-size:1.3rem; font-weight:800;">$0.00</strong>
+              </div>
+              <div class="panel-metric">
+                <span>Jobs</span>
+                <strong id="cashJobCountDisplay" style="font-size:1.3rem;">0</strong>
+              </div>
+            </div>
+          </div>
+
           <div class="panel-full-span">
             <label>Job Status</label>
             <select id="p-status">
@@ -1723,11 +1883,23 @@ async function openClient(id) {
           <div class="panel-section panel-full-span">
             <div class="panel-section-header">
               <h3>Scope of Work</h3>
-              <span class="panel-section-note">Pulled onto invoices and estimates. Edit per job — independent from notes.</span>
+              <span class="panel-section-note">Services assigned to this client. Pulled onto invoices.</span>
             </div>
-            <textarea id="p-scope" rows="5"
-              style="width:100%; padding:12px; border-radius:12px; border:1px solid rgba(122,183,214,0.22); background:rgba(32,58,67,0.96); color:var(--text-main); font-size:0.95rem; resize:vertical; box-sizing:border-box;"
-              placeholder="Describe the work to be done...">${escapeHtml(initialScope)}</textarea>
+            <div id="scope-services-list" style="display:flex; flex-wrap:wrap; gap:6px; min-height:32px; margin-bottom:8px;">
+              <div style="color:var(--text-muted); font-size:0.85rem; width:100%;">Loading scope items...</div>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button id="add-scope-service-btn" class="btn-primary"
+                style="background:linear-gradient(135deg,#2f80ed,#4f8dfd); flex:1; padding:8px;">
+                + Add Service
+              </button>
+              <button id="manage-services-btn" class="btn-primary"
+                style="background:rgba(255,255,255,0.14); color:white; flex:1; padding:8px; display:none;">
+                Manage Presets
+              </button>
+            </div>
+            <!-- Hidden textarea for backward compatibility with save/invoice -->
+            <textarea id="p-scope" style="display:none;">${escapeHtml(initialScope)}</textarea>
           </div>
 
           <div id="pdf-drop-zone" class="drop-zone"
@@ -1766,11 +1938,7 @@ async function openClient(id) {
               <h3>Jobs</h3>
               <span class="panel-section-note">Each job has its own scope, financials, and documents.</span>
             </div>
-            <div id="jobs-list" style="display:flex; flex-direction:column; gap:10px; margin-bottom:12px;"></div>
-            <button id="add-job-btn" class="btn-primary"
-              style="background:linear-gradient(135deg,#0f9b58,#27c97a); width:100%; padding:10px;">
-              + New Job
-            </button>
+            <div id="jobs-list" style="display:flex; flex-direction:column; gap:10px;"></div>
           </div>
 
           <div class="panel-actions panel-full-span">
@@ -1801,6 +1969,9 @@ async function openClient(id) {
     setupFinancialSection(client);
     setupNotesSection(id);
     setupJobsSection(id);
+    setupQuickAddJob(id);
+    loadCashAggregate(id);
+    setupScopeServices(id);
     setupDirtyTracking();
     setSaveStatus("saved");
     // SHOW MODAL
@@ -2153,8 +2324,7 @@ async function setupNotesSection(clientId) {
 // ======================================================
 async function setupJobsSection(clientId) {
   const jobsList = document.getElementById('jobs-list');
-  const addJobBtn = document.getElementById('add-job-btn');
-  if (!jobsList || !addJobBtn) return;
+  if (!jobsList) return;
 
   const STATUS_COLORS_JOB = {
     Prospect: '#a780ee', Approved: '#6dddef', Completed: '#f0ad4e',
@@ -2169,7 +2339,7 @@ async function setupJobsSection(clientId) {
       jobsList.innerHTML = '';
 
       if (jobs.length === 0) {
-        jobsList.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No jobs yet. Click "+ New Job" to add one.</div>';
+        jobsList.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No jobs yet. Create one above.</div>';
         return;
       }
 
@@ -2229,12 +2399,22 @@ async function setupJobsSection(clientId) {
     }
   }
 
-  addJobBtn.onclick = async () => {
-    try {
-      addJobBtn.disabled = true;
-      addJobBtn.textContent = 'Creating...';
+  loadJobs();
+}
 
-      // Pre-fill scope from company profile default
+// ======================================================
+// QUICK ADD JOB (top of Client Info Box)
+// ======================================================
+function setupQuickAddJob(clientId) {
+  const input = document.getElementById('quick-job-title');
+  const btn = document.getElementById('quick-add-job-btn');
+  if (!input || !btn) return;
+
+  async function createJob(title) {
+    try {
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+
       let defaultScope = '';
       try {
         const profile = await window.api.getCompanyProfile();
@@ -2243,27 +2423,522 @@ async function setupJobsSection(clientId) {
 
       const result = await window.api.createJob({
         client_id: clientId,
-        title: 'New Job',
+        title: title || 'New Job',
         status: 'Prospect',
         scope_of_work: defaultScope,
         total_due: 0,
         job_cost: 0
       });
 
-      await loadJobs();
+      input.value = '';
       showToast('Job created', 'success');
+      // Reload jobs list
+      const jobsSection = document.getElementById('jobs-list');
+      if (jobsSection) {
+        const data = await window.api.listJobs(clientId);
+        const jobs = data.jobs || [];
+        jobsSection.innerHTML = '';
+        if (jobs.length === 0) {
+          jobsSection.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No jobs yet. Create one above.</div>';
+        }
+        // Re-run setupJobsSection to refresh
+        await setupJobsSection(clientId);
+      }
       // Auto-open the new job
-      if (result.job) openJobPanel(result.job, clientId, loadJobs);
+      if (result.job) {
+        openJobPanel(result.job, clientId, function () {
+          setupJobsSection(clientId);
+        });
+      }
     } catch (err) {
       console.error(err);
       showToast('Failed to create job', 'error');
     } finally {
-      addJobBtn.disabled = false;
-      addJobBtn.textContent = '+ New Job';
+      btn.disabled = false;
+      btn.textContent = '+ New Job';
+    }
+  }
+
+  btn.onclick = function () {
+    var title = input.value.trim();
+    createJob(title);
+  };
+
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      var title = input.value.trim();
+      createJob(title);
+    }
+  });
+}
+
+// ======================================================
+// CASH AGGREGATE TRACKER
+// ======================================================
+async function loadCashAggregate(clientId) {
+  const displayEl = document.getElementById('cashAggregateDisplay');
+  const countEl = document.getElementById('cashJobCountDisplay');
+  if (!displayEl) return;
+
+  try {
+    const data = await window.api.getClientCashAggregate(clientId);
+    if (data && data.success) {
+      displayEl.textContent = '$' + formatMoney(data.totalCashCollected);
+      if (countEl) countEl.textContent = data.jobCount || 0;
+    }
+  } catch (err) {
+    console.error(err);
+    displayEl.textContent = '$0.00';
+  }
+}
+
+// ======================================================
+// SCOPE OF WORK - SERVICE MANAGER
+// ======================================================
+async function setupScopeServices(clientId) {
+  const listEl = document.getElementById('scope-services-list');
+  const addBtn = document.getElementById('add-scope-service-btn');
+  const manageBtn = document.getElementById('manage-services-btn');
+
+  if (!listEl || !addBtn) return;
+
+  // Show manage button only for admins
+  if (manageBtn && window.__USER__ && window.__USER__.role === 'admin') {
+    manageBtn.style.display = '';
+  }
+
+  async function loadScopeServices() {
+    listEl.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;width:100%;">Loading...</div>';
+    try {
+      const data = await window.api.listClientServices(clientId);
+      var assignments = data.assignments || [];
+      listEl.innerHTML = '';
+
+      if (assignments.length === 0) {
+        listEl.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;width:100%;">No services assigned. Click "+ Add Service".</div>';
+        return;
+      }
+
+      // Build scope text for hidden textarea (backward compat)
+      var scopeLines = [];
+
+      assignments.forEach(function (cs) {
+        var chip = document.createElement('span');
+        chip.style.cssText =
+          'display:inline-flex;align-items:center;gap:4px;' +
+          'background:rgba(47,128,237,0.15);border:1px solid rgba(47,128,237,0.3);' +
+          'border-radius:999px;padding:4px 10px 4px 12px;' +
+          'font-size:0.82rem;color:var(--text-main);';
+
+        var label = document.createElement('span');
+        label.textContent = cs.serviceName || 'Service #' + cs.serviceId;
+        chip.appendChild(label);
+
+        var rate = cs.customRate || cs.defaultRate;
+        if (rate > 0) {
+          var rateSpan = document.createElement('span');
+          rateSpan.style.cssText = 'font-family:\'Courier New\',monospace;font-weight:700;color:var(--accent);margin-left:2px;';
+          rateSpan.textContent = '$' + formatMoney(rate);
+          chip.appendChild(rateSpan);
+        }
+
+        var removeBtn = document.createElement('button');
+        removeBtn.innerHTML = '&times;';
+        removeBtn.style.cssText =
+          'border:none;background:transparent;color:rgba(255,150,150,0.8);' +
+          'cursor:pointer;font-size:1.1rem;line-height:1;padding:0 2px;margin-left:2px;';
+        removeBtn.title = 'Remove ' + cs.serviceName;
+        removeBtn.onclick = async function () {
+          try {
+            await window.api.removeClientService(clientId, cs.id);
+            showToast(cs.serviceName + ' removed', 'success');
+            await loadScopeServices();
+            await updateScopeHiddenField();
+            markDirty();
+          } catch (err) {
+            showToast('Failed to remove service', 'error');
+          }
+        };
+        chip.appendChild(removeBtn);
+        listEl.appendChild(chip);
+
+        scopeLines.push('- ' + cs.serviceName + (rate > 0 ? ' ($' + formatMoney(rate) + ')' : ''));
+      });
+
+      // Update hidden textarea with service text
+      var hiddenScope = document.getElementById('p-scope');
+      if (hiddenScope && scopeLines.length > 0) {
+        hiddenScope.value = scopeLines.join('\n');
+      }
+    } catch (err) {
+      console.error(err);
+      listEl.innerHTML = '<div style="color:#ff9aa2;font-size:0.85rem;width:100%;">Failed to load services.</div>';
+    }
+  }
+
+  addBtn.onclick = function () {
+    openServicePicker(clientId, function () {
+      loadScopeServices();
+      updateScopeHiddenField();
+    });
+  };
+
+  if (manageBtn) {
+    manageBtn.onclick = function () {
+      openManageServicesModal(function () {
+        // Reload the picker if it's open, or just refresh
+      });
+    };
+  }
+
+  await loadScopeServices();
+}
+
+async function updateScopeHiddenField() {
+  var hiddenScope = document.getElementById('p-scope');
+  if (!hiddenScope) return;
+
+  // Read the actual assigned services via API to build the text
+  if (!activeId) return;
+  try {
+    var data = await window.api.listClientServices(activeId);
+    var assignments = data.assignments || [];
+    if (assignments.length > 0) {
+      var lines = assignments.map(function (cs) {
+        var rate = cs.customRate || cs.defaultRate;
+        return '- ' + cs.serviceName + (rate > 0 ? ' ($' + formatMoney(rate) + ')' : '');
+      });
+      hiddenScope.value = lines.join('\n');
+    } else {
+      hiddenScope.value = '';
+    }
+  } catch (e) {
+    // Silently fail; hidden field keeps its prior value
+  }
+}
+
+// ======================================================
+// SERVICE PICKER MODAL
+// ======================================================
+function openServicePicker(clientId, onSave) {
+  var existing = document.getElementById('servicePickerOverlay');
+  if (existing) existing.remove();
+
+  var overlay = document.createElement('div');
+  overlay.id = 'servicePickerOverlay';
+  overlay.style.cssText =
+    'position:fixed;inset:0;background:rgba(5,12,16,0.72);' +
+    'display:flex;align-items:center;justify-content:center;' +
+    'z-index:20000;padding:16px;';
+
+  overlay.innerHTML =
+    '<div style="' +
+      'position:relative;width:min(520px,100%);max-height:80vh;overflow-y:auto;' +
+      'background:linear-gradient(180deg,rgba(44,83,100,0.98),rgba(32,58,67,0.98));' +
+      'border:1px solid rgba(122,183,214,0.18);border-radius:18px;' +
+      'padding:24px;box-shadow:0 24px 60px rgba(0,0,0,0.45);color:var(--text-main);' +
+    '">' +
+      '<button id="closeServicePicker" style="' +
+        'position:absolute;top:12px;right:14px;border:none;background:transparent;' +
+        'color:var(--accent);font-size:1.5rem;cursor:pointer;line-height:1;' +
+      '">&times;</button>' +
+      '<div style="font-size:0.75rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:4px;">Add Services</div>' +
+      '<h3 style="margin:0 0 16px;font-size:1.1rem;">Select services to add to scope</h3>' +
+      '<div id="servicePickerList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">' +
+        '<div style="color:var(--text-muted);">Loading services...</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;">' +
+        '<button id="servicePickerSaveBtn" class="btn-primary" style="background:linear-gradient(135deg,#2f80ed,#4f8dfd);flex:1;padding:10px;">Add Selected</button>' +
+        '<button id="servicePickerCancelBtn" class="btn-primary" style="background:rgba(255,255,255,0.14);color:white;flex:1;padding:10px;">Cancel</button>' +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#closeServicePicker').onclick = function () { overlay.remove(); };
+  overlay.querySelector('#servicePickerCancelBtn').onclick = function () { overlay.remove(); };
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+
+  var saveBtn = overlay.querySelector('#servicePickerSaveBtn');
+  var listEl = overlay.querySelector('#servicePickerList');
+
+  async function loadServices() {
+    listEl.innerHTML = '<div style="color:var(--text-muted);">Loading...</div>';
+    try {
+      var svcData = await window.api.listServices();
+      var services = svcData.services || [];
+
+      // Get currently assigned service IDs
+      var assignedData = await window.api.listClientServices(clientId);
+      var assignedIds = (assignedData.assignments || []).map(function (a) { return a.serviceId; });
+
+      if (services.length === 0) {
+        listEl.innerHTML = '<div style="color:var(--text-muted);">No services available. Ask an admin to create presets.</div>';
+        return;
+      }
+
+      var available = services.filter(function (s) { return assignedIds.indexOf(s.id) === -1; });
+
+      if (available.length === 0) {
+        listEl.innerHTML = '<div style="color:var(--text-muted);">All available services are already assigned.</div>';
+        return;
+      }
+
+      listEl.innerHTML = '';
+      var checked = [];
+
+      available.forEach(function (svc) {
+        var row = document.createElement('label');
+        row.style.cssText =
+          'display:flex;align-items:center;gap:10px;padding:10px 12px;' +
+          'border-radius:10px;border:1px solid rgba(122,183,214,0.14);' +
+          'background:rgba(15,32,39,0.2);cursor:pointer;transition:0.15s ease;';
+
+        row.addEventListener('mouseenter', function () {
+          row.style.borderColor = 'rgba(71,167,245,0.5)';
+        });
+        row.addEventListener('mouseleave', function () {
+          row.style.borderColor = 'rgba(122,183,214,0.14)';
+        });
+
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = svc.id;
+        cb.style.cssText = 'width:18px;height:18px;accent-color:#4f8dfd;cursor:pointer;';
+        cb.addEventListener('change', function () {
+          if (cb.checked) {
+            checked.push(svc.id);
+          } else {
+            var idx = checked.indexOf(svc.id);
+            if (idx > -1) checked.splice(idx, 1);
+          }
+        });
+
+        var info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;';
+        info.innerHTML =
+          '<div style="font-weight:600;font-size:0.9rem;">' + escapeHtml(svc.name) + '</div>' +
+          (svc.description ? '<div style="font-size:0.78rem;color:var(--text-muted);">' + escapeHtml(svc.description) + '</div>' : '');
+
+        var rateSpan = document.createElement('div');
+        rateSpan.style.cssText = 'font-family:\'Courier New\',monospace;font-weight:700;color:var(--accent);font-size:0.9rem;';
+        rateSpan.textContent = svc.defaultRate > 0 ? '$' + formatMoney(svc.defaultRate) : '';
+
+        row.appendChild(cb);
+        row.appendChild(info);
+        if (svc.defaultRate > 0) row.appendChild(rateSpan);
+        listEl.appendChild(row);
+      });
+
+      saveBtn.onclick = async function () {
+        if (checked.length === 0) {
+          showToast('Select at least one service', 'info');
+          return;
+        }
+        try {
+          saveBtn.disabled = true;
+          saveBtn.textContent = 'Adding...';
+          await window.api.assignClientServices(clientId, checked);
+          showToast('Services added to scope', 'success');
+          overlay.remove();
+          if (onSave) await onSave();
+        } catch (err) {
+          showToast(err.message || 'Failed to add services', 'error');
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Add Selected';
+        }
+      };
+    } catch (err) {
+      console.error(err);
+      listEl.innerHTML = '<div style="color:#ff9aa2;">Failed to load services.</div>';
+    }
+  }
+
+  loadServices();
+}
+
+// ======================================================
+// ADMIN: MANAGE SERVICE PRESETS MODAL
+// ======================================================
+function openManageServicesModal(onSave) {
+  var existing = document.getElementById('manageServicesOverlay');
+  if (existing) existing.remove();
+
+  var overlay = document.createElement('div');
+  overlay.id = 'manageServicesOverlay';
+  overlay.style.cssText =
+    'position:fixed;inset:0;background:rgba(5,12,16,0.72);' +
+    'display:flex;align-items:center;justify-content:center;' +
+    'z-index:20000;padding:16px;';
+
+  overlay.innerHTML =
+    '<div style="' +
+      'position:relative;width:min(600px,100%);max-height:85vh;overflow-y:auto;' +
+      'background:linear-gradient(180deg,rgba(44,83,100,0.98),rgba(32,58,67,0.98));' +
+      'border:1px solid rgba(122,183,214,0.18);border-radius:18px;' +
+      'padding:24px;box-shadow:0 24px 60px rgba(0,0,0,0.45);color:var(--text-main);' +
+    '">' +
+      '<button id="closeManageServices" style="' +
+        'position:absolute;top:12px;right:14px;border:none;background:transparent;' +
+        'color:var(--accent);font-size:1.5rem;cursor:pointer;line-height:1;' +
+      '">&times;</button>' +
+      '<div style="font-size:0.75rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:4px;">Admin</div>' +
+      '<h3 style="margin:0 0 4px;font-size:1.1rem;">Manage Service Presets</h3>' +
+      '<p style="font-size:0.85rem;color:var(--text-muted);margin:0 0 16px;">Add, edit, or remove global service options.</p>' +
+
+      '<div style="display:flex;gap:8px;margin-bottom:16px;">' +
+        '<input id="newSvcName" type="text" placeholder="Service name (e.g. Mowing)"' +
+          'style="flex:1;padding:10px 14px;border-radius:10px;border:1px solid rgba(122,183,214,0.22);background:rgba(32,58,67,0.96);color:var(--text-main);font-size:0.95rem;">' +
+        '<input id="newSvcRate" type="text" inputmode="decimal" placeholder="Rate"' +
+          'style="width:100px;padding:10px 14px;border-radius:10px;border:1px solid rgba(122,183,214,0.22);background:rgba(32,58,67,0.96);color:var(--text-main);font-size:0.95rem;">' +
+        '<button id="addSvcBtn" class="btn-primary" style="background:linear-gradient(135deg,#0f9b58,#27c97a);padding:10px 16px;white-space:nowrap;">Add</button>' +
+      '</div>' +
+
+      '<div id="manageServicesList" style="display:flex;flex-direction:column;gap:6px;">' +
+        '<div style="color:var(--text-muted);">Loading...</div>' +
+      '</div>' +
+
+      '<div style="display:flex;gap:8px;margin-top:16px;">' +
+        '<button id="manageServicesDoneBtn" class="btn-primary" style="background:rgba(255,255,255,0.14);color:white;flex:1;padding:10px;">Done</button>' +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#closeManageServices').onclick = function () { overlay.remove(); };
+  overlay.querySelector('#manageServicesDoneBtn').onclick = function () { overlay.remove(); };
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+
+  var listEl = overlay.querySelector('#manageServicesList');
+  var nameInput = overlay.querySelector('#newSvcName');
+  var rateInput = overlay.querySelector('#newSvcRate');
+  var addBtn = overlay.querySelector('#addSvcBtn');
+
+  // Apply money behavior to rate input
+  applyMoneyInputBehavior(rateInput);
+
+  async function loadServiceList() {
+    listEl.innerHTML = '<div style="color:var(--text-muted);">Loading...</div>';
+    try {
+      var data = await window.api.listServices(true);
+      var services = data.services || [];
+      listEl.innerHTML = '';
+
+      if (services.length === 0) {
+        listEl.innerHTML = '<div style="color:var(--text-muted);">No service presets yet. Add one above.</div>';
+        return;
+      }
+
+      services.forEach(function (svc) {
+        var row = document.createElement('div');
+        row.style.cssText =
+          'display:flex;align-items:center;gap:8px;padding:10px 12px;' +
+          'border-radius:10px;border:1px solid rgba(122,183,214,0.14);' +
+          'background:rgba(15,32,39,0.2);';
+
+        var info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;';
+        info.innerHTML =
+          '<div style="font-weight:600;font-size:0.9rem;">' + escapeHtml(svc.name) +
+            (svc.isActive ? '' : ' <span style="color:#ff9aa2;font-size:0.75rem;">(inactive)</span>') +
+          '</div>' +
+          (svc.description ? '<div style="font-size:0.78rem;color:var(--text-muted);">' + escapeHtml(svc.description) + '</div>' : '');
+
+        var rateSpan = document.createElement('div');
+        rateSpan.style.cssText = 'font-family:\'Courier New\',monospace;font-weight:700;color:var(--accent);font-size:0.9rem;padding:0 8px;';
+        rateSpan.textContent = svc.defaultRate > 0 ? '$' + formatMoney(svc.defaultRate) : '';
+
+        var toggleActiveBtn = document.createElement('button');
+        toggleActiveBtn.textContent = svc.isActive ? 'Deactivate' : 'Activate';
+        toggleActiveBtn.style.cssText =
+          'border:none;background:rgba(255,255,255,0.1);color:var(--text-main);' +
+          'padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;';
+        toggleActiveBtn.onclick = async function () {
+          try {
+            await window.api.updateService(svc.id, { isActive: !svc.isActive });
+            await loadServiceList();
+          } catch (err) {
+            showToast('Failed to update service', 'error');
+          }
+        };
+
+        var editBtn = document.createElement('button');
+        editBtn.textContent = 'Edit';
+        editBtn.style.cssText =
+          'border:none;background:rgba(47,128,237,0.2);color:#4f8dfd;' +
+          'padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;';
+
+        editBtn.onclick = function () {
+          (async function () {
+            var newName = await customPrompt('Service name:', svc.name);
+            if (newName && newName.trim()) {
+              try {
+                await window.api.updateService(svc.id, { name: newName.trim() });
+                await loadServiceList();
+                showToast('Service updated', 'success');
+              } catch (err) {
+                showToast('Failed to update', 'error');
+              }
+            }
+          })();
+        };
+
+        var delBtn = document.createElement('button');
+        delBtn.textContent = 'Delete';
+        delBtn.style.cssText =
+          'border:none;background:rgba(255,100,100,0.15);color:#ff9aa2;' +
+          'padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;';
+        delBtn.onclick = async function () {
+          if (!confirm('Delete "' + svc.name + '" permanently?')) return;
+          try {
+            await window.api.deleteService(svc.id);
+            await loadServiceList();
+            showToast('Service deleted', 'success');
+          } catch (err) {
+            showToast('Failed to delete', 'error');
+          }
+        };
+
+        row.appendChild(info);
+        row.appendChild(rateSpan);
+        row.appendChild(toggleActiveBtn);
+        row.appendChild(editBtn);
+        row.appendChild(delBtn);
+        listEl.appendChild(row);
+      });
+    } catch (err) {
+      console.error(err);
+      listEl.innerHTML = '<div style="color:#ff9aa2;">Failed to load services.</div>';
+    }
+  }
+
+  addBtn.onclick = async function () {
+    var name = nameInput.value.trim();
+    if (!name) { showToast('Enter a service name', 'error'); return; }
+    var rate = parseMoney(rateInput.value) || 0;
+    try {
+      addBtn.disabled = true;
+      addBtn.textContent = 'Adding...';
+      await window.api.createService({ name: name, defaultRate: rate });
+      nameInput.value = '';
+      rateInput.value = '';
+      showToast('Service added', 'success');
+      await loadServiceList();
+    } catch (err) {
+      showToast(err.message || 'Failed to add service', 'error');
+    } finally {
+      addBtn.disabled = false;
+      addBtn.textContent = 'Add';
     }
   };
 
-  loadJobs();
+  nameInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') addBtn.click();
+  });
+
+  loadServiceList();
 }
 
 // ======================================================
@@ -2567,7 +3242,7 @@ async function loadPDFs(clientId) {
       });
 
       const name = document.createElement("div");
-      name.innerHTML = `📄 ${file.name}`;
+      name.textContent = `📄 ${file.name}`;
       name.style.fontWeight = "600";
       name.style.fontSize = "14px";
 
@@ -3360,11 +4035,15 @@ function applyBranding(branding) {
 // ======================================================
 (function initAdminNav() {
   var adminLink = document.getElementById('adminNavLink');
-  if (!adminLink) return;
-  if (window.__USER__ && window.__USER__.role === 'admin') {
-    adminLink.style.display = '';
-  } else {
-    adminLink.style.display = 'none';
+  var roleBadge = document.getElementById('roleBadge');
+  if (window.__USER__) {
+    if (window.__USER__.role === 'admin') {
+      if (adminLink) adminLink.style.display = '';
+      if (roleBadge) { roleBadge.textContent = 'Admin'; roleBadge.className = 'role-badge admin'; roleBadge.style.display = ''; }
+    } else {
+      if (adminLink) adminLink.style.display = 'none';
+      if (roleBadge) { roleBadge.textContent = 'User'; roleBadge.className = 'role-badge user'; roleBadge.style.display = ''; }
+    }
   }
 })();
 
