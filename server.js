@@ -241,6 +241,11 @@ function authConfigScript() {
 
 function sendHtmlWithAuthConfig(res, filePath) {
   var html = fs.readFileSync(filePath, 'utf8');
+  // These pages are rewritten per request (auth config is injected), so they
+  // must never be cached — matching what the static middleware used to send
+  // for .html files.
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('text/html');
   res.send(html.replace('</head>', authConfigScript() + '</head>'));
 }
 
@@ -255,6 +260,15 @@ app.get('/', (req, res) => {
 
 app.get('/auth/callback', (req, res) => {
   sendHtmlWithAuthConfig(res, path.join(__dirname, 'auth-callback.html'));
+});
+
+// Direct visits to /login.html (bookmarks, shared links like the deployed
+// /login.html URL) must receive the same injected Supabase config as "/",
+// otherwise the sign-in buttons can never initialize. Without this route the
+// file is served as a plain static asset and window.__AUTH_CONFIG__ is absent.
+app.get('/login.html', (req, res) => {
+  if (isAuthenticated(req)) return res.redirect('/main');
+  sendHtmlWithAuthConfig(res, path.join(__dirname, 'login.html'));
 });
 
 // Cache main.html for user-data injection
