@@ -17,6 +17,18 @@ function requireCompanyUser(req, res, next) {
   next();
 }
 
+// /stats surfaces company-wide revenue/outstanding-invoice aggregates —
+// financial data, so admin only (Section 8), unlike the two inert
+// placeholder routes further down in this file.
+function requireAdminCompanyUser(req, res, next) {
+  requireCompanyUser(req, res, function () {
+    if (req.session.user.role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    next();
+  });
+}
+
 // ============================================================
 // GET /api/v2/dashboard/stats
 //
@@ -28,7 +40,7 @@ function requireCompanyUser(req, res, next) {
 //   - featureStatus: which feature components are active
 //   - branding: company name, logo_url, brand colors
 // ============================================================
-router.get('/stats', requireCompanyUser, asyncHandler(async (req, res) => {
+router.get('/stats', requireAdminCompanyUser, asyncHandler(async (req, res) => {
   const supabase = getClient();
   if (!supabase) throw new AppError(503, 'Database not configured');
 
@@ -171,8 +183,8 @@ router.get('/stats', requireCompanyUser, asyncHandler(async (req, res) => {
       branding: {
         companyName: company.name || '',
         logoUrl: company.logo_url || '',
-        primaryColor: company.brand_primary_color || '#1c92d2',
-        secondaryColor: company.brand_secondary_color || '#7c3aed'
+        primaryColor: company.brand_primary_color || '#2563eb',
+        secondaryColor: company.brand_secondary_color || '#2563eb'
       },
       workflow: workflow,
       totalClients: totalClients || 0,
@@ -202,7 +214,7 @@ router.get('/stats', requireCompanyUser, asyncHandler(async (req, res) => {
 
 function getEmptyStats() {
   return {
-    branding: { companyName: '', logoUrl: '', primaryColor: '#1c92d2', secondaryColor: '#7c3aed' },
+    branding: { companyName: '', logoUrl: '', primaryColor: '#2563eb', secondaryColor: '#2563eb' },
     workflow: 'both',
     totalClients: 0,
     activeJobs: 0,

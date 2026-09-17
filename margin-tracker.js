@@ -1340,12 +1340,12 @@
       <svg class="mt-sparkline" viewBox="0 0 120 36" role="img" aria-hidden="true">
         <defs>
           <linearGradient id="${gradientId}" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stop-color="#72edc7" stop-opacity="0.65"/>
-            <stop offset="100%" stop-color="#72edc7" stop-opacity="0.02"/>
+            <stop offset="0%" stop-color="#2563eb" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="#2563eb" stop-opacity="0.02"/>
           </linearGradient>
         </defs>
         <path d="${fillPath}" fill="url(#${gradientId})"></path>
-        <path d="${points}" fill="none" stroke="#72edc7" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"></path>
+        <path d="${points}" fill="none" stroke="#2563eb" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"></path>
       </svg>
     `;
   }
@@ -1372,10 +1372,10 @@
             </div>
           </div>
           <div class="mt-panel-body">
-            <div class="mt-chart">${lineChart(model.viewSeries, 'revenue', 'expenses', ['#72edc7', '#7ab7d6'])}</div>
+            <div class="mt-chart">${lineChart(model.viewSeries, 'revenue', 'expenses', ['#2563eb', '#94a3b8'])}</div>
             <div class="mt-legend">
-              <span class="mt-legend-item"><span class="mt-dot" style="background:#72edc7"></span>Revenue</span>
-              <span class="mt-legend-item"><span class="mt-dot" style="background:#7ab7d6"></span>Expenses</span>
+              <span class="mt-legend-item"><span class="mt-dot" style="background:#2563eb"></span>Revenue</span>
+              <span class="mt-legend-item"><span class="mt-dot" style="background:#94a3b8"></span>Expenses</span>
             </div>
           </div>
         </div>
@@ -1387,7 +1387,7 @@
             </div>
           </div>
           <div class="mt-panel-body">
-            <div class="mt-chart">${lineChart(model.viewSeries, 'marginPct', null, ['#f7c55f'])}</div>
+            <div class="mt-chart">${lineChart(model.viewSeries, 'marginPct', null, ['#f59e0b'])}</div>
             <div class="mt-chip-row">
               <span class="mt-chip"><strong>${escapeHtml(periodLabel(state.year, state.view, state.month, state.quarter))}</strong> active</span>
               <span class="mt-chip"><strong>${escapeHtml(percentFmt.format(model.currentMarginPct))}%</strong> margin</span>
@@ -1491,7 +1491,7 @@
     `;
   }
 
-  const chartPalette = ['#72edc7', '#7ab7d6', '#f7c55f', '#f08eb0', '#9f8cff', '#ff9c9c', '#6fe0ff'];
+  const chartPalette = ['#2563eb', '#0ea5e9', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6'];
 
   function lineChart(series, keyA, keyB, colors) {
     const valuesA = series.map((item) => toNumber(item[keyA]));
@@ -1521,7 +1521,7 @@
             </linearGradient>
           ` : ''}
         </defs>
-        <rect x="0" y="0" width="700" height="220" rx="20" fill="rgba(255,255,255,0.02)"></rect>
+        <rect x="0" y="0" width="700" height="220" rx="20" fill="transparent"></rect>
         ${gridLines(max)}
         ${pointsA.area ? `<path d="${pointsA.area}" fill="url(#${areaAId})"></path>` : ''}
         ${pointsA.line ? `<path d="${pointsA.line}" fill="none" stroke="${colors[0]}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path>` : ''}
@@ -1546,10 +1546,10 @@
     const area = `${line} L ${width} ${height - 18} L 0 ${height - 18} Z`;
     const isCurrency = values.some(v => v > 100);
     const circles = points.map((point, idx) => `
-      <circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="5" fill="#ffffff" stroke="#72edc7" stroke-width="2.5" style="cursor:pointer;">
+      <circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="2.5" style="cursor:pointer;">
         <title>${escapeHtml(`${labels[idx] || `Point ${idx + 1}`}: ${isCurrency ? formatMoney(values[idx]) : percentFmt.format(values[idx]) + '%'}`)}</title>
       </circle>
-      <text x="${Math.min(point.x + 8, width - 50)}" y="${Math.max(point.y - 10, 14)}" fill="rgba(255,255,255,0.7)" font-size="10" font-family="inherit" font-weight="600">${escapeHtml(isCurrency ? formatMoney(values[idx]) : percentFmt.format(values[idx]) + '%')}</text>
+      <text x="${Math.min(point.x + 8, width - 50)}" y="${Math.max(point.y - 10, 14)}" fill="rgba(15,23,42,0.75)" font-size="10" font-family="inherit" font-weight="600">${escapeHtml(isCurrency ? formatMoney(values[idx]) : percentFmt.format(values[idx]) + '%')}</text>
     `).join('');
     return { line, area, circles };
   }
@@ -1560,8 +1560,8 @@
       const value = max * step;
       const label = currency.format(value);
       return `
-        <line x1="62" x2="690" y1="${y}" y2="${y}" stroke="rgba(255,255,255,0.06)" stroke-width="1"></line>
-        <text x="8" y="${y + 4}" fill="rgba(255,255,255,0.4)" font-size="10" font-family="inherit">${label}</text>
+        <line x1="62" x2="690" y1="${y}" y2="${y}" stroke="var(--surface-muted)" stroke-width="1"></line>
+        <text x="8" y="${y + 4}" fill="rgba(15,23,42,0.45)" font-size="10" font-family="inherit">${label}</text>
       `;
     }).join('');
   }
@@ -1588,8 +1588,8 @@
                   <small>Net profit</small>
                 </div>
               </div>
-              <div style="width:100%; height:12px; border-radius:999px; background:rgba(255,255,255,0.06); overflow:hidden;">
-                <div style="width:${width}%; height:100%; border-radius:999px; background:linear-gradient(135deg, ${chartPalette[idx % chartPalette.length]}, rgba(114,237,199,0.9));"></div>
+              <div style="width:100%; height:12px; border-radius:999px; background:var(--surface-muted); overflow:hidden;">
+                <div style="width:${width}%; height:100%; border-radius:999px; background:${chartPalette[idx % chartPalette.length]};"></div>
               </div>
             </div>
           `;
@@ -1613,7 +1613,7 @@
     }).join(', ');
     return `
       <div style="display:grid; place-items:center; min-height:220px;">
-        <div style="width:190px; height:190px; border-radius:50%; background:conic-gradient(${segments}); position:relative; box-shadow: inset 0 0 0 24px rgba(8,16,24,0.98);">
+        <div style="width:190px; height:190px; border-radius:50%; background:conic-gradient(${segments}); position:relative; box-shadow: inset 0 0 0 24px #ffffff;">
           <div style="position:absolute; inset:50% auto auto 50%; transform:translate(-50%, -50%); text-align:center;">
             <div style="font-size:0.74rem; letter-spacing:0.1em; text-transform:uppercase; color: var(--text-muted); font-weight:700;">Expenses</div>
             <div style="font-size:1.35rem; font-weight:800; color: var(--text-main);">${escapeHtml(formatMoney(total))}</div>
@@ -1626,10 +1626,10 @@
   function forecastPanel(projected) {
     return `
       <div class="mt-grid-2">
-        ${forecastItem('Next revenue', projected.nextRevenue, '#72edc7')}
-        ${forecastItem('Next expenses', projected.nextExpenses, '#7ab7d6')}
-        ${forecastItem('Next profit', projected.nextProfit, '#f7c55f')}
-        ${forecastItem('Next margin', projected.nextMargin, '#9f8cff', true)}
+        ${forecastItem('Next revenue', projected.nextRevenue, '#2563eb')}
+        ${forecastItem('Next expenses', projected.nextExpenses, '#64748b')}
+        ${forecastItem('Next profit', projected.nextProfit, '#15803d')}
+        ${forecastItem('Next margin', projected.nextMargin, '#f59e0b', true)}
       </div>
       <div class="mt-chip-row" style="margin-top:14px;">
         <span class="mt-chip"><strong>${escapeHtml(formatDelta(projected.revenueSlope / Math.max(projected.nextRevenue, 1) * 100))}</strong> revenue slope</span>
@@ -1666,9 +1666,9 @@
                 ${row.map((value) => {
                   const intensity = clamp(Math.abs(value) / Math.max(client.netProfit || 1, 1), 0, 1);
                   const background = value >= 0
-                    ? `rgba(110, 244, 182, ${0.1 + intensity * 0.55})`
-                    : `rgba(255, 126, 140, ${0.1 + intensity * 0.55})`;
-                  return `<div title="${escapeHtml(`${client.name}: ${formatMoney(value)}`)}" style="height:30px; border-radius:10px; background:${background}; border:1px solid rgba(255,255,255,0.04);"></div>`;
+                    ? `rgba(37, 99, 235, ${0.08 + intensity * 0.45})`
+                    : `rgba(220, 38, 38, ${0.08 + intensity * 0.45})`;
+                  return `<div title="${escapeHtml(`${client.name}: ${formatMoney(value)}`)}" style="height:30px; border-radius:6px; background:${background}; border:1px solid var(--border-soft);"></div>`;
                 }).join('')}
               `;
             }).join('')}
@@ -1890,7 +1890,7 @@
       revenue: item.revenue,
       expenses: item.expenses,
       marginPct: item.revenue > 0 ? ((item.revenue - item.expenses) / item.revenue) * 100 : 0
-    })), 'revenue', 'expenses', ['#72edc7', '#7ab7d6']);
+    })), 'revenue', 'expenses', ['#2563eb', '#94a3b8']);
   }
 
   function formatExpenseSummary(expense) {

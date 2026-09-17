@@ -1,136 +1,104 @@
 document.addEventListener("DOMContentLoaded", () => {
+  const googleBtn = document.getElementById("google-signin-btn");
+  const feedback = document.getElementById("loginFeedback");
 
-  const loginForm = document.getElementById("loginForm");
-  const passwordInput = document.getElementById("password");
-  const showResetBtn = document.getElementById("showReset");
-  const resetSection = document.getElementById("resetSection");
-  const changePasswordBtn = document.getElementById("changePasswordBtn");
+  function showFeedback(message, type) {
+    if (!feedback) return;
+    feedback.textContent = message;
+    feedback.className = "feedback show " + (type || "");
+  }
 
-  if (!loginForm) {
-    console.error("loginForm not found in HTML.");
+  // ===== TEMPORARY password fallback =====
+  const passwordForm = document.getElementById("passwordLoginForm");
+  const passwordInput = document.getElementById("fallback-password");
+  const passwordFeedback = document.getElementById("passwordLoginFeedback");
+  const passwordBtn = document.getElementById("password-login-btn");
+  const showPasswordBtn = document.getElementById("showPasswordFallback");
+
+  if (showPasswordBtn && passwordForm) {
+    showPasswordBtn.addEventListener("click", () => {
+      const isHidden = passwordForm.style.display === "none";
+      passwordForm.style.display = isHidden ? "block" : "none";
+      showPasswordBtn.style.display = isHidden ? "none" : "block";
+      if (isHidden) passwordInput.focus();
+    });
+  }
+
+  function showPasswordFeedback(message, type) {
+    if (!passwordFeedback) return;
+    passwordFeedback.textContent = message;
+    passwordFeedback.className = "feedback show " + (type || "");
+  }
+
+  if (passwordForm) {
+    passwordForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      showPasswordFeedback("", "");
+      const password = passwordInput.value;
+      if (!password) return;
+
+      passwordBtn.disabled = true;
+      try {
+        const res = await fetch("/api/v2/auth/password-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "Incorrect password.");
+        }
+        window.location.href = "/main";
+      } catch (err) {
+        console.error("Password login error:", err);
+        showPasswordFeedback(err.message || "Login failed.", "error");
+        passwordInput.value = "";
+        passwordInput.focus();
+      } finally {
+        passwordBtn.disabled = false;
+      }
+    });
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("error")) {
+    showFeedback("Sign-in failed. Please try again.", "error");
+  }
+
+  const config = window.__AUTH_CONFIG__ || {};
+  if (!config.supabaseUrl || !config.supabaseAnonKey) {
+    showFeedback(
+      "Google sign-in isn't configured yet. Set SUPABASE_URL and SUPABASE_ANON_KEY, and enable the Google provider in Supabase Auth settings.",
+      "error"
+    );
+    if (googleBtn) googleBtn.disabled = true;
     return;
   }
 
-  // Hide reset section initially
-  if (resetSection) {
-    resetSection.style.display = "none";
+  if (!window.supabase || !window.supabase.createClient) {
+    showFeedback("Could not load the sign-in library. Check your connection and reload.", "error");
+    if (googleBtn) googleBtn.disabled = true;
+    return;
   }
 
-  async function readErrorMessage(response, fallback) {
-    try {
-      const contentType = response.headers.get("content-type") || "";
-      if (contentType.includes("application/json")) {
-        const data = await response.json();
-        return data?.error || data?.message || fallback;
-      }
+  const authClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
 
-      const text = await response.text();
-      return text.trim() || fallback;
-    } catch (err) {
-      console.warn("Failed to read error response:", err);
-      return fallback;
-    }
-  }
-
-  // =========================
-  // LOGIN
-  // =========================
-  loginForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-
-    const password = passwordInput.value.trim();
-
-    if (!password) {
-      alert("Please enter your password.");
-      return;
-    }
-
-    try {
-      const response = await fetch("/api/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ password })
-      });
-
-      if (!response.ok) {
-        throw new Error(await readErrorMessage(response, `Server error: ${response.status}`));
-      }
-
-      const data = await response.json();
-
-      if (data.success) {
-        window.location.href = "main.html";
-      } else {
-        alert(data.message || "Incorrect password.");
-        passwordInput.value = "";
-        passwordInput.focus();
-      }
-
-    } catch (error) {
-      console.error("Login error:", error);
-      alert("Login failed. Make sure the server is running.");
-    }
-  });
-
-  // =========================
-  // TOGGLE RESET SECTION
-  // =========================
-  if (showResetBtn && resetSection) {
-    showResetBtn.addEventListener("click", () => {
-      resetSection.style.display =
-        resetSection.style.display === "none" ? "block" : "none";
-    });
-  }
-
-  // =========================
-  // CHANGE PASSWORD
-  // =========================
-  if (changePasswordBtn) {
-    changePasswordBtn.addEventListener("click", async () => {
-
-      const currentPassword = document.getElementById("currentPassword").value;
-      const newPassword = document.getElementById("newPassword").value;
-
-      if (!newPassword || newPassword.length < 4) {
-        alert("New password must be at least 4 characters.");
-        return;
-      }
-
+  if (googleBtn) {
+    googleBtn.addEventListener("click", async () => {
+      googleBtn.disabled = true;
+      showFeedback("", "");
       try {
-        const response = await fetch("/api/change-password", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            currentPassword,
-            newPassword
-          })
+        const { error } = await authClient.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: window.location.origin + "/auth/callback" }
         });
-
-        if (!response.ok) {
-          throw new Error(await readErrorMessage(response, `Server error: ${response.status}`));
-        }
-
-        const data = await response.json();
-
-        if (data.success) {
-          alert("Password changed successfully!");
-          resetSection.style.display = "none";
-          document.getElementById("currentPassword").value = "";
-          document.getElementById("newPassword").value = "";
-        } else {
-          alert(data.message || "Password change failed.");
-        }
-
-      } catch (error) {
-        console.error("Change password error:", error);
-        alert("Password change failed. Make sure the server is running.");
+        if (error) throw error;
+        // Browser is being redirected to Google now.
+      } catch (err) {
+        console.error("Google sign-in error:", err);
+        showFeedback(err.message || "Could not start Google sign-in.", "error");
+        googleBtn.disabled = false;
       }
-
     });
   }
-
 });

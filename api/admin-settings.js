@@ -3,8 +3,6 @@ const multer = require('multer');
 const path = require('path');
 const { getClient } = require('./db-v2');
 const { asyncHandler, assertObject, parseStringField, AppError } = require('./request-utils');
-const { resetCache, setAdminClaimed } = require('./admin-guard');
-
 const router = express.Router();
 
 // ============================================================
@@ -275,8 +273,11 @@ router.patch('/settings', requireAdmin, (req, res, next) => {
 
 // ============================================================
 // POST /api/v2/admin/reset-demo
-// Wipes the demo onboarding data so the app can be shown from a
-// clean first-run state again. Intended for client demos.
+// Wipes the demo company/user data so the app can be shown from a
+// clean first-run state again. The next person to sign in with
+// Google automatically becomes the new admin of a fresh company.
+// Intended for client demos. Existing clients/jobs (the actual CRM
+// data) are NOT touched — this only clears the tenant/user layer.
 // ============================================================
 router.post('/reset-demo', requireAdmin, asyncHandler(async (req, res) => {
   var confirm = String((req.body && req.body.confirm) || '').trim().toLowerCase();
@@ -304,14 +305,11 @@ router.post('/reset-demo', requireAdmin, asyncHandler(async (req, res) => {
     }
   }
 
-  await setAdminClaimed(false);
-  resetCache();
-
   if (req.session) {
     req.session.destroy(function () {
       res.json({
         success: true,
-        message: 'Demo state reset. The next visitor will see the first-run setup again.'
+        message: 'Demo state reset. The next person to sign in with Google becomes the new admin.'
       });
     });
     return;
@@ -319,7 +317,7 @@ router.post('/reset-demo', requireAdmin, asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    message: 'Demo state reset. The next visitor will see the first-run setup again.'
+    message: 'Demo state reset. The next person to sign in with Google becomes the new admin.'
   });
 }));
 

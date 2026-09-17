@@ -1,51 +1,42 @@
 /**
- * Migration script for v2 onboarding tables (companies + users).
+ * Migration script for the CRM template improvements:
+ *   - Google sign-in support on users (nullable password, auth_uid, picture_url)
+ *   - Per-user client assignment (clients.assigned_user_id, clients.company_id)
+ *   - Client pipeline stage normalization (Invoice -> Invoiced, Completed -> Approved)
+ *   - Job-level tags (jobs.tags)
+ *   - Job line items with cost categories (public.job_line_items)
+ *
+ * This is purely additive/idempotent — safe to run multiple times, and it
+ * never drops a column, drops a table, or deletes a row.
  *
  * Usage:
- *   node scripts/migrate-v2.js
+ *   node scripts/migrate-v3-crm-improvements.js
  *
- * This script will attempt to create the required tables using:
+ * This script will attempt to apply the SQL using:
  *   1. SUPABASE_DATABASE_URL (direct pg connection) — if set in .env
  *   2. Supabase Management API (SUPABASE_ACCESS_TOKEN) — if set in .env
- *   3. Clear manual instructions — as fallback
+ *   3. Manual instructions — as fallback (paste supabase-schema.sql into the SQL editor)
  */
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+
+const fs = require('fs');
+const path = require('path');
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const projectRef = SUPABASE_URL.replace('https://', '').replace('.supabase.co', '');
 
-const SQL = `
-CREATE TABLE IF NOT EXISTS public.companies (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  slug TEXT UNIQUE NOT NULL,
-  tagline TEXT NOT NULL DEFAULT '',
-  description TEXT NOT NULL DEFAULT '',
-  contact_email TEXT NOT NULL DEFAULT '',
-  logo_url TEXT NOT NULL DEFAULT '',
-  brand_primary_color TEXT NOT NULL DEFAULT '#2563eb',
-  brand_secondary_color TEXT NOT NULL DEFAULT '#2563eb',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
-  display_name TEXT NOT NULL DEFAULT '',
-  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user')),
-  company_id UUID REFERENCES public.companies(id) ON DELETE SET NULL,
-  onboarding_complete BOOLEAN NOT NULL DEFAULT false,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS users_email_idx ON public.users (email);
-CREATE INDEX IF NOT EXISTS users_company_id_idx ON public.users (company_id);
-CREATE INDEX IF NOT EXISTS companies_slug_idx ON public.companies (slug);
-CREATE UNIQUE INDEX IF NOT EXISTS users_single_admin_idx ON public.users ((true)) WHERE role = 'admin';
-`;
+// Pull just the "TEMPLATE UPGRADE" section out of supabase-schema.sql so this
+// script and the canonical schema file never drift apart.
+function loadMigrationSql() {
+  const schemaPath = path.join(__dirname, '..', 'supabase-schema.sql');
+  const full = fs.readFileSync(schemaPath, 'utf8');
+  const marker = '-- TEMPLATE UPGRADE: Google auth, per-user client access,';
+  const idx = full.indexOf(marker);
+  if (idx === -1) {
+    throw new Error('Could not find the TEMPLATE UPGRADE section in supabase-schema.sql');
+  }
+  return full.slice(idx);
+}
 
 async function run() {
   if (!SUPABASE_URL) {
@@ -53,6 +44,7 @@ async function run() {
     process.exit(1);
   }
 
+  const SQL = loadMigrationSql();
   console.log('Project:', projectRef);
 
   // --- Method 1: Direct pg connection via SUPABASE_DATABASE_URL ---
@@ -94,34 +86,21 @@ async function run() {
     }
   }
 
-  // --- Method 3: Check if tables already exist via Supabase client ---
-  try {
-    const { createClient } = require('@supabase/supabase-js');
-    const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
-    if (svcKey) {
-      const supabase = createClient(SUPABASE_URL, svcKey, { auth: { persistSession: false } });
-      const { error } = await supabase.from('users').select('id').limit(1);
-      if (!error) {
-        console.log('Tables already exist. No migration needed.');
-        process.exit(0);
-      }
-    }
-  } catch (_) { /* ignore */ }
-
   // --- Manual instructions ---
   console.log('\n' + '='.repeat(64));
   console.log('  MIGRATION REQUIRED');
   console.log('='.repeat(64));
-  console.log('  The companies and users tables must be created in your');
-  console.log('  Supabase project before the onboarding system can work.\n');
+  console.log('  Neither SUPABASE_DATABASE_URL nor SUPABASE_ACCESS_TOKEN is set,');
+  console.log('  so this script cannot reach your database automatically.\n');
   console.log('  Option A — Supabase Dashboard (recommended):');
   console.log('    1. Go to:  https://supabase.com/dashboard/project/' + projectRef + '/sql/new');
-  console.log('    2. Paste the full contents of supabase-schema.sql');
+  console.log('    2. Paste the full contents of supabase-schema.sql (it is safe to');
+  console.log('       run the whole file again — every statement is idempotent).');
   console.log('    3. Click "Run"\n');
   console.log('  Option B — Environment variables:');
   console.log('    Set SUPABASE_DATABASE_URL in .env for auto-migration.');
   console.log('    Or set SUPABASE_ACCESS_TOKEN for Management API.\n');
-  console.log('  Then re-run:  node scripts/migrate-v2.js');
+  console.log('  Then re-run:  node scripts/migrate-v3-crm-improvements.js');
   console.log('='.repeat(64) + '\n');
   process.exit(1);
 }

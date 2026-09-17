@@ -7,7 +7,7 @@ CRM Template is a Node.js web application for managing clients, payments, notes,
 - Backend: Node.js + Express
 - Frontend: HTML, CSS, JavaScript
 - Data: Supabase PostgreSQL via the Supabase API
-- Auth: App-level password login stored in Supabase `settings`
+- Auth: Google sign-in via Supabase Auth (no passwords, no registration wizard)
 - File storage: Supabase Storage
 
 ## Project Structure
@@ -34,15 +34,44 @@ copy .env.example .env
 
 3. Fill in the values in `.env`.
 
-4. Start the app:
+4. Run the database migrations (safe to re-run — everything is additive):
+
+```bash
+node scripts/migrate-v2.js
+node scripts/migrate-v3-crm-improvements.js
+```
+
+   If those can't reach your database directly (no `SUPABASE_DATABASE_URL`/`SUPABASE_ACCESS_TOKEN`
+   set), open your Supabase project's SQL editor and run the full contents of
+   `supabase-schema.sql` instead — it's idempotent, so running the whole file is safe.
+
+5. (Optional) Load realistic demo data so the app doesn't look empty:
+
+```bash
+node scripts/seed-demo-data.js
+```
+
+6. Enable Google sign-in (one-time, in your Supabase project):
+   - Supabase Dashboard → Authentication → Providers → Google → enable it, and paste in a
+     Google OAuth Client ID/Secret from the Google Cloud Console.
+   - In that same Google Cloud OAuth client, add this Authorized redirect URI:
+     `https://<your-project-ref>.supabase.co/auth/v1/callback`
+   - In Supabase Dashboard → Authentication → URL Configuration, add your app's own URL
+     (e.g. `http://localhost:3000` for local dev) to "Redirect URLs".
+
+7. Start the app:
 
 ```bash
 npm start
 ```
 
+Then open **http://localhost:3000** — the first person to sign in with Google
+automatically becomes the admin.
+
 ## Supabase Setup
 
-Create a Supabase project, then create these tables:
+Create a Supabase project, then create these tables (also captured in full in
+`supabase-schema.sql`, including the newer additive columns/tables described below):
 
 - `settings`
 - `clients`
@@ -50,17 +79,43 @@ Create a Supabase project, then create these tables:
 - `notes`
 - `finance_overrides`
 - `finance_margin_entries`
+- `jobs`
+- `job_line_items`
+- `companies`
+- `users`
 
 Minimum recommended columns:
 
 - `settings`: `key text primary key`, `value text`
-- `clients`: `id bigint identity primary key`, `name text`, `phone text`, `email text`, `address text`, `status text`, `total_due numeric`, `amount_paid numeric`, `balance numeric`, `created_at timestamptz`
+- `clients`: `id bigint identity primary key`, `name text`, `phone text`, `email text`, `address text`, `status text`, `total_due numeric`, `amount_paid numeric`, `balance numeric`, `scope_of_work text`, `job_cost numeric`, `assigned_user_id uuid references users(id)`, `company_id uuid references companies(id)`, `created_at timestamptz`
 - `payments`: `id bigint identity primary key`, `client_id bigint`, `amount numeric`, `payment_date timestamptz`
 - `notes`: `id bigint identity primary key`, `client_id bigint`, `content text`, `created_at timestamptz`
 - `finance_overrides`: `year int unique`, `total_expected numeric`, `total_received numeric`, `total_remaining numeric`, `total_clients int`, `notes text`, `updated_at timestamptz`
 - `finance_margin_entries`: `id bigint identity primary key`, `client_id bigint null`, `client_name text`, `category text`, `project text`, `invoice_status text`, `amount numeric`, `expense_type text`, `recurring boolean`, `expense_date timestamptz`, `notes text`, `attachment_url text`, `created_at timestamptz`, `updated_at timestamptz`
+- `jobs`: `id bigint identity primary key`, `client_id bigint`, `title text`, `status text`, `scope_of_work text`, `total_due numeric`, `amount_paid numeric`, `balance numeric`, `job_cost numeric`, `tags text[]`, `created_at timestamptz`
+- `job_line_items`: `id bigint identity primary key`, `job_id bigint`, `description text`, `quantity numeric`, `unit_price numeric`, `category text` (Labor/Materials/Commissions/Meals-Drinks/Miscellaneous/Permits), `sort_order int`, `created_at timestamptz`, `updated_at timestamptz`
+- `companies`: `id uuid primary key`, `name text`, `slug text unique`, ... (single row auto-created on first Google sign-in)
+- `users`: `id uuid primary key`, `email text unique`, `auth_uid uuid unique` (links to the Supabase Auth user), `display_name text`, `picture_url text`, `role text` (`admin`/`user`), `company_id uuid`, `created_at timestamptz`
 
 If you are unsure about a field, keep the column names above and adjust the app later through the TODOs in the code.
+
+### Client-level pipeline stage vs. job-level tags
+
+`clients.status` is the client's overall pipeline **stage**, shown on the main Client
+Workspace page. It is restricted to exactly six values: `Lead`, `Photo report`,
+`Prospect`, `Approved`, `Invoiced`, `Closed`. This is intentionally a completely
+separate concept from `jobs.status` (a job's own workflow state) and `jobs.tags`
+(free-form per-job labels) — neither of the latter two ever writes to `clients.status`.
+
+### Roles and permissions
+
+- **Admin**: full access — all clients, all jobs, Financial Overview, payments, exports,
+  margin tracker, user management.
+- **Regular user**: only sees clients where `clients.assigned_user_id` matches their own
+  user id. Financial fields (`total_due`, `amount_paid`, `balance`, `job_cost`) are
+  stripped server-side before the response ever reaches a regular user — see
+  `api/access-control.js`. This is enforced on every relevant endpoint, not just hidden
+  in the UI, so it can't be bypassed via direct API calls.
 
 ## Render Deployment
 
@@ -73,9 +128,10 @@ If you are unsure about a field, keep the column names above and adjust the app 
    - `SUPABASE_ANON_KEY`
    - `PORT`
    - `SESSION_SECRET`
-   - `DEFAULT_ADMIN_PASSWORD`
    - `SUPABASE_SERVICE_ROLE_KEY` if you want server-side file upload support
    - Email vars are optional and only needed if you later re-enable outbound email sending
+   - Make sure the Google provider is enabled in Supabase Auth (see Setup step 6 above),
+     and add your deployed URL to Supabase's Redirect URLs list.
 6. Deploy the service.
 
 The included `render.yaml` can be used as a starting point for Infrastructure as Code.
@@ -84,11 +140,13 @@ The included `render.yaml` can be used as a starting point for Infrastructure as
 
 - Replace the placeholder brand text in the UI with your own company name.
 - Update the login logo or badge if you want custom branding.
-- Adjust the `settings` password workflow if you want Supabase Auth instead of an app password.
 - Update the storage bucket name in `.env` if you want a different file bucket.
 - Use `Company Profile` in the app to change the company name, address, phone, and email that appear on invoices.
-- The invoice button now downloads a PDF directly, so no email setup is required for that workflow.
-- Add or refine Supabase Row Level Security policies before production use.
+- The invoice/estimate buttons download a PDF directly (including the categorized cost
+  breakdown when a job has line items), so no email setup is required for that workflow.
+- Add or refine Supabase Row Level Security policies before production use — this template
+  relies on the server-side service role key plus its own `api/access-control.js` checks
+  rather than RLS, so RLS is optional defense-in-depth, not currently required for it to work.
 
 ## Notes
 

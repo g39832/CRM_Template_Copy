@@ -1,7 +1,30 @@
 const express = require('express');
 const router = express.Router();
 const db = require('./db');
-const { asyncHandler, assertObject, parseIntField, parseNumberField, parseStringField, parseYear } = require('./request-utils');
+const { getClient } = require('./db-v2');
+const { asyncHandler, assertObject, parseIntField, parseNumberField, parseStringField, parseYear, AppError } = require('./request-utils');
+const {
+  isAdmin,
+  currentUserId,
+  requireAdmin,
+  canAccessClient,
+  sanitizeClient,
+  sanitizeClients,
+  filterClientsForUser
+} = require('./access-control');
+
+const CLIENT_STAGES = ['Lead', 'Photo report', 'Prospect', 'Approved', 'Invoiced', 'Closed'];
+
+// Ensures a non-admin can only read/act on a client that is assigned to
+// them. Fetches the client row (all columns) and throws 403/404 as
+// appropriate. Returns the (unsanitized) row so the caller can use it.
+async function loadClientWithAccessCheck(req, id) {
+  const { rows } = await db.query('SELECT * FROM clients WHERE id = $1', [id]);
+  const client = rows[0];
+  if (!client) throw new AppError(404, 'Client not found');
+  if (!canAccessClient(req, client)) throw new AppError(403, 'You do not have access to this client');
+  return client;
+}
 
 // ======================================================
 // HELPER: SAFE YEAR HANDLER
@@ -135,7 +158,7 @@ router.get('/search/filtered', asyncHandler(async (req, res) => {
   params.push(500, 0);
 
   var { rows } = await db.query(sql, params);
-  return res.json(rows);
+  return res.json(sanitizeClients(req, filterClientsForUser(req, rows)));
 }));
 
 router.get('/search', asyncHandler(async (req, res) => {
@@ -144,16 +167,24 @@ router.get('/search', asyncHandler(async (req, res) => {
   const offset = parseOptionalPagination(req.query.offset, 1000000) ?? 0;
   await db.schemaReady;
 
+  // Non-admins can only ever see their assigned clients, so pagination
+  // is applied AFTER filtering (never leaks another user's row count).
+  async function respondFiltered(rows) {
+    const visible = filterClientsForUser(req, rows);
+    const sliced = isAdmin(req) || limit === null ? visible : visible.slice(offset, offset + limit);
+    return res.json(sanitizeClients(req, sliced));
+  }
+
   if (!term) {
-    if (limit === null) {
+    if (limit === null || !isAdmin(req)) {
       const { rows } = await db.query('SELECT * FROM clients ORDER BY created_at DESC');
-      return res.json(rows);
+      return respondFiltered(rows);
     }
     const { rows } = await db.query(
       'SELECT * FROM clients ORDER BY created_at DESC LIMIT $1 OFFSET $2',
       [limit, offset]
     );
-    return res.json(rows);
+    return respondFiltered(rows);
   }
 
   const like = `%${term}%`;
@@ -169,13 +200,13 @@ router.get('/search', asyncHandler(async (req, res) => {
     ORDER BY clients.created_at DESC
   `;
   const params = [like, like, like, like, like];
-  if (limit !== null) {
+  if (limit !== null && isAdmin(req)) {
     sql += ' LIMIT $6 OFFSET $7';
     params.push(limit, offset);
   }
   const { rows } = await db.query(sql, params);
 
-  return res.json(rows);
+  return respondFiltered(rows);
 }));
 
 // ======================================================
@@ -190,14 +221,24 @@ router.post('/save-client', asyncHandler(async (req, res) => {
   const email = parseStringField(req.body.email ?? '', 'email', { required: false, maxLength: 254, defaultValue: '' });
   const address = parseStringField(req.body.address ?? '', 'address', { required: false, maxLength: 500, defaultValue: '' });
   const status = parseStringField(req.body.status ?? 'Lead', 'status', { required: false, maxLength: 30, defaultValue: 'Lead' });
-  const totalDueInput = req.body.total_due;
   const scopeOfWork = parseStringField(req.body.scope_of_work ?? '', 'scope_of_work', { required: false, maxLength: 5000, defaultValue: '' });
-  const jobCost = parseNumberField(req.body.job_cost ?? 0, 'job_cost', { required: false, defaultValue: 0 });
+  // total_due and job_cost are financial fields (Section 8: contract
+  // amount, margin/cost basis) — only admins may set them, on create
+  // or update. Regular users create leads/clients without pricing;
+  // an admin fills in the contract amount and cost afterward.
+  const totalDueInput = isAdmin(req) ? req.body.total_due : undefined;
+  const jobCost = isAdmin(req) ? parseNumberField(req.body.job_cost ?? 0, 'job_cost', { required: false, defaultValue: 0 }) : 0;
   const finalName = name || `${fName} ${lName}`.trim();
   if (!finalName) return res.status(400).json({ error: 'Name required' });
 
   const total = parseNumberField(totalDueInput ?? 0, 'total_due', { required: false, defaultValue: 0 });
   const createdAt = new Date().toISOString();
+  // A regular user's new client is auto-assigned to them so it's
+  // immediately visible under their own access. Admins may optionally
+  // assign it to someone else up front via assigned_user_id.
+  const assignedUserId = isAdmin(req)
+    ? (req.body.assigned_user_id || null)
+    : currentUserId(req);
 
   await db.schemaReady;
   // Try to insert with new columns — gracefully fall back if they don't exist yet
@@ -215,6 +256,32 @@ router.post('/save-client', asyncHandler(async (req, res) => {
       `, [finalName, phone, email, address, status || 'Lead', total, total, createdAt]);
     } else {
       throw colErr;
+    }
+  }
+
+  // Assign the new client (best-effort — the assigned_user_id column
+  // may not exist yet on an unmigrated database). db.js's insert path
+  // doesn't return the new row's id, so the most recently created
+  // client with this name is used to find it — matches the same
+  // "search right after create" pattern the rest of this endpoint
+  // already relies on.
+  if (assignedUserId) {
+    try {
+      const supabase = getClient();
+      if (supabase) {
+        const { data: created } = await supabase
+          .from('clients')
+          .select('id')
+          .eq('name', finalName)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (created) {
+          await supabase.from('clients').update({ assigned_user_id: assignedUserId }).eq('id', created.id);
+        }
+      }
+    } catch (e) {
+      console.warn('[clients] Could not set assigned_user_id on create:', e.message);
     }
   }
 
@@ -237,16 +304,14 @@ router.post('/update-project', asyncHandler(async (req, res) => {
   const email = parseStringField(req.body.email ?? '', 'email', { required: false, maxLength: 254, defaultValue: '' });
   const address = parseStringField(req.body.address ?? '', 'address', { required: false, maxLength: 500, defaultValue: '' });
   const status = parseStringField(req.body.status ?? '', 'status', { required: false, maxLength: 30, defaultValue: '' });
-  const totalDueInput = req.body.total_due;
   const scopeOfWork = parseStringField(req.body.scope_of_work ?? '', 'scope_of_work', { required: false, maxLength: 5000, defaultValue: '' });
-  const jobCostInput = req.body.job_cost;
+  // Financial fields (Section 8) — only admins may change these, even
+  // through this general-purpose "save changes" endpoint.
+  const totalDueInput = isAdmin(req) ? req.body.total_due : undefined;
+  const jobCostInput = isAdmin(req) ? req.body.job_cost : undefined;
 
   await db.schemaReady;
-  // Fetch existing client — use * to avoid errors if new columns don't exist yet in Supabase
-  const clientResult = await db.query('SELECT * FROM clients WHERE id = $1', [id]);
-  const clientRow = clientResult.rows[0];
-  if (!clientRow) return res.status(404).json({ error: 'Client not found' });
-
+  const clientRow = await loadClientWithAccessCheck(req, id);
   const fallbackName = String(clientRow.name || '').trim();
 
   const newTotal = typeof totalDueInput !== 'undefined'
@@ -257,7 +322,13 @@ router.post('/update-project', asyncHandler(async (req, res) => {
     ? parseNumberField(jobCostInput, 'job_cost', { required: false, defaultValue: Number(clientRow.job_cost || 0) })
     : Number(clientRow.job_cost || 0);
   const finalName = name || `${fName} ${lName}`.trim() || fallbackName;
-  const finalStatus = status || String(clientRow.status || 'Lead').trim() || 'Lead';
+  let finalStatus = status || String(clientRow.status || 'Lead').trim() || 'Lead';
+  // Client stage is restricted to the six pipeline stages. An unknown
+  // value (e.g. a stale client sending an old status) is ignored in
+  // favor of the client's current stage rather than corrupting it.
+  if (status && !CLIENT_STAGES.includes(status)) {
+    finalStatus = String(clientRow.status || 'Lead').trim() || 'Lead';
+  }
   if (!finalName) {
     return res.status(400).json({ error: 'Name required' });
   }
@@ -298,8 +369,7 @@ router.post('/delete-client', asyncHandler(async (req, res) => {
   const id = parseIntField(req.body.id, 'id', { min: 1 });
 
   await db.schemaReady;
-  const clientResult = await db.query('SELECT created_at FROM clients WHERE id = $1', [id]);
-  const clientRow = clientResult.rows[0];
+  const clientRow = await loadClientWithAccessCheck(req, id);
 
   await db.query('DELETE FROM clients WHERE id = $1', [id]);
 
@@ -356,13 +426,13 @@ async function handleUpdateTotal(req, res) {
   }
 }
 
-router.put('/clients/:id/total', asyncHandler(handleUpdateTotal));
-router.post('/clients/:id/total', asyncHandler(handleUpdateTotal));
+router.put('/clients/:id/total', requireAdmin, asyncHandler(handleUpdateTotal));
+router.post('/clients/:id/total', requireAdmin, asyncHandler(handleUpdateTotal));
 
 // ======================================================
 // RECORD PAYMENT
 // ======================================================
-router.put('/clients/:id/payment', asyncHandler(async (req, res) => {
+router.put('/clients/:id/payment', requireAdmin, asyncHandler(async (req, res) => {
   assertObject(req.body);
   const id = parseIntField(req.params.id, 'id', { min: 1 });
   const amount = parseNumberField(req.body.payment ?? 0, 'payment', { required: false, defaultValue: 0 });
@@ -404,7 +474,7 @@ router.put('/clients/:id/payment', asyncHandler(async (req, res) => {
 // ======================================================
 // RESET BALANCE (FORCE RE-CALC)
 // ======================================================
-router.put('/clients/:id/reset-paid', asyncHandler(async (req, res) => {
+router.put('/clients/:id/reset-paid', requireAdmin, asyncHandler(async (req, res) => {
   const id = parseIntField(req.params.id, 'id', { min: 1 });
 
   await db.schemaReady;
@@ -443,7 +513,7 @@ router.put('/clients/:id/reset-paid', asyncHandler(async (req, res) => {
 // ======================================================
 // RESTORE FINANCE STATE (FOR UNDO)
 // ======================================================
-router.put('/clients/:id/finance-state', asyncHandler(async (req, res) => {
+router.put('/clients/:id/finance-state', requireAdmin, asyncHandler(async (req, res) => {
   assertObject(req.body);
   const id = parseIntField(req.params.id, 'id', { min: 1 });
   const total_due = parseNumberField(req.body.total_due ?? 0, 'total_due', { required: false, defaultValue: 0 });
@@ -492,7 +562,7 @@ router.put('/clients/:id/finance-state', asyncHandler(async (req, res) => {
 // ======================================================
 
 // Available Years
-router.get('/finance/years', asyncHandler(async (req, res) => {
+router.get('/finance/years', requireAdmin, asyncHandler(async (req, res) => {
   try {
     await db.schemaReady;
 
@@ -519,7 +589,7 @@ router.get('/finance/years', asyncHandler(async (req, res) => {
 }));
 
 // Save Year Data (Manual Override)
-router.post('/finance/save', asyncHandler(async (req, res) => {
+router.post('/finance/save', requireAdmin, asyncHandler(async (req, res) => {
   assertObject(req.body);
   const year = parseYear(req.body.year, 'year');
   const totalExpected = parseNumberField(req.body.totalExpected ?? 0, 'totalExpected', { required: false, defaultValue: 0 });
@@ -550,7 +620,7 @@ router.post('/finance/save', asyncHandler(async (req, res) => {
 // ======================================================
 // UPDATED FINANCE SUMMARY (CUMULATIVE BALANCES)
 // ======================================================
-router.get('/finance/summary', asyncHandler(async (req, res) => {
+router.get('/finance/summary', requireAdmin, asyncHandler(async (req, res) => {
   const year = req.query.year ? parseYear(req.query.year, 'year') : getValidYear(req.query.year);
 
   try {
@@ -605,7 +675,7 @@ router.get('/finance/summary', asyncHandler(async (req, res) => {
 // ======================================================
 // CASH SUMMARY
 // ======================================================
-router.get('/finance/cash-summary', asyncHandler(async (req, res) => {
+router.get('/finance/cash-summary', requireAdmin, asyncHandler(async (req, res) => {
   const year = req.query.year ? parseYear(req.query.year, 'year') : getValidYear(req.query.year);
   try {
     await db.schemaReady;
@@ -700,7 +770,7 @@ async function resolveClientName(clientId) {
   return client?.name || '';
 }
 
-router.get('/finance/margin/dashboard', asyncHandler(async (req, res) => {
+router.get('/finance/margin/dashboard', requireAdmin, asyncHandler(async (req, res) => {
   const year = req.query.year ? parseYear(req.query.year, 'year') : getValidYear(req.query.year);
 
   try {
@@ -741,7 +811,7 @@ router.get('/finance/margin/dashboard', asyncHandler(async (req, res) => {
   }
 }));
 
-router.post('/finance/margin/entries', asyncHandler(async (req, res) => {
+router.post('/finance/margin/entries', requireAdmin, asyncHandler(async (req, res) => {
   assertObject(req.body);
 
   const clientId = req.body.client_id ?? req.body.clientId ?? null;
@@ -785,7 +855,7 @@ router.post('/finance/margin/entries', asyncHandler(async (req, res) => {
   return res.json({ success: true, marginUpdated: true });
 }));
 
-router.put('/finance/margin/entries/:id', asyncHandler(async (req, res) => {
+router.put('/finance/margin/entries/:id', requireAdmin, asyncHandler(async (req, res) => {
   assertObject(req.body);
   const id = parseIntField(req.params.id, 'id', { min: 1 });
 
@@ -829,7 +899,7 @@ router.put('/finance/margin/entries/:id', asyncHandler(async (req, res) => {
   return res.json({ success: true, marginUpdated: true });
 }));
 
-router.delete('/finance/margin/entries/:id', asyncHandler(async (req, res) => {
+router.delete('/finance/margin/entries/:id', requireAdmin, asyncHandler(async (req, res) => {
   const id = parseIntField(req.params.id, 'id', { min: 1 });
   await db.schemaReady;
   await db.query('DELETE FROM finance_margin_entries WHERE id = $1', [id]);
@@ -842,6 +912,7 @@ router.delete('/finance/margin/entries/:id', asyncHandler(async (req, res) => {
 router.get('/clients/:id/notes', asyncHandler(async (req, res) => {
   const id = parseIntField(req.params.id, 'id', { min: 1 });
   await db.schemaReady;
+  await loadClientWithAccessCheck(req, id);
   const { rows } = await db.query(
     'SELECT id, content, created_at FROM notes WHERE client_id = $1 ORDER BY created_at DESC',
     [id]
@@ -855,6 +926,7 @@ router.post('/clients/:id/notes', asyncHandler(async (req, res) => {
   const content = parseStringField(req.body.content, 'content', { minLength: 1, maxLength: 10000 });
 
   await db.schemaReady;
+  await loadClientWithAccessCheck(req, id);
   await db.query('INSERT INTO notes (client_id, content) VALUES ($1, $2)', [id, content]);
   return res.json({ success: true });
 }));
@@ -866,6 +938,7 @@ router.put('/clients/:id/notes/:noteId', asyncHandler(async (req, res) => {
   const content = parseStringField(req.body.content, 'content', { minLength: 1, maxLength: 10000 });
 
   await db.schemaReady;
+  await loadClientWithAccessCheck(req, id);
   const result = await db.query('UPDATE notes SET content = $1 WHERE id = $2 AND client_id = $3', [content, noteId, id]);
   if (result.rowCount === 0) return res.status(404).json({ error: 'Note not found' });
   return res.json({ success: true });
@@ -876,9 +949,43 @@ router.delete('/clients/:id/notes/:noteId', asyncHandler(async (req, res) => {
   const noteId = parseIntField(req.params.noteId, 'noteId', { min: 1 });
 
   await db.schemaReady;
+  await loadClientWithAccessCheck(req, id);
   const result = await db.query('DELETE FROM notes WHERE id = $1 AND client_id = $2', [noteId, id]);
   if (result.rowCount === 0) return res.status(404).json({ error: 'Note not found' });
   return res.json({ success: true });
+}));
+
+// ======================================================
+// CLIENT STAGE OPTIONS (Section 2/6)
+// ======================================================
+router.get('/clients/stages', asyncHandler(async (req, res) => {
+  res.json({ stages: CLIENT_STAGES });
+}));
+
+// ======================================================
+// ASSIGN CLIENT TO A USER (admin only — Section 3)
+// ======================================================
+router.put('/clients/:id/assign', requireAdmin, asyncHandler(async (req, res) => {
+  assertObject(req.body);
+  const id = parseIntField(req.params.id, 'id', { min: 1 });
+  const assignedUserId = req.body.assigned_user_id || null;
+
+  await db.schemaReady;
+  const { rows } = await db.query('SELECT * FROM clients WHERE id = $1', [id]);
+  if (!rows[0]) return res.status(404).json({ error: 'Client not found' });
+
+  const supabase = getClient();
+  if (!supabase) throw new AppError(503, 'Database not configured');
+
+  const { data, error } = await supabase
+    .from('clients')
+    .update({ assigned_user_id: assignedUserId })
+    .eq('id', id)
+    .select()
+    .maybeSingle();
+
+  if (error) throw new AppError(500, 'Failed to assign client: ' + error.message);
+  return res.json({ success: true, client: data });
 }));
 
 module.exports = router;

@@ -110,7 +110,7 @@ create table if not exists public.companies (
   contact_email text not null default '',
   logo_url text not null default '',
   brand_primary_color text not null default '#2563eb',
-  brand_secondary_color text not null default '#7c3aed',
+  brand_secondary_color text not null default '#2563eb',
   onboarding_step int not null default 1,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -354,3 +354,110 @@ CREATE TABLE IF NOT EXISTS public.client_service (
 --   SELECT * FROM public.companies LIMIT 0;
 --   SELECT * FROM public.clients LIMIT 0;
 --   SELECT * FROM public.company_components LIMIT 0;
+
+-- =============================================================
+-- TEMPLATE UPGRADE: Google auth, per-user client access,
+-- client pipeline stage, job tags, and estimate/invoice line
+-- items with cost categories.
+--
+-- Everything below is purely ADDITIVE (new nullable columns,
+-- new tables) or a narrow, documented value rename. Nothing here
+-- drops a column, drops a table, or deletes a row. Safe to run
+-- multiple times (all statements are IF NOT EXISTS / idempotent).
+-- =============================================================
+
+-- ---- USERS: support Google sign-in (Supabase Auth) ----------
+-- password_hash is no longer required once a user signs in with
+-- Google, so it is relaxed to nullable. Existing password-based
+-- rows are untouched.
+ALTER TABLE public.users ALTER COLUMN password_hash DROP NOT NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'auth_uid'
+  ) THEN
+    ALTER TABLE public.users ADD COLUMN auth_uid uuid UNIQUE;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'picture_url'
+  ) THEN
+    ALTER TABLE public.users ADD COLUMN picture_url text NOT NULL DEFAULT '';
+  END IF;
+END $$;
+
+-- ---- CLIENTS: per-user assignment + company scoping ----------
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'clients' AND column_name = 'assigned_user_id'
+  ) THEN
+    ALTER TABLE public.clients ADD COLUMN assigned_user_id uuid REFERENCES public.users(id) ON DELETE SET NULL;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'clients' AND column_name = 'company_id'
+  ) THEN
+    ALTER TABLE public.clients ADD COLUMN company_id uuid REFERENCES public.companies(id) ON DELETE SET NULL;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS clients_assigned_user_id_idx ON public.clients (assigned_user_id);
+CREATE INDEX IF NOT EXISTS clients_company_id_idx ON public.clients (company_id);
+
+-- ---- CLIENT STAGE: normalize to the 6-stage pipeline ----------
+-- Client stage values going forward: Lead, Photo report, Prospect,
+-- Approved, Invoiced, Closed. This is a client-level PIPELINE STAGE
+-- only — it is intentionally separate from job.status (per-job
+-- workflow) and job.tags (per-job free-form labels) below.
+--
+-- Existing rows are remapped 1:1, never deleted:
+--   'Invoice'   -> 'Invoiced'  (straight rename, same meaning)
+--   'Completed' -> 'Approved'  (closest still-active pipeline stage;
+--                                'Completed' is not one of the six
+--                                stages the client asked for)
+-- All other existing values (Lead, Prospect, Approved, Closed) are
+-- already valid and untouched.
+UPDATE public.clients SET status = 'Invoiced' WHERE status = 'Invoice';
+UPDATE public.clients SET status = 'Approved' WHERE status = 'Completed';
+
+-- ---- JOBS: job-level tags (distinct from job.status workflow) --
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'jobs' AND column_name = 'tags'
+  ) THEN
+    ALTER TABLE public.jobs ADD COLUMN tags text[] NOT NULL DEFAULT '{}';
+  END IF;
+END $$;
+
+-- ---- JOB LINE ITEMS: estimate/invoice cost breakdown -----------
+-- One row per cost line on a job's estimate/invoice. category is
+-- restricted to the six required cost types; existing jobs have no
+-- rows here yet (they keep using the single job.total_due figure
+-- until someone adds line items).
+CREATE TABLE IF NOT EXISTS public.job_line_items (
+  id BIGSERIAL PRIMARY KEY,
+  job_id BIGINT NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  description TEXT NOT NULL DEFAULT '',
+  quantity NUMERIC NOT NULL DEFAULT 1,
+  unit_price NUMERIC NOT NULL DEFAULT 0,
+  category TEXT NOT NULL DEFAULT 'Miscellaneous'
+    CHECK (category IN ('Labor', 'Materials', 'Commissions', 'Meals/Drinks', 'Miscellaneous', 'Permits')),
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS job_line_items_job_id_idx ON public.job_line_items (job_id);
+
+-- Backfill safety net: if a future ALTER ever adds a category
+-- column to an older line-items table with existing un-categorized
+-- rows, default them to 'Miscellaneous' rather than guessing.
+UPDATE public.job_line_items SET category = 'Miscellaneous' WHERE category IS NULL OR category = '';
+
+NOTIFY pgrst, 'reload schema';

@@ -1,303 +1,289 @@
 const express = require('express');
-const bcrypt = require('bcryptjs');
+const { createClient } = require('@supabase/supabase-js');
 const { getClient } = require('./db-v2');
 const { asyncHandler, assertObject, parseStringField, AppError } = require('./request-utils');
 
 const router = express.Router();
 
-function normalizeHost(req) {
-  var raw = String(
-    req.headers['x-forwarded-host'] ||
-    req.headers.host ||
-    req.hostname ||
-    ''
-  )
-    .split(',')[0]
-    .trim()
-    .toLowerCase();
-
-  if (!raw) return '';
-  return raw.replace(/:\d+$/, '').replace(/\.$/, '');
-}
-
-function hostVariants(host) {
-  var base = String(host || '').trim().toLowerCase().replace(/\.$/, '');
-  if (!base) return [];
-  var variants = [base];
-  if (base.startsWith('www.')) variants.push(base.slice(4));
-  else variants.push('www.' + base);
-  return Array.from(new Set(variants));
-}
-
-async function getTenantByHost(supabase, host) {
-  var variants = hostVariants(host);
-  if (variants.length === 0) return null;
-
-  // Query for a company matching slug or contact_email
-  for (var i = 0; i < variants.length; i++) {
-    var variant = variants[i];
-    var { data: companies, error } = await supabase
-      .from('companies')
-      .select('*')
-      .or('slug.eq.' + variant + ',contact_email.eq.' + variant)
-      .limit(1);
-
-    if (error) throw new AppError(500, 'Failed to resolve tenant: ' + error.message);
-    if (companies && companies.length > 0) return companies[0];
+// Node's fetch buries the actual reason (DNS failure, TLS error,
+// connection refused, etc.) inside `.cause` and only puts the generic
+// "fetch failed" in `.message`. Surface the real cause so error
+// messages are actually actionable instead of always saying the
+// same unhelpful "fetch failed".
+function describeSupabaseError(error) {
+  var base = error && error.message ? error.message : String(error);
+  var cause = error && error.cause;
+  if (cause) {
+    var causeMsg = cause.message || String(cause);
+    var code = cause.code ? ' [' + cause.code + ']' : '';
+    return base + ' — likely cause: ' + causeMsg + code +
+      '. Run `node scripts/diagnose-connection.js` for a full network check.';
   }
+  return base;
+}
 
-  // Fallback: if only one company exists, return it (development convenience)
-  var { count, error: countErr } = await supabase
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
+const DEFAULT_COMPANY_NAME = process.env.BUSINESS_NAME || 'My Company';
+
+// A plain anon-key client, used only to ask Supabase Auth "who does this
+// access token belong to?". This never touches app data directly.
+function getAuthVerifierClient() {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+}
+
+// ============================================================
+// Single-tenant helper: this template demos as one company, so
+// we transparently reuse (or create once) a single companies row
+// instead of asking anyone to configure multi-tenant setup.
+// ============================================================
+async function getOrCreateDefaultCompany(supabase) {
+  const { data: existing, error } = await supabase
     .from('companies')
-    .select('id', { count: 'exact', head: true });
-  if (countErr) throw new AppError(500, 'Failed to check companies: ' + countErr.message);
-  if (count === 1) {
-    var { data: single } = await supabase.from('companies').select('*').limit(1).single();
-    return single || null;
-  }
+    .select('*')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
 
-  return null;
+  if (error) throw new AppError(500, 'Failed to look up company: ' + describeSupabaseError(error));
+  if (existing) return existing;
+
+  const { data: created, error: createErr } = await supabase
+    .from('companies')
+    .insert({
+      name: DEFAULT_COMPANY_NAME,
+      slug: 'default',
+      contact_email: ''
+    })
+    .select()
+    .single();
+
+  if (createErr) throw new AppError(500, 'Failed to create company: ' + describeSupabaseError(createErr));
+  return created;
 }
 
 async function getCompanyAdminCount(supabase, companyId) {
-  var { count, error } = await supabase
+  const { count, error } = await supabase
     .from('users')
     .select('id', { count: 'exact', head: true })
     .eq('company_id', companyId)
     .eq('role', 'admin');
 
-  if (error) throw new AppError(500, 'Failed to check admin status: ' + error.message);
+  if (error) throw new AppError(500, 'Failed to check admin status: ' + describeSupabaseError(error));
   return count || 0;
 }
 
-async function getTenantStatus(supabase, host) {
-  var tenant = await getTenantByHost(supabase, host);
-  if (!tenant) {
-    return {
-      host: host,
-      tenantExists: false,
-      setupRequired: true,
-      company: null
-    };
-  }
-
-  var adminCount = await getCompanyAdminCount(supabase, tenant.id);
+function buildSessionUser(userRow, company) {
   return {
-    host: host,
-    tenantExists: true,
-    setupRequired: adminCount === 0,
-    adminCount: adminCount,
-    company: {
-      id: tenant.id,
-      name: tenant.name || '',
-      slug: tenant.slug || '',
-      onboardingStep: tenant.onboarding_step || 0,
-      contactEmail: tenant.contact_email || ''
-    }
+    id: userRow.id,
+    email: userRow.email,
+    displayName: userRow.display_name || '',
+    pictureUrl: userRow.picture_url || '',
+    role: userRow.role,
+    companyId: userRow.company_id,
+    companyName: company ? company.name || '' : '',
+    onboardingComplete: true
   };
 }
 
 // ============================================================
-// POST /api/v2/auth/register
-// First user to register becomes Admin with a new Company.
-// All subsequent registrations become regular Users.
+// POST /api/v2/auth/google-session
+//
+// Called by the frontend right after Supabase Auth completes a
+// Google OAuth sign-in in the browser. The browser sends us the
+// access_token it received from Supabase; we verify that token
+// directly with Supabase Auth (so a forged/expired token is
+// rejected) and only then create our own server session.
+//
+// First person ever to sign in becomes the company's admin. Every
+// subsequent Google sign-in becomes a regular user. An admin can
+// promote/reassign users later from User Management.
 // ============================================================
-router.post('/register', asyncHandler(async (req, res) => {
+router.post('/google-session', asyncHandler(async (req, res) => {
   assertObject(req.body);
-  const email = parseStringField(req.body.email, 'email', { minLength: 1, maxLength: 254 }).toLowerCase();
-  const password = parseStringField(req.body.password, 'password', { minLength: 6, maxLength: 128 });
-  const displayName = parseStringField(req.body.displayName, 'displayName', { required: false, defaultValue: '', maxLength: 200 });
-  const companyNameInput = parseStringField(req.body.companyName || req.body.company_name || '', 'companyName', { required: false, defaultValue: '', maxLength: 200 });
+  const accessToken = parseStringField(req.body.access_token, 'access_token', { minLength: 10, maxLength: 4000 });
 
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) throw new AppError(400, 'Invalid email format');
+  const verifier = getAuthVerifierClient();
+  if (!verifier) throw new AppError(503, 'Google sign-in is not configured (SUPABASE_URL/SUPABASE_ANON_KEY missing).');
+
+  const { data: authData, error: authErr } = await verifier.auth.getUser(accessToken);
+  if (authErr || !authData || !authData.user) {
+    throw new AppError(401, 'Could not verify Google sign-in. Please try again.');
+  }
+
+  const authUser = authData.user;
+  const email = String(authUser.email || '').toLowerCase().trim();
+  if (!email) throw new AppError(400, 'Google account has no email address.');
+
+  const metadata = authUser.user_metadata || {};
+  const displayName = String(metadata.full_name || metadata.name || '').trim();
+  const pictureUrl = String(metadata.avatar_url || metadata.picture || '').trim();
 
   const supabase = getClient();
   if (!supabase) throw new AppError(503, 'Database not configured');
-  const host = normalizeHost(req);
-  if (!host) throw new AppError(400, 'Unable to determine tenant domain');
 
-  // Check if email already taken
-  const { data: existing } = await supabase
+  const company = await getOrCreateDefaultCompany(supabase);
+
+  // Look up an existing app user by auth_uid first (returning user),
+  // then fall back to matching by email (links a pre-existing/legacy
+  // user record to this Google identity on first sign-in).
+  let { data: userRow } = await supabase
     .from('users')
-    .select('id')
-    .eq('email', email)
+    .select('*')
+    .eq('auth_uid', authUser.id)
     .maybeSingle();
 
-  if (existing) throw new AppError(409, 'Email already registered');
-
-  const passwordHash = bcrypt.hashSync(password, 10);
-  var tenant = await getTenantByHost(supabase, host);
-  var company = tenant;
-  var adminCount = company ? await getCompanyAdminCount(supabase, company.id) : 0;
-  if (company && adminCount > 0) {
-    throw new AppError(409, 'This domain already has an admin. Please sign in.');
+  if (!userRow) {
+    const byEmail = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .eq('company_id', company.id)
+      .maybeSingle();
+    userRow = byEmail.data || null;
   }
 
-  if (company && companyNameInput) {
-    var { error: updateCompanyErr } = await supabase
-      .from('companies')
+  if (userRow) {
+    const { data: updated, error: updateErr } = await supabase
+      .from('users')
       .update({
-        name: companyNameInput,
-        contact_email: email,
+        auth_uid: authUser.id,
+        display_name: displayName || userRow.display_name || '',
+        picture_url: pictureUrl || userRow.picture_url || '',
+        onboarding_complete: true,
         updated_at: new Date().toISOString()
       })
-      .eq('id', company.id);
-
-    if (!updateCompanyErr) {
-      company.name = companyNameInput;
-      company.contact_email = email;
-    }
-  }
-
-  if (!company) {
-    var companyName = companyNameInput || displayName || host;
-    var slug = host;
-    var insertCompany = {
-      name: companyName,
-      slug: slug,
-      contact_email: email
-    };
-
-    if (req.body.companyDomain || req.body.company_domain) {
-      insertCompany.company_domain = String(req.body.companyDomain || req.body.company_domain).trim().toLowerCase();
-    }
-
-    var companyInsert = await supabase
-      .from('companies')
-      .insert(insertCompany)
+      .eq('id', userRow.id)
       .select()
       .single();
 
-    if (companyInsert.error) {
-      var fallbackInsert = await supabase
-        .from('companies')
-        .insert({
-          name: companyName,
-          slug: slug,
-          contact_email: email
-        })
-        .select()
-        .single();
-      if (fallbackInsert.error) {
-        throw new AppError(500, 'Failed to create company: ' + fallbackInsert.error.message);
-      }
-      company = fallbackInsert.data;
-    } else {
-      company = companyInsert.data;
-    }
-  }
+    if (updateErr) throw new AppError(500, 'Failed to update user: ' + describeSupabaseError(updateErr));
+    userRow = updated;
+  } else {
+    const adminCount = await getCompanyAdminCount(supabase, company.id);
+    const role = adminCount === 0 ? 'admin' : 'user';
 
-  var { data: user, error: userErr } = await supabase
-    .from('users')
-    .insert({
-      email,
-      password_hash: passwordHash,
-      display_name: displayName || '',
-      role: 'admin',
-      company_id: company.id,
-      onboarding_complete: false
-    })
-    .select()
-    .single();
+    const { data: created, error: createErr } = await supabase
+      .from('users')
+      .insert({
+        email,
+        password_hash: null,
+        auth_uid: authUser.id,
+        display_name: displayName,
+        picture_url: pictureUrl,
+        role,
+        company_id: company.id,
+        onboarding_complete: true
+      })
+      .select()
+      .single();
 
-  if (userErr) {
-    throw new AppError(500, 'Failed to create user: ' + userErr.message);
+    if (createErr) throw new AppError(500, 'Failed to create user: ' + describeSupabaseError(createErr));
+    userRow = created;
   }
 
   req.session.authenticated = true;
-  req.session.user = {
-    id: user.id,
-    email: user.email,
-    displayName: user.display_name,
-    role: 'admin',
-    companyId: company.id,
-    companyName: company.name || companyNameInput || host,
-    onboardingComplete: false
-  };
+  req.session.user = buildSessionUser(userRow, company);
 
-  return res.json({
-    success: true,
-    role: 'admin',
-    onboardingComplete: false,
-    message: 'Welcome! You are the Admin. Please complete onboarding.'
-  });
+  res.json({ success: true, user: req.session.user });
 }));
 
 // ============================================================
-// POST /api/v2/auth/login
+// POST /api/v2/auth/password-login
+//
+// TEMPORARY fallback for while Google sign-in isn't configured yet
+// in Supabase Auth (Authentication > Providers > Google). Checks a
+// single shared password against DEFAULT_ADMIN_PASSWORD in .env and,
+// on success, signs the caller in as the company admin — same
+// session shape as Google sign-in, so everything else in the app
+// (roles, RBAC, etc.) behaves identically either way.
+//
+// This is intentionally a stopgap: once Google sign-in is set up,
+// prefer that instead and consider removing/rotating this password.
 // ============================================================
-router.post('/login', asyncHandler(async (req, res) => {
+router.post('/password-login', asyncHandler(async (req, res) => {
   assertObject(req.body);
-  const email = parseStringField(req.body.email, 'email', { minLength: 1, maxLength: 254 }).toLowerCase();
-  const password = parseStringField(req.body.password, 'password', { minLength: 1, maxLength: 128 });
+  const password = parseStringField(req.body.password, 'password', { minLength: 1, maxLength: 256 });
+
+  const expected = String(process.env.DEFAULT_ADMIN_PASSWORD || '').trim();
+  if (!expected) {
+    throw new AppError(503, 'Password login is not configured. Set DEFAULT_ADMIN_PASSWORD in .env.');
+  }
+  if (password !== expected) {
+    return res.status(401).json({ success: false, error: 'Incorrect password.' });
+  }
 
   const supabase = getClient();
   if (!supabase) throw new AppError(503, 'Database not configured');
-  const host = normalizeHost(req);
-  if (!host) throw new AppError(400, 'Unable to determine tenant domain');
-  const tenant = await getTenantByHost(supabase, host);
-  if (!tenant) throw new AppError(403, 'This domain is not set up yet. Create the first admin account.');
 
-  const { data: user } = await supabase
+  const company = await getOrCreateDefaultCompany(supabase);
+
+  // Password login is always meant to land you as admin — no
+  // exceptions. The database only allows ONE admin per company
+  // (a unique index on users.company_id where role='admin'), so if
+  // an older/different user already holds that admin slot (e.g. from
+  // earlier testing), demote it to a regular user first so the
+  // password-login account can take over the admin slot cleanly.
+  const passwordAdminEmail = 'password-admin@local';
+
+  const { data: existingAdmins, error: findAdminErr } = await supabase
     .from('users')
     .select('*')
-    .eq('email', email)
-    .eq('company_id', tenant.id)
+    .eq('company_id', company.id)
+    .eq('role', 'admin');
+  if (findAdminErr) throw new AppError(500, 'Failed to check existing admin: ' + describeSupabaseError(findAdminErr));
+
+  const otherAdmin = (existingAdmins || []).find((u) => u.email !== passwordAdminEmail);
+  if (otherAdmin) {
+    const { error: demoteErr } = await supabase
+      .from('users')
+      .update({ role: 'user' })
+      .eq('id', otherAdmin.id);
+    if (demoteErr) throw new AppError(500, 'Failed to hand off admin role: ' + describeSupabaseError(demoteErr));
+  }
+
+  let { data: userRow } = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', passwordAdminEmail)
+    .eq('company_id', company.id)
     .maybeSingle();
 
-  if (!user) throw new AppError(401, 'Invalid email or password');
-
-  const match = bcrypt.compareSync(password, user.password_hash);
-  if (!match) throw new AppError(401, 'Invalid email or password');
-
-  // Fetch the company's onboarding step for resume logic
-  var onboardingStep = 0;
-  if (user.company_id) {
-    var { data: company } = await supabase
-      .from('companies')
-      .select('onboarding_step')
-      .eq('id', user.company_id)
-      .maybeSingle();
-    onboardingStep = company ? (company.onboarding_step || 0) : 0;
+  if (!userRow) {
+    const { data: created, error: createErr } = await supabase
+      .from('users')
+      .insert({
+        email: passwordAdminEmail,
+        password_hash: null,
+        display_name: 'Admin (password login)',
+        role: 'admin',
+        company_id: company.id,
+        onboarding_complete: true
+      })
+      .select()
+      .single();
+    if (createErr) throw new AppError(500, 'Failed to create admin user: ' + describeSupabaseError(createErr));
+    userRow = created;
+  } else if (userRow.role !== 'admin') {
+    const { data: updated, error: updateErr } = await supabase
+      .from('users')
+      .update({ role: 'admin' })
+      .eq('id', userRow.id)
+      .select()
+      .single();
+    if (updateErr) throw new AppError(500, 'Failed to promote to admin: ' + describeSupabaseError(updateErr));
+    userRow = updated;
   }
 
   req.session.authenticated = true;
-  req.session.user = {
-    id: user.id,
-    email: user.email,
-    displayName: user.display_name,
-    role: user.role,
-    companyId: user.company_id,
-    companyName: tenant.name || '',
-    onboardingComplete: user.onboarding_complete,
-    onboardingStep: onboardingStep
-  };
+  req.session.user = buildSessionUser(userRow, company);
 
-  res.json({
-    success: true,
-    role: user.role,
-    onboardingComplete: user.onboarding_complete,
-    onboardingStep: onboardingStep
-  });
-}));
-
-// ============================================================
-// GET /api/v2/auth/tenant-status
-// Returns whether this host already has a company/admin.
-// Used by the login screen to decide whether to show first-run setup.
-// ============================================================
-router.get('/tenant-status', asyncHandler(async (req, res) => {
-  const supabase = getClient();
-  if (!supabase) throw new AppError(503, 'Database not configured');
-  const host = normalizeHost(req);
-  const status = await getTenantStatus(supabase, host);
-  res.json({ success: true, data: status });
+  res.json({ success: true, user: req.session.user });
 }));
 
 // ============================================================
 // GET /api/v2/auth/me
-// Returns current session user info (or unauthenticated status).
 // ============================================================
 router.get('/me', asyncHandler(async (req, res) => {
   if (!req.session.user) {
@@ -308,7 +294,8 @@ router.get('/me', asyncHandler(async (req, res) => {
 
 // ============================================================
 // PATCH /api/v2/auth/me
-// Updates the current user's display name and/or password.
+// Google sign-in owns the identity/password, so the only thing a
+// signed-in user can change here is their display name.
 // ============================================================
 router.patch('/me', asyncHandler(async (req, res) => {
   if (!req.session.user) {
@@ -320,57 +307,16 @@ router.patch('/me', asyncHandler(async (req, res) => {
   if (!supabase) throw new AppError(503, 'Database not configured');
 
   const displayName = parseStringField(req.body.displayName, 'displayName', { required: false, defaultValue: '', maxLength: 200 });
-  const currentPassword = parseStringField(req.body.currentPassword, 'currentPassword', { required: false, defaultValue: '', maxLength: 128 });
-  const newPassword = parseStringField(req.body.newPassword, 'newPassword', { required: false, defaultValue: '', maxLength: 128 });
-  const confirmPassword = parseStringField(req.body.confirmPassword, 'confirmPassword', { required: false, defaultValue: '', maxLength: 128 });
-
-  const updates = {};
-  if (typeof displayName === 'string') {
-    updates.display_name = displayName.trim();
-  }
-
-  if (newPassword || confirmPassword || currentPassword) {
-    if (!currentPassword || !newPassword) {
-      throw new AppError(400, 'Current password and new password are required to change your password.');
-    }
-    if (newPassword !== confirmPassword) {
-      throw new AppError(400, 'New passwords do not match.');
-    }
-
-    const { data: user } = await supabase
-      .from('users')
-      .select('id, password_hash')
-      .eq('id', req.session.user.id)
-      .maybeSingle();
-
-    if (!user) {
-      throw new AppError(404, 'User not found');
-    }
-
-    const match = bcrypt.compareSync(currentPassword, user.password_hash);
-    if (!match) {
-      throw new AppError(400, 'Current password is incorrect.');
-    }
-
-    updates.password_hash = bcrypt.hashSync(newPassword, 10);
-  }
-
-  if (Object.keys(updates).length === 0) {
-    throw new AppError(400, 'No updates provided');
-  }
-
-  updates.updated_at = new Date().toISOString();
+  if (!displayName) throw new AppError(400, 'displayName is required');
 
   const { data: updatedUser, error } = await supabase
     .from('users')
-    .update(updates)
+    .update({ display_name: displayName.trim(), updated_at: new Date().toISOString() })
     .eq('id', req.session.user.id)
-    .select('id, email, display_name, role, company_id, onboarding_complete')
+    .select('id, email, display_name, role, company_id')
     .single();
 
-  if (error) {
-    throw new AppError(500, 'Failed to update account: ' + error.message);
-  }
+  if (error) throw new AppError(500, 'Failed to update account: ' + describeSupabaseError(error));
 
   req.session.user.displayName = updatedUser.display_name;
 
@@ -381,8 +327,7 @@ router.patch('/me', asyncHandler(async (req, res) => {
       email: updatedUser.email,
       displayName: updatedUser.display_name,
       role: updatedUser.role,
-      companyId: updatedUser.company_id,
-      onboardingComplete: updatedUser.onboarding_complete
+      companyId: updatedUser.company_id
     }
   });
 }));
@@ -394,6 +339,70 @@ router.post('/logout', asyncHandler(async (req, res) => {
   req.session.destroy(() => {
     res.json({ success: true });
   });
+}));
+
+// ============================================================
+// POST /api/v2/auth/test-login  (TEST-ONLY, never available outside
+// NODE_ENV=test)
+//
+// Real users always sign in with Google. This endpoint exists purely
+// so automated tests can create a session for a chosen role/email
+// without driving a real browser through Google's OAuth consent
+// screen. It behaves like a normal 404 in any non-test environment,
+// so it cannot be discovered or used in the demo/production app.
+// ============================================================
+router.post('/test-login', asyncHandler(async (req, res) => {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new AppError(404, 'Not found');
+  }
+
+  assertObject(req.body);
+  const email = parseStringField(req.body.email, 'email', { minLength: 1, maxLength: 254 }).toLowerCase();
+  const requestedRole = req.body.role === 'admin' ? 'admin' : 'user';
+  const displayName = parseStringField(req.body.displayName || '', 'displayName', { required: false, defaultValue: '', maxLength: 200 });
+
+  const supabase = getClient();
+  if (!supabase) throw new AppError(503, 'Database not configured');
+
+  const company = await getOrCreateDefaultCompany(supabase);
+
+  let { data: userRow } = await supabase
+    .from('users')
+    .select('*')
+    .eq('email', email)
+    .eq('company_id', company.id)
+    .maybeSingle();
+
+  if (!userRow) {
+    const { data: created, error: createErr } = await supabase
+      .from('users')
+      .insert({
+        email,
+        password_hash: null,
+        display_name: displayName,
+        role: requestedRole,
+        company_id: company.id,
+        onboarding_complete: true
+      })
+      .select()
+      .single();
+    if (createErr) throw new AppError(500, 'Failed to create test user: ' + describeSupabaseError(createErr));
+    userRow = created;
+  } else if (userRow.role !== requestedRole) {
+    const { data: updated, error: updateErr } = await supabase
+      .from('users')
+      .update({ role: requestedRole })
+      .eq('id', userRow.id)
+      .select()
+      .single();
+    if (updateErr) throw new AppError(500, 'Failed to update test user role: ' + describeSupabaseError(updateErr));
+    userRow = updated;
+  }
+
+  req.session.authenticated = true;
+  req.session.user = buildSessionUser(userRow, company);
+
+  res.json({ success: true, user: req.session.user });
 }));
 
 module.exports = router;

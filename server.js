@@ -37,15 +37,8 @@ app.set('trust proxy', 1);
 const disableAuth = process.env.DISABLE_AUTH === 'true';
 const faviconSvg = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CRM Template">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#47a7f5"/>
-      <stop offset="100%" stop-color="#1c92d2"/>
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="16" fill="#0f2027"/>
-  <rect x="6" y="6" width="52" height="52" rx="13" fill="url(#g)"/>
-  <path d="M18 24h28v6H18zm0 10h20v6H18zm0 10h24v6H18z" fill="#ffffff" opacity="0.96"/>
+  <rect width="64" height="64" rx="14" fill="#2563eb"/>
+  <path d="M18 22h28v6H18zm0 10h20v6H18zm0 10h24v6H18z" fill="#ffffff"/>
 </svg>`);
 
 // ===== BODY PARSING =====
@@ -60,8 +53,9 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, error: 'Too many login attempts. Try again in 15 minutes.' }
 });
-app.use('/api/login', loginLimiter);
-app.use('/api/v2/auth/login', loginLimiter);
+app.use('/api/v2/auth/google-session', loginLimiter);
+app.use('/api/v2/auth/password-login', loginLimiter);
+app.use('/api/v2/auth/test-login', loginLimiter);
 
 // ===== SESSION =====
 const sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
@@ -109,8 +103,9 @@ app.use('/api', (req, res, next) => {
 
 // ===== API AUTH GUARD =====
 app.use('/api', (req, res, next) => {
-  if (req.path === '/login' || req.path === '/change-password') return next();
-  // Allow unauthenticated access to all v2 auth endpoints (register, login, tenant-status, me)
+  // Allow unauthenticated access to the v2 auth endpoints themselves
+  // (google-session, me, logout, test-login) — everything else under
+  // /api requires an existing session.
   if (req.path.startsWith('/v2/auth/')) return next();
   return requireApiAuth(req, res, next);
 });
@@ -134,7 +129,6 @@ app.use('/api', (req, res, next) => {
 });
 
 // ===== API ROUTES =====
-const authRoutes = require('./api/auth');
 const clientsRoutes = require('./api/clients');
 const companyProfileRoutes = require('./api/company-profile');
 const emailSettingsRoutes = require('./api/email-settings');
@@ -145,7 +139,6 @@ const jobsRoutes = require('./api/jobs');
 const supabaseConfigRoutes = require('./api/supabase-config');
 
 // Mount routers under /api
-app.use('/api', authRoutes);
 app.use('/api', clientsRoutes);
 app.use('/api/company-profile', companyProfileRoutes);
 app.use('/api/email-settings', emailSettingsRoutes);
@@ -155,13 +148,11 @@ app.use('/api/supabase-config', supabaseConfigRoutes);
 app.use('/api/notes', notesRoutes);
 app.use('/api/jobs', jobsRoutes);
 
-// ===== V2 API ROUTES (multi-tenant onboarding system) =====
+// ===== V2 API ROUTES =====
 const authSystemRoutes = require('./api/auth-system');
-const onboardingRoutes = require('./api/onboarding');
 const dashboardRoutes = require('./api/dashboard');
 
 app.use('/api/v2/auth', authSystemRoutes);
-app.use('/api/v2/onboarding', onboardingRoutes);
 app.use('/api/v2/dashboard', dashboardRoutes);
 
 // ===== PLATFORM FEATURE ROUTES =====
@@ -236,13 +227,34 @@ app.get('/favicon.ico', (req, res) => {
   res.send(faviconSvg);
 });
 
+// ===== AUTH CONFIG INJECTION (Google sign-in via Supabase Auth) =====
+// SUPABASE_URL and the anon key are meant to be public (the anon key is
+// safe to ship to the browser by design), so injecting them into the
+// login/callback pages does not expose anything sensitive.
+function authConfigScript() {
+  var config = {
+    supabaseUrl: process.env.SUPABASE_URL || '',
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || ''
+  };
+  return '<script>window.__AUTH_CONFIG__ = ' + JSON.stringify(config) + ';</script>';
+}
+
+function sendHtmlWithAuthConfig(res, filePath) {
+  var html = fs.readFileSync(filePath, 'utf8');
+  res.send(html.replace('</head>', authConfigScript() + '</head>'));
+}
+
 // ===== PAGE ROUTES (must be before root static middleware) =====
 app.get('/', (req, res) => {
   if (disableAuth) return res.sendFile(path.join(__dirname, 'main.html'));
-  if (req.session && req.session.user && req.session.authenticated) {
-    return res.redirect('/dashboard');
+  if (isAuthenticated(req)) {
+    return res.redirect('/main');
   }
-  res.sendFile(path.join(__dirname, 'login-v2.html'));
+  sendHtmlWithAuthConfig(res, path.join(__dirname, 'login.html'));
+});
+
+app.get('/auth/callback', (req, res) => {
+  sendHtmlWithAuthConfig(res, path.join(__dirname, 'auth-callback.html'));
 });
 
 // Cache main.html for user-data injection
@@ -280,51 +292,35 @@ app.get('/main.html', (req, res) => {
   res.send(getMainHtmlWithUser(req));
 });
 
-app.get('/finance', (req, res) => {
+// Financial Overview / margin tracker page — admin only (Section 8).
+// Regular users are redirected back into the CRM rather than ever
+// receiving this page's markup or data.
+function requireAdminPage(req, res, next) {
   if (!isAuthenticated(req)) return res.redirect('/');
-  res.sendFile(path.join(__dirname, 'finance.html'));
-});
-
-app.get('/finance.html', requirePageAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'finance.html'));
-});
-
-// ===== V2 PAGE ROUTES (onboarding system) =====
-function requireV2Auth(req, res, next) {
-  if (req.session && req.session.user) return next();
-  return res.redirect('/login-v2');
+  if (disableAuth) return next();
+  if (req.session && req.session.user && req.session.user.role === 'admin') return next();
+  return res.redirect('/main');
 }
 
-app.get('/register', (req, res) => {
-  return res.redirect('/login-v2?setup=1');
+app.get('/finance', requireAdminPage, (req, res) => {
+  res.sendFile(path.join(__dirname, 'finance.html'));
 });
 
-app.get('/login-v2', (req, res) => {
-  if (req.session && req.session.user && req.session.authenticated) {
-    return res.redirect('/dashboard');
-  }
-  res.sendFile(path.join(__dirname, 'login-v2.html'));
+app.get('/finance.html', requireAdminPage, (req, res) => {
+  res.sendFile(path.join(__dirname, 'finance.html'));
 });
 
-app.get('/onboarding/step1', requireV2Auth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'onboarding-step1.html'));
-});
+// ===== V2 PAGE ROUTES =====
+function requireV2Auth(req, res, next) {
+  if (req.session && req.session.user) return next();
+  return res.redirect('/');
+}
 
-app.get('/onboarding/step2', requireV2Auth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'onboarding-step2.html'));
-});
-
-app.get('/onboarding/step3', requireV2Auth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'onboarding-step3.html'));
-});
-
-app.get('/onboarding/step4', requireV2Auth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'onboarding-step4.html'));
-});
-
-app.get('/dashboard', requireV2Auth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'dashboard.html'));
-});
+// Legacy bookmarks/links from the old multi-tenant onboarding UI —
+// send them straight into the CRM instead of a dead page.
+app.get('/register', (req, res) => res.redirect('/'));
+app.get('/login-v2', (req, res) => res.redirect('/'));
+app.get('/dashboard', (req, res) => res.redirect('/main'));
 
 app.get('/settings', requireV2Auth, (req, res) => {
   res.send(getSettingsHtmlWithUser(req));

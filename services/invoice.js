@@ -51,6 +51,52 @@ function drawRule(doc, x, y, width, color) {
     .lineWidth(0.5).strokeColor(color || '#d1d5db').stroke();
 }
 
+// Renders the cost line items table (description / qty / unit price /
+// category / amount) when the job has any. Returns the new cursor Y.
+function drawLineItemsTable(doc, lineItems, x, y, contentWidth, pageBottom) {
+  const colDesc = contentWidth * 0.36;
+  const colCat = contentWidth * 0.18;
+  const colQty = contentWidth * 0.12;
+  const colPrice = contentWidth * 0.16;
+  const colAmt = contentWidth * 0.18;
+
+  function ensureRoom(rowHeight) {
+    if (y + rowHeight > pageBottom) {
+      doc.addPage();
+      y = doc.page.margins.top;
+    }
+  }
+
+  ensureRoom(18);
+  doc.fontSize(8).fillColor('#9ca3af');
+  doc.text('DESCRIPTION', x, y, { width: colDesc });
+  doc.text('CATEGORY', x + colDesc, y, { width: colCat });
+  doc.text('QTY', x + colDesc + colCat, y, { width: colQty, align: 'right' });
+  doc.text('UNIT PRICE', x + colDesc + colCat + colQty, y, { width: colPrice, align: 'right' });
+  doc.text('AMOUNT', x + colDesc + colCat + colQty + colPrice, y, { width: colAmt, align: 'right' });
+  y += 14;
+  drawRule(doc, x, y, contentWidth, '#e5e7eb');
+  y += 8;
+
+  lineItems.forEach(function (item) {
+    const rowH = Math.max(
+      doc.heightOfString(item.description || '-', { width: colDesc }),
+      14
+    ) + 6;
+    ensureRoom(rowH);
+    doc.fontSize(9).fillColor('#374151');
+    doc.text(item.description || '-', x, y, { width: colDesc });
+    doc.text(item.category || 'Miscellaneous', x + colDesc, y, { width: colCat });
+    doc.text(String(item.quantity), x + colDesc + colCat, y, { width: colQty, align: 'right' });
+    doc.text('$' + formatMoney(item.unit_price), x + colDesc + colCat + colQty, y, { width: colPrice, align: 'right' });
+    doc.text('$' + formatMoney(item.amount), x + colDesc + colCat + colQty + colPrice, y, { width: colAmt, align: 'right' });
+    y += rowH;
+  });
+
+  y += 8;
+  return y;
+}
+
 function drawSummaryRow(doc, label, value, x, y, contentWidth, bold) {
   const labelW = contentWidth * 0.65;
   const valueX = x + labelW;
@@ -173,6 +219,17 @@ function generateInvoicePDF(data, mode) {
 
     cursorY += 16;
 
+    // ---- Cost breakdown (line items with categories), when present ----
+    if (Array.isArray(data.lineItems) && data.lineItems.length > 0) {
+      if (cursorY + 24 > pageBottom) { doc.addPage(); cursorY = doc.page.margins.top; }
+      drawRule(doc, M, cursorY, contentWidth);
+      cursorY += 16;
+      doc.fontSize(8).fillColor('#9ca3af').text('COST BREAKDOWN', M, cursorY, { width: contentWidth });
+      cursorY += 14;
+      cursorY = drawLineItemsTable(doc, data.lineItems, M, cursorY, contentWidth, pageBottom);
+      cursorY += 8;
+    }
+
     // ---- Divider ----
     if (cursorY + 20 > pageBottom) { doc.addPage(); cursorY = doc.page.margins.top; }
     drawRule(doc, M, cursorY, contentWidth);
@@ -257,11 +314,20 @@ function buildInvoiceData(opts) {
   const client = opts.client;
   const companyProfile = opts.companyProfile || {};
   const mode = opts.mode || 'invoice';
+  const lineItems = Array.isArray(opts.lineItems) ? opts.lineItems : [];
 
   const workDescription = client.scope_of_work || 'No scope of work provided.';
   const company = normalizeCompanyProfile(companyProfile, process.env);
   const isEstimate = mode === 'estimate';
   const prefix = isEstimate ? 'EST' : 'INV';
+
+  // When line items exist, their sum is the source of truth for the
+  // total shown on the document (matches what job total_due already
+  // reflects, since jobs.js keeps them in sync on every line-item change).
+  const lineItemTotal = lineItems.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+  const total = lineItems.length > 0
+    ? lineItemTotal
+    : (client.total != null ? client.total : (client.total_due != null ? client.total_due : 0));
 
   return {
     businessName: company.businessName,
@@ -276,7 +342,8 @@ function buildInvoiceData(opts) {
     clientPhone: client.phone || '',
     clientEmail: client.email || '',
     workDescription: workDescription,
-    total: client.total != null ? client.total : (client.total_due != null ? client.total_due : 0),
+    lineItems: lineItems,
+    total: total,
     paid: client.paid != null ? client.paid : (client.amount_paid != null ? client.amount_paid : 0),
     balance: client.balance != null ? client.balance : 0
   };

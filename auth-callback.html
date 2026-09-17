@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signing in - CRM Template</title>
+  <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
+  <link rel="stylesheet" href="/login.css?v=3">
+</head>
+<body>
+  <div class="login-shell">
+    <div class="container">
+      <div class="brand-block">
+        <div id="logo_login" aria-hidden="true">CRM</div>
+        <div class="brand-copy">
+          <div class="brand-kicker">CRM Template</div>
+          <h1>Signing you in&hellip;</h1>
+          <p>Finishing Google sign-in. This only takes a second.</p>
+        </div>
+      </div>
+      <div id="callbackFeedback" class="feedback"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    (async function () {
+      var feedback = document.getElementById('callbackFeedback');
+      function showError(message) {
+        if (!feedback) return;
+        feedback.textContent = message;
+        feedback.className = 'feedback show error';
+      }
+
+      var config = window.__AUTH_CONFIG__ || {};
+      if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase) {
+        showError('Sign-in is not configured correctly.');
+        return;
+      }
+
+      try {
+        var authClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+        var sessionResult = await authClient.auth.getSession();
+        var session = sessionResult.data && sessionResult.data.session;
+
+        if (!session) {
+          window.location.href = '/?error=no_session';
+          return;
+        }
+
+        var res = await fetch('/api/v2/auth/google-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ access_token: session.access_token })
+        });
+        var data = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error((data && data.error) || 'Sign-in failed');
+        }
+
+        window.location.href = '/main';
+      } catch (err) {
+        console.error('Auth callback error:', err);
+        window.location.href = '/?error=' + encodeURIComponent(err.message || 'auth_failed');
+      }
+    })();
+  </script>
+</body>
+</html>

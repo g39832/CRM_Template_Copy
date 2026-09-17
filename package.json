@@ -8,12 +8,15 @@
     "start": "node server.js",
     "reset-test": "node scripts/reset-test.js",
     "seed-test": "node scripts/seed-test-data.js",
-    "verify-guard": "node scripts/verify-guard.js",
     "test:smoke": "node scripts/smoke-test.js",
     "test:backup-restore": "node scripts/verify-backup-restore.js",
     "test:complete-flow": "node scripts/test-complete-flow.js",
-    "verify-guard-enhanced": "node scripts/verify-guard-enhanced.js",
-    "migrate": "node scripts/migrate-v2.js"
+    "migrate": "node scripts/migrate-v2.js",
+    "migrate:v3": "node scripts/migrate-v3-crm-improvements.js",
+    "diagnose": "node scripts/diagnose-connection.js",
+    "seed-demo-data": "node scripts/seed-demo-data.js",
+    "test:rbac": "node scripts/test-rbac.js",
+    "test:crm-features": "node scripts/test-crm-features.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

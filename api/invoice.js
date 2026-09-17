@@ -1,9 +1,11 @@
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const db = require('./db');
-const { asyncHandler } = require('./request-utils');
+const { getClient } = require('./db-v2');
+const { asyncHandler, AppError } = require('./request-utils');
 const { buildInvoiceData, generateInvoicePDF } = require('../services/invoice');
 const { normalizeCompanyProfile } = require('../services/company-profile');
+const { canAccessClient } = require('./access-control');
 
 const router = express.Router();
 
@@ -52,6 +54,9 @@ async function handleDocumentGeneration(req, res, mode) {
 
     if (error || !client) {
       return res.status(404).json({ error: 'Client not found' });
+    }
+    if (!canAccessClient(req, client)) {
+      return res.status(403).json({ error: 'You do not have access to this client' });
     }
 
     const latestNote = await fetchLatestNote(clientId);
@@ -118,6 +123,7 @@ async function handleJobDocumentGeneration(req, res, mode) {
     const { data: client, error } = await supabase
       .from('clients').select('*').eq('id', job.client_id).single();
     if (error || !client) return res.status(404).json({ error: 'Client not found' });
+    if (!canAccessClient(req, client)) return res.status(403).json({ error: 'You do not have access to this client' });
 
     const storedCompanyProfile = await readStoredCompanyProfile();
     if (storedCompanyProfile?.logoUrl) {
@@ -125,6 +131,29 @@ async function handleJobDocumentGeneration(req, res, mode) {
       if (match) storedCompanyProfile.logoBase64 = match[1];
     }
     const normalizedProfile = normalizeCompanyProfile(storedCompanyProfile || {});
+
+    // Pull this job's categorized cost line items (if any) so the PDF
+    // shows a real cost breakdown instead of just a single total.
+    let lineItems = [];
+    try {
+      const dbV2 = getClient();
+      if (dbV2) {
+        const { data: items } = await dbV2
+          .from('job_line_items')
+          .select('*')
+          .eq('job_id', jobId)
+          .order('sort_order', { ascending: true });
+        lineItems = (items || []).map((i) => ({
+          description: i.description || '',
+          quantity: Number(i.quantity || 0),
+          unit_price: Number(i.unit_price || 0),
+          category: i.category || 'Miscellaneous',
+          amount: Number(i.quantity || 0) * Number(i.unit_price || 0)
+        }));
+      }
+    } catch (e) {
+      lineItems = [];
+    }
 
     // Build invoice data from the job record (not the client financial fields)
     const { buildInvoiceData, generateInvoicePDF } = require('../services/invoice');
@@ -137,6 +166,7 @@ async function handleJobDocumentGeneration(req, res, mode) {
         balance: job.balance,
         id: `${client.id}-J${job.id}`
       },
+      lineItems,
       companyProfile: normalizedProfile,
       mode
     });

@@ -7,10 +7,26 @@
   <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-main: #f4f6f8;
+      --surface: #ffffff;
+      --surface-muted: #f8fafc;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-soft: #eff6ff;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border-soft: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --success: #15803d;
+      --success-soft: #f0fdf4;
+      --danger: #b91c1c;
+      --danger-soft: #fef2f2;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0f2027;
-      color: #e2e8f0;
+      background: var(--bg-main);
+      color: var(--text-main);
       min-height: 100vh;
       padding: 24px;
     }
@@ -26,10 +42,10 @@
     }
     .settings-header h1 {
       font-size: 1.5rem;
-      font-weight: 800;
+      font-weight: 700;
     }
     .settings-header a {
-      color: #60a5fa;
+      color: var(--primary);
       text-decoration: none;
       font-size: 0.92rem;
       font-weight: 600;
@@ -41,33 +57,34 @@
       display: flex;
       gap: 4px;
       margin-bottom: 24px;
-      background: rgba(255,255,255,0.03);
-      border-radius: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-md, 10px);
       padding: 4px;
     }
     .tab-btn {
       flex: 1;
       padding: 12px 16px;
       border: none;
-      border-radius: 12px;
+      border-radius: 8px;
       background: transparent;
-      color: #94a3b8;
+      color: var(--text-muted);
       font-size: 0.92rem;
       font-weight: 600;
       cursor: pointer;
       transition: background 0.2s, color 0.2s;
     }
-    .tab-btn:hover { background: rgba(255,255,255,0.06); color: #e2e8f0; }
+    .tab-btn:hover { background: var(--surface-muted); color: var(--text-main); }
     .tab-btn.active {
-      background: rgba(37,99,235,0.2);
-      color: #60a5fa;
+      background: var(--primary-soft);
+      color: var(--primary);
     }
 
     /* ---- Cards ---- */
     .settings-card {
-      background: linear-gradient(180deg, rgba(28,58,67,0.97), rgba(15,32,39,0.97));
-      border: 1px solid rgba(122,183,214,0.15);
-      border-radius: 18px;
+      background: var(--surface);
+      border: 1px solid var(--border-soft);
+      border-radius: 12px;
       padding: 28px 24px;
       display: none;
     }
@@ -78,13 +95,13 @@
       margin-bottom: 4px;
     }
     .settings-card .subtitle {
-      color: #94a3b8;
+      color: var(--text-muted);
       font-size: 0.88rem;
       margin-bottom: 20px;
     }
     .settings-note {
       margin-top: 12px;
-      color: #94a3b8;
+      color: var(--text-muted);
       font-size: 0.84rem;
       line-height: 1.5;
     }
@@ -96,9 +113,9 @@
       border-radius: 999px;
       font-size: 0.78rem;
       font-weight: 700;
-      background: rgba(71,167,245,0.15);
-      color: #60a5fa;
-      border: 1px solid rgba(71,167,245,0.25);
+      background: var(--primary-soft);
+      color: var(--primary);
+      border: 1px solid var(--primary);
     }
     .settings-split {
       display: grid;
@@ -107,16 +124,16 @@
     }
     .settings-mini-card {
       padding: 16px;
-      border-radius: 14px;
-      border: 1px solid rgba(122,183,214,0.12);
-      background: rgba(255,255,255,0.03);
+      border-radius: 10px;
+      border: 1px solid var(--border-soft);
+      background: var(--surface-muted);
     }
     .settings-mini-card h3 {
       font-size: 0.95rem;
       margin-bottom: 6px;
     }
     .settings-mini-card p {
-      color: #94a3b8;
+      color: var(--text-muted);
       font-size: 0.84rem;
       line-height: 1.45;
       margin-bottom: 12px;
@@ -127,7 +144,7 @@
       justify-content: space-between;
       gap: 12px;
       padding: 10px 0;
-      border-top: 1px solid rgba(122,183,214,0.08);
+      border-top: 1px solid var(--border-soft);
     }
     .setting-row:first-of-type { border-top: 0; }
     .setting-row .label {
@@ -135,7 +152,7 @@
       font-size: 0.9rem;
     }
     .setting-row .help {
-      color: #94a3b8;
+      color: var(--text-muted);
       font-size: 0.8rem;
       margin-top: 2px;
     }
@@ -143,7 +160,7 @@
       width: 44px;
       height: 24px;
       border-radius: 999px;
-      background: #475569;
+      background: var(--border-strong);
       position: relative;
       cursor: pointer;
       flex-shrink: 0;
@@ -156,7 +173,7 @@
       border-radius: 50%;
       top: 3px;
       left: 3px;
-      background: #e2e8f0;
+      background: #ffffff;
       transition: transform 0.2s ease;
     }
     .toggle input {
@@ -176,7 +193,7 @@
       display: block;
       font-size: 0.82rem;
       font-weight: 600;
-      color: #94a3b8;
+      color: var(--text-muted);
       margin-bottom: 4px;
       text-transform: uppercase;
       letter-spacing: 0.06em;
@@ -186,10 +203,10 @@
     .field-group select {
       width: 100%;
       padding: 10px 14px;
-      border: 1px solid rgba(122,183,214,0.2);
-      border-radius: 10px;
-      background: rgba(255,255,255,0.04);
-      color: #e2e8f0;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text-main);
       font-size: 0.92rem;
       outline: none;
       transition: border-color 0.2s;
@@ -197,7 +214,7 @@
     .field-group input:focus,
     .field-group textarea:focus,
     .field-group select:focus {
-      border-color: #3b82f6;
+      border-color: var(--primary);
     }
     .field-group textarea { resize: vertical; min-height: 80px; }
     .field-group input[type="color"] {
@@ -226,9 +243,9 @@
       align-items: center;
       gap: 12px;
       padding: 12px 16px;
-      border: 1px solid rgba(122,183,214,0.12);
-      border-radius: 12px;
-      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border-soft);
+      border-radius: 10px;
+      background: var(--surface-muted);
     }
     .feature-item.inactive { opacity: 0.55; }
     .feature-order {
@@ -239,10 +256,10 @@
     .feature-order button {
       width: 24px;
       height: 18px;
-      border: 1px solid rgba(122,183,214,0.15);
+      border: 1px solid var(--border-strong);
       border-radius: 4px;
-      background: transparent;
-      color: #94a3b8;
+      background: var(--surface);
+      color: var(--text-muted);
       font-size: 0.7rem;
       cursor: pointer;
       display: flex;
@@ -251,8 +268,8 @@
       transition: background 0.15s;
     }
     .feature-order button:hover:not(:disabled) {
-      background: rgba(37,99,235,0.15);
-      color: #3b82f6;
+      background: var(--primary-soft);
+      color: var(--primary);
     }
     .feature-order button:disabled { opacity: 0.25; cursor: not-allowed; }
     .feature-toggle {
@@ -270,7 +287,7 @@
       width: 40px;
       height: 22px;
       border-radius: 12px;
-      background: #475569;
+      background: var(--border-strong);
       cursor: pointer;
       transition: background 0.2s;
       position: relative;
@@ -283,10 +300,10 @@
       width: 18px;
       height: 18px;
       border-radius: 50%;
-      background: #e2e8f0;
+      background: #ffffff;
       transition: transform 0.2s, background 0.2s;
     }
-    .feature-toggle input:checked + label { background: #059669; }
+    .feature-toggle input:checked + label { background: var(--success); }
     .feature-toggle input:checked + label::after {
       transform: translateX(18px);
       background: #fff;
@@ -299,7 +316,7 @@
     }
     .feature-info .desc {
       font-size: 0.8rem;
-      color: #94a3b8;
+      color: var(--text-muted);
       margin-top: 2px;
     }
 
@@ -312,22 +329,22 @@
     .btn-primary {
       padding: 12px 24px;
       border: none;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      border-radius: 8px;
+      background: var(--primary);
       color: #fff;
       font-size: 0.95rem;
-      font-weight: 700;
+      font-weight: 600;
       cursor: pointer;
-      transition: opacity 0.2s, transform 0.15s;
+      transition: background 0.2s;
     }
-    .btn-primary:hover { opacity: 0.92; transform: translateY(-1px); }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-secondary {
       padding: 12px 24px;
-      border: 1px solid rgba(122,183,214,0.2);
-      border-radius: 12px;
-      background: transparent;
-      color: #94a3b8;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text-main);
       font-size: 0.95rem;
       font-weight: 600;
       cursor: pointer;
@@ -337,45 +354,45 @@
       justify-content: center;
       transition: background 0.2s;
     }
-    .btn-secondary:hover { background: rgba(255,255,255,0.06); }
+    .btn-secondary:hover { background: var(--surface-muted); }
     .btn-danger {
       padding: 12px 24px;
-      border: 1px solid rgba(239,68,68,0.35);
-      border-radius: 12px;
-      background: rgba(239,68,68,0.12);
-      color: #fca5a5;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      background: var(--danger-soft);
+      color: var(--danger);
       font-size: 0.95rem;
-      font-weight: 700;
+      font-weight: 600;
       cursor: pointer;
-      transition: background 0.2s, transform 0.15s;
+      transition: background 0.2s;
     }
-    .btn-danger:hover { background: rgba(239,68,68,0.2); transform: translateY(-1px); }
+    .btn-danger:hover { background: #fee2e2; }
 
     #formFeedback {
       margin-top: 16px;
       padding: 12px 16px;
-      border-radius: 10px;
+      border-radius: 8px;
       font-size: 0.9rem;
       display: none;
     }
     #formFeedback.success {
       display: block;
-      background: rgba(5,150,105,0.15);
-      border: 1px solid rgba(5,150,105,0.3);
-      color: #6ee7b7;
+      background: var(--success-soft);
+      border: 1px solid #bbf7d0;
+      color: var(--success);
     }
     #formFeedback.error {
       display: block;
-      background: rgba(239,68,68,0.15);
-      border: 1px solid rgba(239,68,68,0.3);
-      color: #fca5a5;
+      background: var(--danger-soft);
+      border: 1px solid #fecaca;
+      color: var(--danger);
     }
 
     .loading-overlay {
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.55);
+      background: rgba(15,23,42,0.4);
       align-items: center;
       justify-content: center;
       z-index: 999;
@@ -384,8 +401,8 @@
     .loading-spinner {
       width: 40px;
       height: 40px;
-      border: 4px solid rgba(255,255,255,0.15);
-      border-top: 4px solid #3b82f6;
+      border: 4px solid var(--border-soft);
+      border-top: 4px solid var(--primary);
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
     }
@@ -582,14 +599,14 @@
             </tr>
           </thead>
           <tbody id="usersTableBody">
-            <tr><td colspan="5" style="padding:24px;text-align:center;color:#94a3b8;">Loading users...</td></tr>
+            <tr><td colspan="5" style="padding:24px;text-align:center;color:var(--text-muted);">Loading users...</td></tr>
           </tbody>
         </table>
       </div>
 
       <!-- Add User Modal -->
       <div id="addUserModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;z-index:999;">
-        <div style="background:linear-gradient(180deg,rgba(28,58,67,0.98),rgba(15,32,39,0.98));border:1px solid rgba(122,183,214,0.18);border-radius:18px;padding:28px 24px;width:min(440px,92%);">
+        <div style="background:var(--surface);border:1px solid var(--border-soft);border-radius:12px;padding:28px 24px;width:min(440px,92%);box-shadow:var(--shadow-lift, 0 4px 14px rgba(15,23,42,0.10));">
           <h3 style="margin-bottom:16px;">Add Team Member</h3>
           <div class="field-group">
             <label for="newUserEmail">Email Address</label>

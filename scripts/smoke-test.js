@@ -1,3 +1,14 @@
+/**
+ * Smoke test — basic CRUD flow through the real CRM API.
+ *
+ * Authentication used to go through a single shared admin password
+ * (/api/login). That flow has been replaced by Google sign-in via
+ * Supabase Auth, so this test now signs in through the test-only
+ * /api/v2/auth/test-login route instead (only reachable when
+ * NODE_ENV=test — see api/auth-system.js).
+ *
+ * Requires network access to the configured Supabase project.
+ */
 const assert = require('assert');
 
 const baseUrl = 'http://127.0.0.1:3000';
@@ -35,8 +46,6 @@ function extractCookie(setCookieHeader) {
 }
 
 async function main() {
-  const password = 'SmokePass123!';
-  process.env.DEFAULT_ADMIN_PASSWORD = password;
   process.env.NODE_ENV = 'test';
   process.env.ENABLE_DB_BACKUPS = 'false';
   process.env.PORT = '3000';
@@ -55,13 +64,13 @@ async function main() {
     const unauth = await req('/api/search?q=');
     assert.strictEqual(unauth.res.status, 401, 'unauthenticated api should be 401');
 
-    const login = await req('/api/login', {
+    const login = await req('/api/v2/auth/test-login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password })
+      body: JSON.stringify({ email: 'smoke-admin@example.com', role: 'admin', displayName: 'Smoke Admin' })
     });
-    assert.strictEqual(login.res.status, 200, 'login should return 200');
-    assert.strictEqual(login.json?.success, true, 'login should succeed');
+    assert.strictEqual(login.res.status, 200, 'test-login should return 200: ' + login.text);
+    assert.strictEqual(login.json?.success, true, 'test-login should succeed');
 
     const cookie = extractCookie(login.res.headers.get('set-cookie'));
     assert.ok(cookie, 'login should set session cookie');

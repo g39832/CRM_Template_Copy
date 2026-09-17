@@ -19,27 +19,27 @@ function customPrompt(message, defaultValue) {
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:99999;';
 
     var box = document.createElement('div');
-    box.style.cssText = 'background:#1e1e2f;border:1px solid rgba(122,183,214,0.2);border-radius:12px;padding:24px;min-width:320px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.5);';
+    box.style.cssText = 'background:var(--surface,#ffffff);border:1px solid var(--border-soft,#e2e8f0);border-radius:10px;padding:24px;min-width:320px;max-width:90vw;box-shadow:0 4px 14px rgba(15,23,42,0.10);';
 
     var label = document.createElement('p');
     label.textContent = message;
-    label.style.cssText = 'margin:0 0 14px;color:var(--text-main,#e0e0e0);font-size:0.95rem;';
+    label.style.cssText = 'margin:0 0 14px;color:var(--text-main,#0f172a);font-size:0.95rem;';
 
     var input = document.createElement('input');
     input.type = 'text';
     input.value = defaultValue || '';
-    input.style.cssText = 'width:100%;padding:10px 12px;border-radius:8px;border:1px solid rgba(122,183,214,0.2);background:#2a2a40;color:#e0e0e0;font-size:0.9rem;box-sizing:border-box;outline:none;';
+    input.style.cssText = 'width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border-strong,#cbd5e1);background:var(--surface,#ffffff);color:var(--text-main,#0f172a);font-size:0.9rem;box-sizing:border-box;outline:none;';
 
     var btnRow = document.createElement('div');
     btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px;';
 
     var cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.cssText = 'padding:8px 16px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#aaa;cursor:pointer;font-size:0.85rem;';
+    cancelBtn.style.cssText = 'padding:8px 16px;border-radius:8px;border:1px solid var(--border-strong,#cbd5e1);background:var(--surface,#ffffff);color:var(--text-main,#0f172a);cursor:pointer;font-size:0.85rem;font-weight:600;';
 
     var okBtn = document.createElement('button');
     okBtn.textContent = 'OK';
-    okBtn.style.cssText = 'padding:8px 16px;border-radius:8px;border:none;background:#2f80ed;color:#fff;cursor:pointer;font-size:0.85rem;font-weight:600;';
+    okBtn.style.cssText = 'padding:8px 16px;border-radius:8px;border:none;background:var(--primary,#2563eb);color:#fff;cursor:pointer;font-size:0.85rem;font-weight:600;';
 
     function close(val) {
       overlay.remove();
@@ -66,22 +66,28 @@ function customPrompt(message, defaultValue) {
 }
 
 // ======================================================
-// STATUS CONFIG
+// CLIENT STAGE CONFIG (Section 2/6)
+// This is the CLIENT-LEVEL pipeline stage shown on the main client
+// page. It is intentionally separate from job.status (per-job
+// workflow) and job.tags (per-job free-form labels) — see
+// STATUS_ORDER_JOB / job tag handling further down in this file.
 // ======================================================
 const STATUS_ORDER = [
+  "Lead",
+  "Photo report",
   "Prospect",
   "Approved",
-  "Completed",
-  "Invoice",
+  "Invoiced",
   "Closed"
 ];
 
 const STATUS_COLORS = {
-  Prospect: "#a780ee",
-  Approved: "#6dddef",
-  Completed: "#f0ad4e",
-  Invoice: "#dfa575",
-  Closed: "#aa1b1b"
+  "Lead": "#64748b",
+  "Photo report": "#b45309",
+  "Prospect": "#7c3aed",
+  "Approved": "#0e7490",
+  "Invoiced": "#2563eb",
+  "Closed": "#15803d"
 };
 
 function buildClientPrintStyle() {
@@ -937,6 +943,48 @@ window.api = {
     return res.json();
   },
 
+  async updateJobTags(jobId, tags) {
+    const res = await fetch(`/api/jobs/${jobId}/tags`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags })
+    });
+    if (!res.ok) throw new Error('Failed to update job tags');
+    return res.json();
+  },
+
+  async listJobLineItems(jobId) {
+    const res = await fetch(`/api/jobs/${jobId}/line-items`);
+    if (!res.ok) throw new Error('Failed to list line items');
+    return res.json();
+  },
+
+  async addJobLineItem(jobId, payload) {
+    const res = await fetch(`/api/jobs/${jobId}/line-items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Failed to add line item');
+    return res.json();
+  },
+
+  async updateJobLineItem(jobId, itemId, payload) {
+    const res = await fetch(`/api/jobs/${jobId}/line-items/${itemId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Failed to update line item');
+    return res.json();
+  },
+
+  async deleteJobLineItem(jobId, itemId) {
+    const res = await fetch(`/api/jobs/${jobId}/line-items/${itemId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete line item');
+    return res.json();
+  },
+
   async sendJobInvoice(jobId) {
     return this._downloadDocument(jobId, 'invoice', true);
   },
@@ -1546,9 +1594,6 @@ if (intakeFormEl) {
   const fNameInput = document.getElementById("fName");
   const lNameInput = document.getElementById("lName");
 
-  if (fNameInput) fNameInput.style.borderLeft = "4px solid #007bff";
-  if (lNameInput) lNameInput.style.borderLeft = "4px solid #28a745";
-
   intakeFormEl.addEventListener("submit", async (e) => {
     e.preventDefault();
 
@@ -1615,7 +1660,7 @@ function renderSidebar(list = [], term = "") {
   const countsHTML = `
     <li class="status-counts" style="list-style:none; padding:0; margin:0 0 8px 0;">
       ${STATUS_ORDER.map(s =>
-        `<div style="color:${STATUS_COLORS[s] || "#007bff"}">
+        `<div style="color:${STATUS_COLORS[s] || "#2563eb"}">
           ${s}: ${counts[s]}
         </div>`
       ).join("")}
@@ -1638,7 +1683,7 @@ function renderSidebar(list = [], term = "") {
 function buildClientCard(c, term = "") {
   const [fName, ...rest] = (c.name || "").split(" ");
   const lName = rest.join(" ");
-  const color = STATUS_COLORS[c.status] || "#007bff";
+  const color = STATUS_COLORS[c.status] || "#2563eb";
   const displayName = `${fName || ""} ${lName || ""}`.trim();
   const safeDisplayName = escapeHtml(displayName);
   const displayPhone = c.phone || "";
@@ -1747,9 +1792,9 @@ async function openClient(id) {
               <span style="
                 font-size:0.7rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase;
                 padding:4px 10px; border-radius:999px; white-space:nowrap;
-                background:${STATUS_COLORS[client.status] || '#007bff'}22;
-                color:${STATUS_COLORS[client.status] || '#007bff'};
-                border:1px solid ${STATUS_COLORS[client.status] || '#007bff'}55;
+                background:${STATUS_COLORS[client.status] || '#2563eb'}22;
+                color:${STATUS_COLORS[client.status] || '#2563eb'};
+                border:1px solid ${STATUS_COLORS[client.status] || '#2563eb'}55;
               ">${escapeHtml(client.status || 'Lead')}</span>
             </h2>
             <div class="panel-subtitle">Core contact, financial, and document details stay in one place.</div>
@@ -1763,21 +1808,18 @@ async function openClient(id) {
 
         <div class="details-grid panel-grid">
 
-          <!-- ===== QUICK ADD JOB ===== -->
-          <div class="panel-full-span" style="margin-bottom:2px;">
-            <div style="display:flex; gap:8px; align-items:center;">
-              <input type="text" id="quick-job-title" placeholder="New job title..."
-                style="flex:1; padding:10px 14px; border-radius:10px; border:1px solid rgba(122,183,214,0.22); background:rgba(32,58,67,0.96); color:var(--text-main); font-size:0.95rem;">
-              <button id="quick-add-job-btn" class="btn-primary"
-                style="background:linear-gradient(135deg,#0f9b58,#27c97a); padding:10px 18px; white-space:nowrap; font-weight:700;">
-                + New Job
-              </button>
-            </div>
+          <!-- ===== ADD JOB ===== -->
+          <div class="panel-full-span add-job-row" style="margin-bottom:2px;">
+            <button id="quick-add-job-btn" class="btn-primary add-job-btn"
+              style="font-weight:700;">
+              + Job
+            </button>
           </div>
 
-          <!-- ===== CASH AGGREGATE TRACKER ===== -->
+          <!-- ===== CASH AGGREGATE TRACKER (admin only — Section 8) ===== -->
+          ${isAdminUser() ? `
           <div class="panel-section panel-full-span" style="padding-top:0; padding-bottom:0; margin-bottom:6px;">
-            <div class="panel-balance-row" style="background:rgba(15,32,39,0.28); border:1px solid rgba(122,183,214,0.12); border-radius:12px; padding:10px 16px;">
+            <div class="panel-balance-row" style="background:var(--surface-muted); border:1px solid var(--border-soft); border-radius:12px; padding:10px 16px;">
               <div class="panel-metric">
                 <span>Total Cash Collected</span>
                 <strong id="cashAggregateDisplay" style="font-family:'Courier New',monospace; font-size:1.3rem; font-weight:800;">$0.00</strong>
@@ -1788,14 +1830,16 @@ async function openClient(id) {
               </div>
             </div>
           </div>
+          ` : ''}
 
-          <div class="panel-full-span">
-            <label>Job Status</label>
+          <div class="panel-full-span client-stage-field">
+            <label>Client Stage</label>
             <select id="p-status">
               ${STATUS_ORDER.map(s =>
                 `<option value="${s}" ${client.status === s ? "selected" : ""}>${s}</option>`
               ).join("")}
             </select>
+            <span class="field-hint">The client's overall pipeline stage. Individual jobs have their own separate tags below.</span>
           </div>
 
           <label>Job Address</label>
@@ -1812,6 +1856,19 @@ async function openClient(id) {
           <label>Email Address</label>
           <input type="email" id="p-email" value="${client.email || ""}">
 
+          <!-- ===== ASSIGNED SALESPERSON ===== -->
+          <div class="panel-full-span" id="assigned-user-field">
+            <label>Assigned To</label>
+            ${isAdminUser()
+              ? `<select id="p-assigned-user"><option value="">Loading users...</option></select>`
+              : `<div class="job-modal-readout">${escapeHtml((window.__USER__ && window.__USER__.displayName) || (window.__USER__ && window.__USER__.email) || 'You')}</div>`}
+          </div>
+
+          <!-- ===== FINANCIAL OVERVIEW + JOB COST & MARGIN (admin only — Section 8) ===== -->
+          <!-- Regular users never receive total_due/amount_paid/balance/job_cost
+               from the API (see api/access-control.js sanitizeClient), so this
+               markup is also skipped entirely for them rather than merely hidden. -->
+          ${isAdminUser() ? `
           <div class="panel-section panel-full-span">
             <div class="panel-section-header">
               <h3>Financial Overview</h3>
@@ -1821,7 +1878,7 @@ async function openClient(id) {
             <div class="panel-inline-row">
               <input type="text" id="totalDueInput" placeholder="Total Due"
                 inputmode="decimal" class="panel-money-input" ${client.total_due ? `value="${formatMoney(client.total_due)}"` : ''}>
-              <button id="saveTotalBtn" class="btn-primary" style="background:linear-gradient(135deg,#2f80ed,#4f8dfd);">Save</button>
+              <button id="saveTotalBtn" class="btn-primary" style="background:var(--primary);">Save</button>
             </div>
 
             <div class="panel-balance-row">
@@ -1838,8 +1895,8 @@ async function openClient(id) {
             <div class="panel-inline-row">
               <input type="text" id="paymentInput" placeholder="Add Payment"
                 inputmode="decimal" class="panel-money-input">
-              <button id="addPaymentBtn" class="btn-primary" style="background:linear-gradient(135deg,#2f80ed,#4f8dfd);">Add Payment</button>
-              <button id="undoFinanceBtn" class="btn-primary" style="background:rgba(255,255,255,0.14); color:white;">Undo Payment</button>
+              <button id="addPaymentBtn" class="btn-primary" style="background:var(--primary);">Add Payment</button>
+              <button id="undoFinanceBtn" class="btn-primary" style="background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft);">Undo Payment</button>
             </div>
           </div>
 
@@ -1878,6 +1935,7 @@ async function openClient(id) {
               </div>
             </div>
           </div>
+          ` : ''}
 
           <!-- ===== SCOPE OF WORK ===== -->
           <div class="panel-section panel-full-span">
@@ -1890,11 +1948,11 @@ async function openClient(id) {
             </div>
             <div style="display:flex; gap:6px;">
               <button id="add-scope-service-btn" class="btn-primary"
-                style="background:linear-gradient(135deg,#2f80ed,#4f8dfd); flex:1; padding:8px;">
+                style="background:var(--primary); flex:1; padding:8px;">
                 + Add Service
               </button>
               <button id="manage-services-btn" class="btn-primary"
-                style="background:rgba(255,255,255,0.14); color:white; flex:1; padding:8px; display:none;">
+                style="background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft); flex:1; padding:8px; display:none;">
                 Manage Presets
               </button>
             </div>
@@ -1908,7 +1966,7 @@ async function openClient(id) {
           <button id="pdf-upload-btn"
             type="button"
             class="panel-secondary-btn"
-            style="grid-column: span 2; margin-top:8px; background:rgba(255,255,255,0.14); color:white; border:none; padding:8px; border-radius:6px; cursor:pointer;">
+            style="grid-column: span 2; margin-top:8px; background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft); border:none; padding:8px; border-radius:6px; cursor:pointer;">
             Upload PDF</button>
 
           <input type="file"
@@ -1928,7 +1986,7 @@ async function openClient(id) {
             <div id="notes-list" class="notes-list"></div>
             <div class="notes-actions">
               <textarea id="new-note-input" placeholder="Add a note..." rows="6"></textarea>
-              <button id="add-note-btn" class="btn-primary add-note-btn" style="background:linear-gradient(135deg,#2f80ed,#4f8dfd);">Add Note</button>
+              <button id="add-note-btn" class="btn-primary add-note-btn" style="background:var(--primary);">Add Note</button>
             </div>
           </div>
 
@@ -1942,12 +2000,12 @@ async function openClient(id) {
           </div>
 
           <div class="panel-actions panel-full-span">
-            <button id="estimateBtn" class="btn-primary" style="background:linear-gradient(135deg,#0f9b58,#27c97a); flex:2;">Download Estimate</button>
-            <button id="invoiceBtn" class="btn-primary" style="background:linear-gradient(135deg,#1c92d2,#47a7f5); flex:2;">Download Invoice</button>
-            <button id="reviewBtn" class="btn-primary" style="background:rgba(255,255,255,0.14); color:white; flex:2;">Send Google Review</button>
-            <button id="saveBtn" class="btn-primary" style="background:linear-gradient(135deg,#2f80ed,#4f8dfd); flex:2;">Save Changes</button>
-            <button id="delBtn" class="btn-primary" style="background:#4a5568; flex:1;">Delete</button>
-            <button id="printBtn" class="btn-primary" style="background:rgba(255,255,255,0.14); color:white; flex:1;">Print</button>
+            <button id="estimateBtn" class="btn-primary" style="flex:2;">Download Estimate</button>
+            <button id="invoiceBtn" class="btn-primary" style="background:var(--primary); flex:2;">Download Invoice</button>
+            <button id="reviewBtn" class="btn-primary" style="background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft); flex:2;">Send Google Review</button>
+            <button id="saveBtn" class="btn-primary" style="background:var(--primary); flex:2;">Save Changes</button>
+            <button id="delBtn" style="background:var(--danger-soft); color:var(--danger); border:1px solid var(--danger-soft); flex:1;">Delete</button>
+            <button id="printBtn" class="btn-primary" style="background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft); flex:1;">Print</button>
           </div>
 
         </div>
@@ -1972,6 +2030,7 @@ async function openClient(id) {
     setupQuickAddJob(id);
     loadCashAggregate(id);
     setupScopeServices(id);
+    setupAssignedUserField(id, client.assigned_user_id);
     setupDirtyTracking();
     setSaveStatus("saved");
     // SHOW MODAL
@@ -2005,6 +2064,10 @@ function setupFinancialSection(client) {
   const addPaymentBtn = document.getElementById("addPaymentBtn");
   const totalDueInput = document.getElementById("totalDueInput");
   const paymentInput = document.getElementById("paymentInput");
+
+  // Financial Overview isn't rendered for regular users (Section 8) —
+  // nothing to wire up.
+  if (!saveTotalBtn || !addPaymentBtn) return;
 
   applyMoneyInputBehavior(totalDueInput);
   applyMoneyInputBehavior(paymentInput);
@@ -2196,7 +2259,7 @@ async function setupNotesSection(clientId) {
 
         const editBtn = document.createElement("button");
         editBtn.innerText = "Edit";
-        editBtn.style.background = "linear-gradient(135deg,#2f80ed,#4f8dfd)";
+        editBtn.style.background = "var(--primary)";
         editBtn.style.color = "#fff";
         editBtn.style.border = "none";
         editBtn.style.padding = "4px 8px";
@@ -2226,7 +2289,7 @@ async function setupNotesSection(clientId) {
 
           const saveBtn = document.createElement("button");
           saveBtn.innerText = "Save";
-          saveBtn.style.background = "linear-gradient(135deg,#2f80ed,#4f8dfd)";
+          saveBtn.style.background = "var(--primary)";
           saveBtn.style.color = "#fff";
           saveBtn.style.border = "none";
           saveBtn.style.padding = "4px 8px";
@@ -2236,7 +2299,7 @@ async function setupNotesSection(clientId) {
 
           const cancelBtn = document.createElement("button");
           cancelBtn.innerText = "Cancel";
-          cancelBtn.style.background = "rgba(255,255,255,0.14)";
+          cancelBtn.style.background = "var(--surface-muted)";
           cancelBtn.style.color = "#1a202c";
           cancelBtn.style.border = "none";
           cancelBtn.style.padding = "4px 8px";
@@ -2327,8 +2390,8 @@ async function setupJobsSection(clientId) {
   if (!jobsList) return;
 
   const STATUS_COLORS_JOB = {
-    Prospect: '#a780ee', Approved: '#6dddef', Completed: '#f0ad4e',
-    Invoice: '#dfa575', Closed: '#aa1b1b'
+    Prospect: '#7c3aed', Approved: '#0e7490', Completed: '#b45309',
+    Invoice: '#2563eb', Closed: '#15803d'
   };
 
   async function loadJobs() {
@@ -2344,14 +2407,14 @@ async function setupJobsSection(clientId) {
       }
 
       jobs.forEach(job => {
-        const color = STATUS_COLORS_JOB[job.status] || '#007bff';
+        const color = STATUS_COLORS_JOB[job.status] || '#2563eb';
         const margin = job.total_due > 0
           ? Math.round(((job.total_due - job.job_cost) / job.total_due) * 100)
           : null;
 
         const card = document.createElement('div');
         card.style.cssText = `
-          background:rgba(15,32,39,0.28); border:1px solid rgba(122,183,214,0.14);
+          background:var(--surface-muted); border:1px solid var(--border-soft);
           border-left:4px solid ${color}; border-radius:12px; padding:14px 16px;
           cursor:pointer; transition:all 0.2s ease;
         `;
@@ -2385,7 +2448,7 @@ async function setupJobsSection(clientId) {
           card.style.transform = 'translateY(-1px)';
         });
         card.addEventListener('mouseleave', () => {
-          card.style.borderColor = `rgba(122,183,214,0.14)`;
+          card.style.borderColor = `var(--border-soft)`;
           card.style.borderLeftColor = color;
           card.style.transform = '';
         });
@@ -2403,48 +2466,140 @@ async function setupJobsSection(clientId) {
 }
 
 // ======================================================
-// QUICK ADD JOB (top of Client Info Box)
+// + JOB (Section 4/5) — opens a dedicated creation modal instead of
+// a bare title field, so the new job's Scope of Work can be reviewed
+// (and, per Section 4, defaults to THIS CLIENT's own saved scope —
+// not the company-wide default) before the job is created.
 // ======================================================
 function setupQuickAddJob(clientId) {
-  const input = document.getElementById('quick-job-title');
   const btn = document.getElementById('quick-add-job-btn');
-  if (!input || !btn) return;
+  if (!btn) return;
+  btn.onclick = function () {
+    openNewJobModal(clientId);
+  };
+}
 
-  async function createJob(title) {
+async function openNewJobModal(clientId) {
+  const existing = document.getElementById('newJobModalOverlay');
+  if (existing) existing.remove();
+
+  // Gather copy-from candidates: this client's own default scope,
+  // the company-wide fallback default, and this client's existing jobs.
+  let clientDefaultScope = '';
+  let companyDefaultScope = '';
+  let existingJobs = [];
+  try {
+    clientDefaultScope = (activeClient && activeClient.scope_of_work) || '';
+  } catch (e) { /* skip */ }
+  try {
+    const profile = await window.api.getCompanyProfile();
+    companyDefaultScope = profile?.settings?.defaultScopeOfWork || '';
+  } catch (e) { /* skip */ }
+  try {
+    const data = await window.api.listJobs(clientId);
+    existingJobs = data.jobs || [];
+  } catch (e) { /* skip */ }
+
+  // Section 4: the new job's scope should default to the CLIENT's own
+  // saved scope of work. Only fall back to the company default when the
+  // client has none saved yet.
+  const initialScope = clientDefaultScope || companyDefaultScope || '';
+  const initialSource = clientDefaultScope ? 'client' : (companyDefaultScope ? 'company' : 'blank');
+
+  const overlay = document.createElement('div');
+  overlay.id = 'newJobModalOverlay';
+  overlay.className = 'job-modal-overlay';
+
+  const copyOptions = [
+    `<option value="blank" ${initialSource === 'blank' ? 'selected' : ''}>Start blank</option>`,
+    `<option value="client" ${initialSource === 'client' ? 'selected' : ''} ${clientDefaultScope ? '' : 'disabled'}>Client's default scope</option>`,
+    `<option value="company" ${initialSource === 'company' ? 'selected' : ''} ${companyDefaultScope ? '' : 'disabled'}>Company default scope</option>`,
+    ...existingJobs.map((j) => `<option value="job-${j.id}">Copy from: ${escapeHtml(j.title || 'Untitled job')}</option>`)
+  ].join('');
+
+  overlay.innerHTML = `
+    <div class="job-modal-card">
+      <button id="closeNewJobModal" class="job-modal-close">&times;</button>
+      <div class="job-modal-kicker">New Job</div>
+
+      <div class="job-modal-field">
+        <label for="new-job-title">Job name</label>
+        <input id="new-job-title" type="text" placeholder="e.g. Roof Replacement" maxlength="200">
+      </div>
+
+      <div class="job-modal-grid">
+        <div class="job-modal-field">
+          <label for="new-job-status">Job status</label>
+          <select id="new-job-status">
+            ${['Prospect', 'Approved', 'Completed', 'Invoice', 'Closed'].map((s) => `<option value="${s}" ${s === 'Prospect' ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div class="job-modal-field">
+          <label for="new-job-copy-from">Copy scope/pricing from&hellip;</label>
+          <select id="new-job-copy-from">${copyOptions}</select>
+        </div>
+      </div>
+
+      <div class="job-modal-field">
+        <label for="new-job-scope">Scope of Work</label>
+        <textarea id="new-job-scope" rows="5" placeholder="Describe the work for this job...">${escapeHtml(initialScope)}</textarea>
+        <span class="field-hint">Pre-filled from this client's default scope. Edit freely — it's saved as this job's own copy.</span>
+      </div>
+
+      <div class="job-modal-actions">
+        <button id="createJobBtn" class="btn-primary">Add Job</button>
+        <button id="cancelNewJobBtn" class="btn-primary" style="background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft);">Cancel</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const scopeEl = overlay.querySelector('#new-job-scope');
+  const copyFromEl = overlay.querySelector('#new-job-copy-from');
+  const titleEl = overlay.querySelector('#new-job-title');
+
+  copyFromEl.addEventListener('change', () => {
+    const value = copyFromEl.value;
+    if (value === 'blank') {
+      scopeEl.value = '';
+    } else if (value === 'client') {
+      scopeEl.value = clientDefaultScope;
+    } else if (value === 'company') {
+      scopeEl.value = companyDefaultScope;
+    } else if (value.startsWith('job-')) {
+      const jobId = value.slice(4);
+      const job = existingJobs.find((j) => String(j.id) === jobId);
+      if (job) scopeEl.value = job.scope_of_work || '';
+    }
+  });
+
+  overlay.querySelector('#closeNewJobModal').onclick = () => overlay.remove();
+  overlay.querySelector('#cancelNewJobBtn').onclick = () => overlay.remove();
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  overlay.querySelector('#createJobBtn').onclick = async () => {
+    const createBtn = overlay.querySelector('#createJobBtn');
     try {
-      btn.disabled = true;
-      btn.textContent = 'Creating...';
-
-      let defaultScope = '';
-      try {
-        const profile = await window.api.getCompanyProfile();
-        defaultScope = profile?.settings?.defaultScopeOfWork || '';
-      } catch (e) { /* skip */ }
+      createBtn.disabled = true;
+      createBtn.textContent = 'Creating...';
 
       const result = await window.api.createJob({
         client_id: clientId,
-        title: title || 'New Job',
-        status: 'Prospect',
-        scope_of_work: defaultScope,
+        title: titleEl.value.trim() || 'New Job',
+        status: overlay.querySelector('#new-job-status').value,
+        // This job gets its OWN saved copy of the scope text right now.
+        // Later edits to the client's default scope will never rewrite
+        // this job's scope after the fact.
+        scope_of_work: scopeEl.value,
         total_due: 0,
         job_cost: 0
       });
 
-      input.value = '';
       showToast('Job created', 'success');
-      // Reload jobs list
-      const jobsSection = document.getElementById('jobs-list');
-      if (jobsSection) {
-        const data = await window.api.listJobs(clientId);
-        const jobs = data.jobs || [];
-        jobsSection.innerHTML = '';
-        if (jobs.length === 0) {
-          jobsSection.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No jobs yet. Create one above.</div>';
-        }
-        // Re-run setupJobsSection to refresh
-        await setupJobsSection(clientId);
-      }
-      // Auto-open the new job
+      overlay.remove();
+      await setupJobsSection(clientId);
+
       if (result.job) {
         openJobPanel(result.job, clientId, function () {
           setupJobsSection(clientId);
@@ -2454,23 +2609,12 @@ function setupQuickAddJob(clientId) {
       console.error(err);
       showToast('Failed to create job', 'error');
     } finally {
-      btn.disabled = false;
-      btn.textContent = '+ New Job';
+      createBtn.disabled = false;
+      createBtn.textContent = 'Add Job';
     }
-  }
-
-  btn.onclick = function () {
-    var title = input.value.trim();
-    createJob(title);
   };
 
-  input.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      var title = input.value.trim();
-      createJob(title);
-    }
-  });
+  setTimeout(() => titleEl.focus(), 50);
 }
 
 // ======================================================
@@ -2496,6 +2640,44 @@ async function loadCashAggregate(clientId) {
 // ======================================================
 // SCOPE OF WORK - SERVICE MANAGER
 // ======================================================
+// ======================================================
+// ASSIGNED SALESPERSON (Section 3/6) — admin can reassign;
+// regular users just see their own name (read-only).
+// ======================================================
+async function setupAssignedUserField(clientId, currentAssignedUserId) {
+  if (!isAdminUser()) return;
+  const select = document.getElementById('p-assigned-user');
+  if (!select) return;
+
+  try {
+    const res = await fetch('/api/v2/admin/users');
+    if (!res.ok) throw new Error('Failed to load users');
+    const data = await res.json();
+    const users = data.data || [];
+
+    select.innerHTML = '<option value="">Unassigned</option>' +
+      users.map((u) => `<option value="${u.id}" ${String(u.id) === String(currentAssignedUserId) ? 'selected' : ''}>${escapeHtml(u.display_name || u.email)}</option>`).join('');
+
+    select.onchange = async () => {
+      try {
+        await fetch(`/api/clients/${clientId}/assign`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ assigned_user_id: select.value || null })
+        });
+        showToast('Client reassigned', 'success');
+        await refreshList();
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to reassign client', 'error');
+      }
+    };
+  } catch (err) {
+    console.error(err);
+    select.innerHTML = '<option value="">Could not load users</option>';
+  }
+}
+
 async function setupScopeServices(clientId) {
   const listEl = document.getElementById('scope-services-list');
   const addBtn = document.getElementById('add-scope-service-btn');
@@ -2628,16 +2810,16 @@ function openServicePicker(clientId, onSave) {
   var overlay = document.createElement('div');
   overlay.id = 'servicePickerOverlay';
   overlay.style.cssText =
-    'position:fixed;inset:0;background:rgba(5,12,16,0.72);' +
+    'position:fixed;inset:0;background:rgba(15,23,42,0.5);' +
     'display:flex;align-items:center;justify-content:center;' +
     'z-index:20000;padding:16px;';
 
   overlay.innerHTML =
     '<div style="' +
       'position:relative;width:min(520px,100%);max-height:80vh;overflow-y:auto;' +
-      'background:linear-gradient(180deg,rgba(44,83,100,0.98),rgba(32,58,67,0.98));' +
-      'border:1px solid rgba(122,183,214,0.18);border-radius:18px;' +
-      'padding:24px;box-shadow:0 24px 60px rgba(0,0,0,0.45);color:var(--text-main);' +
+      'background:var(--surface);' +
+      'border:1px solid var(--border-soft);border-radius:18px;' +
+      'padding:24px;box-shadow: var(--shadow-lift);color:var(--text-main);' +
     '">' +
       '<button id="closeServicePicker" style="' +
         'position:absolute;top:12px;right:14px;border:none;background:transparent;' +
@@ -2649,8 +2831,8 @@ function openServicePicker(clientId, onSave) {
         '<div style="color:var(--text-muted);">Loading services...</div>' +
       '</div>' +
       '<div style="display:flex;gap:8px;">' +
-        '<button id="servicePickerSaveBtn" class="btn-primary" style="background:linear-gradient(135deg,#2f80ed,#4f8dfd);flex:1;padding:10px;">Add Selected</button>' +
-        '<button id="servicePickerCancelBtn" class="btn-primary" style="background:rgba(255,255,255,0.14);color:white;flex:1;padding:10px;">Cancel</button>' +
+        '<button id="servicePickerSaveBtn" class="btn-primary" style="background:var(--primary);flex:1;padding:10px;">Add Selected</button>' +
+        '<button id="servicePickerCancelBtn" class="btn-primary" style="background:var(--surface-muted);color:white;flex:1;padding:10px;">Cancel</button>' +
       '</div>' +
     '</div>';
 
@@ -2692,14 +2874,14 @@ function openServicePicker(clientId, onSave) {
         var row = document.createElement('label');
         row.style.cssText =
           'display:flex;align-items:center;gap:10px;padding:10px 12px;' +
-          'border-radius:10px;border:1px solid rgba(122,183,214,0.14);' +
-          'background:rgba(15,32,39,0.2);cursor:pointer;transition:0.15s ease;';
+          'border-radius:10px;border:1px solid var(--border-soft);' +
+          'background:var(--surface-muted);cursor:pointer;transition:0.15s ease;';
 
         row.addEventListener('mouseenter', function () {
           row.style.borderColor = 'rgba(71,167,245,0.5)';
         });
         row.addEventListener('mouseleave', function () {
-          row.style.borderColor = 'rgba(122,183,214,0.14)';
+          row.style.borderColor = 'var(--border-soft)';
         });
 
         var cb = document.createElement('input');
@@ -2769,16 +2951,16 @@ function openManageServicesModal(onSave) {
   var overlay = document.createElement('div');
   overlay.id = 'manageServicesOverlay';
   overlay.style.cssText =
-    'position:fixed;inset:0;background:rgba(5,12,16,0.72);' +
+    'position:fixed;inset:0;background:rgba(15,23,42,0.5);' +
     'display:flex;align-items:center;justify-content:center;' +
     'z-index:20000;padding:16px;';
 
   overlay.innerHTML =
     '<div style="' +
       'position:relative;width:min(600px,100%);max-height:85vh;overflow-y:auto;' +
-      'background:linear-gradient(180deg,rgba(44,83,100,0.98),rgba(32,58,67,0.98));' +
-      'border:1px solid rgba(122,183,214,0.18);border-radius:18px;' +
-      'padding:24px;box-shadow:0 24px 60px rgba(0,0,0,0.45);color:var(--text-main);' +
+      'background:var(--surface);' +
+      'border:1px solid var(--border-soft);border-radius:18px;' +
+      'padding:24px;box-shadow: var(--shadow-lift);color:var(--text-main);' +
     '">' +
       '<button id="closeManageServices" style="' +
         'position:absolute;top:12px;right:14px;border:none;background:transparent;' +
@@ -2790,10 +2972,10 @@ function openManageServicesModal(onSave) {
 
       '<div style="display:flex;gap:8px;margin-bottom:16px;">' +
         '<input id="newSvcName" type="text" placeholder="Service name (e.g. Mowing)"' +
-          'style="flex:1;padding:10px 14px;border-radius:10px;border:1px solid rgba(122,183,214,0.22);background:rgba(32,58,67,0.96);color:var(--text-main);font-size:0.95rem;">' +
+          'style="flex:1;padding:10px 14px;border-radius:10px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text-main);font-size:0.95rem;">' +
         '<input id="newSvcRate" type="text" inputmode="decimal" placeholder="Rate"' +
-          'style="width:100px;padding:10px 14px;border-radius:10px;border:1px solid rgba(122,183,214,0.22);background:rgba(32,58,67,0.96);color:var(--text-main);font-size:0.95rem;">' +
-        '<button id="addSvcBtn" class="btn-primary" style="background:linear-gradient(135deg,#0f9b58,#27c97a);padding:10px 16px;white-space:nowrap;">Add</button>' +
+          'style="width:100px;padding:10px 14px;border-radius:10px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text-main);font-size:0.95rem;">' +
+        '<button id="addSvcBtn" class="btn-primary" style="padding:10px 16px;white-space:nowrap;">Add</button>' +
       '</div>' +
 
       '<div id="manageServicesList" style="display:flex;flex-direction:column;gap:6px;">' +
@@ -2801,7 +2983,7 @@ function openManageServicesModal(onSave) {
       '</div>' +
 
       '<div style="display:flex;gap:8px;margin-top:16px;">' +
-        '<button id="manageServicesDoneBtn" class="btn-primary" style="background:rgba(255,255,255,0.14);color:white;flex:1;padding:10px;">Done</button>' +
+        '<button id="manageServicesDoneBtn" class="btn-primary" style="background:var(--surface-muted);color:white;flex:1;padding:10px;">Done</button>' +
       '</div>' +
     '</div>';
 
@@ -2835,8 +3017,8 @@ function openManageServicesModal(onSave) {
         var row = document.createElement('div');
         row.style.cssText =
           'display:flex;align-items:center;gap:8px;padding:10px 12px;' +
-          'border-radius:10px;border:1px solid rgba(122,183,214,0.14);' +
-          'background:rgba(15,32,39,0.2);';
+          'border-radius:10px;border:1px solid var(--border-soft);' +
+          'background:var(--surface-muted);';
 
         var info = document.createElement('div');
         info.style.cssText = 'flex:1;min-width:0;';
@@ -2853,7 +3035,7 @@ function openManageServicesModal(onSave) {
         var toggleActiveBtn = document.createElement('button');
         toggleActiveBtn.textContent = svc.isActive ? 'Deactivate' : 'Activate';
         toggleActiveBtn.style.cssText =
-          'border:none;background:rgba(255,255,255,0.1);color:var(--text-main);' +
+          'border:none;background:var(--surface-muted);color:var(--text-main);' +
           'padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;';
         toggleActiveBtn.onclick = async function () {
           try {
@@ -2944,148 +3126,198 @@ function openManageServicesModal(onSave) {
 // ======================================================
 // JOB PANEL (modal overlay)
 // ======================================================
+const JOB_LINE_ITEM_CATEGORIES = ['Labor', 'Materials', 'Commissions', 'Meals/Drinks', 'Miscellaneous', 'Permits'];
+
 function openJobPanel(job, clientId, onSave) {
   // Remove any existing job panel
   const existing = document.getElementById('jobPanelOverlay');
   if (existing) existing.remove();
 
   const STATUS_ORDER_JOB = ['Prospect', 'Approved', 'Completed', 'Invoice', 'Closed'];
+  const admin = isAdminUser();
+  const tags = Array.isArray(job.tags) ? job.tags : [];
 
   const overlay = document.createElement('div');
   overlay.id = 'jobPanelOverlay';
-  overlay.style.cssText = `
-    position:fixed;inset:0;background:rgba(5,12,16,0.72);
-    display:flex;align-items:center;justify-content:center;
-    z-index:20000;padding:16px;
-  `;
+  overlay.className = 'job-modal-overlay';
 
   overlay.innerHTML = `
-    <div id="jobPanelCard" style="
-      position:relative;width:min(680px,100%);max-height:90vh;overflow-y:auto;
-      background:linear-gradient(180deg,rgba(44,83,100,0.98),rgba(32,58,67,0.98));
-      border:1px solid rgba(122,183,214,0.18);border-radius:18px;
-      padding:24px;box-shadow:0 24px 60px rgba(0,0,0,0.45);color:var(--text-main);
-    ">
-      <button id="closeJobPanel" style="
-        position:absolute;top:12px;right:14px;border:none;background:transparent;
-        color:var(--accent);font-size:1.5rem;cursor:pointer;line-height:1;
-      ">&times;</button>
+    <div id="jobPanelCard" class="job-modal-card">
+      <button id="closeJobPanel" class="job-modal-close">&times;</button>
+      <div class="job-modal-kicker">Job Details</div>
 
-      <div style="margin-bottom:18px;">
-        <div style="font-size:0.75rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:4px;">Job Details</div>
-        <input id="job-title" type="text" value="${escapeHtml(job.title || 'New Job')}"
-          style="width:100%;box-sizing:border-box;font-size:1.2rem;font-weight:700;
-          background:transparent;border:none;border-bottom:1px solid rgba(122,183,214,0.3);
-          color:var(--text-main);padding:4px 0;outline:none;">
+      <div class="job-modal-field">
+        <input id="job-title" type="text" class="job-title-input" value="${escapeHtml(job.title || 'New Job')}">
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-        <div>
-          <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:4px;">Status</label>
-          <select id="job-status" style="width:100%;padding:10px 12px;border-radius:10px;
-            border:1px solid rgba(122,183,214,0.22);background:rgba(32,58,67,0.96);
-            color:var(--text-main);font-size:0.95rem;">
+      <div class="job-modal-grid">
+        <div class="job-modal-field">
+          <label>Status</label>
+          <select id="job-status">
             ${STATUS_ORDER_JOB.map(s => `<option value="${s}" ${job.status === s ? 'selected' : ''}>${s}</option>`).join('')}
           </select>
         </div>
-        <div>
-          <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:4px;">Total Due</label>
-          <input id="job-total" type="text" inputmode="decimal" value="${formatMoney(job.total_due)}"
-            style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;
-            border:1px solid rgba(122,183,214,0.22);background:rgba(32,58,67,0.96);
-            color:var(--text-main);font-size:0.95rem;">
+        ${admin ? `
+        <div class="job-modal-field">
+          <label>Total Due</label>
+          <input id="job-total" type="text" inputmode="decimal" value="${formatMoney(job.total_due)}">
         </div>
-        <div>
-          <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:4px;">Job Cost</label>
-          <input id="job-cost" type="text" inputmode="decimal" value="${formatMoney(job.job_cost)}"
-            style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;
-            border:1px solid rgba(122,183,214,0.22);background:rgba(32,58,67,0.96);
-            color:var(--text-main);font-size:0.95rem;">
+        <div class="job-modal-field">
+          <label>Job Cost</label>
+          <input id="job-cost" type="text" inputmode="decimal" value="${formatMoney(job.job_cost)}">
         </div>
-        <div>
-          <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:4px;">Margin</label>
-          <div id="job-margin-display" style="padding:10px 12px;border-radius:10px;
-            background:rgba(15,32,39,0.28);border:1px solid rgba(122,183,214,0.12);
-            font-weight:700;color:var(--text-main);">
+        <div class="job-modal-field">
+          <label>Margin</label>
+          <div id="job-margin-display" class="job-modal-readout">
             ${job.total_due > 0 ? Math.round(((job.total_due - job.job_cost) / job.total_due) * 100) + '%' : '—'}
           </div>
+        </div>` : ''}
+      </div>
+
+      <!-- ===== JOB TAGS (Section 2/7) — per-job labels, separate from
+           both job status above and the client's pipeline stage. ===== -->
+      <div class="job-modal-field">
+        <label>Tags</label>
+        <div id="job-tags-list" class="job-tags-list">
+          ${tags.map((t) => `<span class="job-tag-chip">${escapeHtml(t)}<button type="button" class="job-tag-remove" data-tag="${escapeHtml(t)}">&times;</button></span>`).join('')}
+        </div>
+        <div class="job-tag-add-row">
+          <input id="job-tag-input" type="text" placeholder="Add a tag and press Enter" maxlength="40">
+        </div>
+        <span class="field-hint">Tags track this specific job only. They never change the client's stage.</span>
+      </div>
+
+      ${admin ? `
+      <div class="job-modal-field">
+        <div class="job-balance-row">
+          <label>Amount Paid</label>
+          <strong>$${formatMoney(job.amount_paid)}</strong>
+        </div>
+        <div class="job-balance-row">
+          <label>Balance</label>
+          <strong>$${formatMoney(job.balance)}</strong>
+        </div>
+        <div class="job-payment-row">
+          <input id="job-payment-input" type="text" inputmode="decimal" placeholder="Add Payment">
+          <button id="job-add-payment-btn" class="btn-primary" style="background:var(--primary);">Add Payment</button>
         </div>
       </div>
 
-      <div style="margin-bottom:16px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <label style="font-size:0.8rem;color:var(--text-muted);">Amount Paid</label>
-          <strong style="color:var(--text-main);">$${formatMoney(job.amount_paid)}</strong>
+      <!-- ===== COST LINE ITEMS (Section 1) — description/qty/unit price
+           with a required Cost Type category. Admin only. ===== -->
+      <div class="job-modal-field">
+        <label>Estimate / Invoice Line Items</label>
+        <div id="job-line-items-list" class="job-line-items-list">
+          <div class="field-hint">Loading line items...</div>
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <label style="font-size:0.8rem;color:var(--text-muted);">Balance</label>
-          <strong style="color:var(--text-main);">$${formatMoney(job.balance)}</strong>
+        <div class="job-line-item-add-grid">
+          <input id="li-description" type="text" placeholder="Description">
+          <select id="li-category">
+            ${JOB_LINE_ITEM_CATEGORIES.map((c) => `<option value="${c}">${c}</option>`).join('')}
+          </select>
+          <input id="li-quantity" type="text" inputmode="decimal" placeholder="Qty" value="1">
+          <input id="li-unit-price" type="text" inputmode="decimal" placeholder="Unit Price">
+          <button id="li-add-btn" class="btn-primary" style="background:var(--primary);">Add Item</button>
         </div>
-        <div style="display:flex;gap:8px;">
-          <input id="job-payment-input" type="text" inputmode="decimal" placeholder="Add Payment"
-            style="flex:1;padding:9px 12px;border-radius:10px;
-            border:1px solid rgba(122,183,214,0.22);background:rgba(32,58,67,0.96);
-            color:var(--text-main);font-size:0.9rem;">
-          <button id="job-add-payment-btn" class="btn-primary"
-            style="background:linear-gradient(135deg,#2f80ed,#4f8dfd);padding:9px 14px;white-space:nowrap;">
-            Add Payment
-          </button>
-        </div>
+      </div>` : ''}
+
+      <div class="job-modal-field">
+        <label>Scope of Work</label>
+        <textarea id="job-scope" rows="5" placeholder="Describe the work for this job...">${escapeHtml(job.scope_of_work || '')}</textarea>
       </div>
 
-      <div style="margin-bottom:16px;">
-        <label style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:6px;">Scope of Work</label>
-        <textarea id="job-scope" rows="5" style="width:100%;box-sizing:border-box;padding:10px 12px;
-          border-radius:10px;border:1px solid rgba(122,183,214,0.22);
-          background:rgba(32,58,67,0.96);color:var(--text-main);
-          font-size:0.9rem;resize:vertical;font-family:inherit;"
-          placeholder="Describe the work for this job...">${escapeHtml(job.scope_of_work || '')}</textarea>
-      </div>
-
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button id="job-save-btn" class="btn-primary"
-          style="background:linear-gradient(135deg,#2f80ed,#4f8dfd);flex:2;">Save Job</button>
-        <button id="job-estimate-btn" class="btn-primary"
-          style="background:linear-gradient(135deg,#0f9b58,#27c97a);flex:2;">Download Estimate</button>
-        <button id="job-invoice-btn" class="btn-primary"
-          style="background:linear-gradient(135deg,#1c92d2,#47a7f5);flex:2;">Download Invoice</button>
-        <button id="job-delete-btn" class="btn-primary"
-          style="background:#4a5568;flex:1;">Delete</button>
+      <div class="job-modal-actions">
+        <button id="job-save-btn" class="btn-primary" style="background:var(--primary);">Save Job</button>
+        <button id="job-estimate-btn" class="btn-primary">Download Estimate</button>
+        <button id="job-invoice-btn" class="btn-primary" style="background:var(--primary);">Download Invoice</button>
+        <button id="job-delete-btn" class="btn-primary" style="background:#4a5568;">Delete</button>
       </div>
     </div>
   `;
 
   document.body.appendChild(overlay);
 
-  // Live margin update
+  // Live margin update (admin only — fields don't exist for regular users)
   const totalInput = overlay.querySelector('#job-total');
   const costInput = overlay.querySelector('#job-cost');
   const marginDisplay = overlay.querySelector('#job-margin-display');
-
-  function updateMargin() {
-    const t = parseMoney(totalInput.value) || 0;
-    const c = parseMoney(costInput.value) || 0;
-    marginDisplay.textContent = t > 0 ? Math.round(((t - c) / t) * 100) + '%' : '—';
+  if (totalInput && costInput && marginDisplay) {
+    function updateMargin() {
+      const t = parseMoney(totalInput.value) || 0;
+      const c = parseMoney(costInput.value) || 0;
+      marginDisplay.textContent = t > 0 ? Math.round(((t - c) / t) * 100) + '%' : '—';
+    }
+    totalInput.addEventListener('input', updateMargin);
+    costInput.addEventListener('input', updateMargin);
   }
-  totalInput.addEventListener('input', updateMargin);
-  costInput.addEventListener('input', updateMargin);
 
   // Close
   overlay.querySelector('#closeJobPanel').onclick = () => overlay.remove();
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  // ===== Job tags =====
+  const tagsListEl = overlay.querySelector('#job-tags-list');
+  const tagInput = overlay.querySelector('#job-tag-input');
+  let currentTags = tags.slice();
+
+  function renderTags() {
+    tagsListEl.innerHTML = currentTags.map((t) =>
+      `<span class="job-tag-chip">${escapeHtml(t)}<button type="button" class="job-tag-remove" data-tag="${escapeHtml(t)}">&times;</button></span>`
+    ).join('');
+    tagsListEl.querySelectorAll('.job-tag-remove').forEach((btn) => {
+      btn.onclick = () => saveTags(currentTags.filter((t) => t !== btn.dataset.tag));
+    });
+  }
+
+  async function saveTags(nextTags) {
+    try {
+      const result = await window.api.updateJobTags(job.id, nextTags);
+      currentTags = (result.job && result.job.tags) || nextTags;
+      renderTags();
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to update tags', 'error');
+    }
+  }
+
+  tagsListEl.querySelectorAll('.job-tag-remove').forEach((btn) => {
+    btn.onclick = () => saveTags(currentTags.filter((t) => t !== btn.dataset.tag));
+  });
+
+  if (tagInput) {
+    tagInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const value = tagInput.value.trim();
+        if (value && !currentTags.includes(value)) {
+          saveTags([...currentTags, value]);
+        }
+        tagInput.value = '';
+      }
+    });
+  }
+
+  // ===== Line items (admin only) =====
+  const lineItemsListEl = overlay.querySelector('#job-line-items-list');
+  if (admin && lineItemsListEl) {
+    setupJobLineItems(overlay, job.id);
+  }
 
   // Save
   overlay.querySelector('#job-save-btn').onclick = async () => {
     const btn = overlay.querySelector('#job-save-btn');
     try {
       btn.disabled = true; btn.textContent = 'Saving...';
-      await window.api.updateJob(job.id, {
+      const payload = {
         title: overlay.querySelector('#job-title').value.trim() || 'New Job',
         status: overlay.querySelector('#job-status').value,
-        scope_of_work: overlay.querySelector('#job-scope').value,
-        total_due: parseMoney(overlay.querySelector('#job-total').value) || 0,
-        job_cost: parseMoney(overlay.querySelector('#job-cost').value) || 0
-      });
+        scope_of_work: overlay.querySelector('#job-scope').value
+      };
+      if (admin) {
+        payload.total_due = parseMoney(overlay.querySelector('#job-total')?.value) || 0;
+        payload.job_cost = parseMoney(overlay.querySelector('#job-cost')?.value) || 0;
+      }
+      await window.api.updateJob(job.id, payload);
       showToast('Job saved', 'success');
       if (onSave) await onSave();
     } catch (err) {
@@ -3096,26 +3328,24 @@ function openJobPanel(job, clientId, onSave) {
     }
   };
 
-  // Add payment
-  overlay.querySelector('#job-add-payment-btn').onclick = async () => {
-    const amount = parseMoney(overlay.querySelector('#job-payment-input').value);
-    if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
-    try {
-      const result = await window.api.addJobPayment(job.id, amount);
-      job.amount_paid = result.job.amount_paid;
-      job.balance = result.job.balance;
-      overlay.querySelector('#job-payment-input').value = '';
-      overlay.querySelectorAll('[style*="Amount Paid"] + strong, [style*="Balance"] + strong').forEach(el => el.remove());
-      // Refresh the panel
-      overlay.remove();
-      openJobPanel(result.job, clientId, onSave);
-      if (onSave) await onSave();
-      showToast('Payment added', 'success');
-    } catch (err) {
-      console.error(err);
-      showToast('Failed to add payment', 'error');
-    }
-  };
+  // Add payment (admin only — button doesn't exist otherwise)
+  const addPaymentBtn = overlay.querySelector('#job-add-payment-btn');
+  if (addPaymentBtn) {
+    addPaymentBtn.onclick = async () => {
+      const amount = parseMoney(overlay.querySelector('#job-payment-input').value);
+      if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+      try {
+        const result = await window.api.addJobPayment(job.id, amount);
+        overlay.remove();
+        openJobPanel(result.job, clientId, onSave);
+        if (onSave) await onSave();
+        showToast('Payment added', 'success');
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to add payment', 'error');
+      }
+    };
+  }
 
   // Estimate
   overlay.querySelector('#job-estimate-btn').onclick = async () => {
@@ -3157,6 +3387,84 @@ function openJobPanel(job, clientId, onSave) {
       showToast('Failed to delete job', 'error');
     }
   };
+}
+
+// ======================================================
+// JOB LINE ITEMS (Section 1) — admin-only cost breakdown with a
+// required Cost Type category per line: Labor, Materials, Commissions,
+// Meals/Drinks, Miscellaneous, Permits.
+// ======================================================
+async function setupJobLineItems(overlay, jobId) {
+  const listEl = overlay.querySelector('#job-line-items-list');
+  const addBtn = overlay.querySelector('#li-add-btn');
+  const descInput = overlay.querySelector('#li-description');
+  const categorySelect = overlay.querySelector('#li-category');
+  const qtyInput = overlay.querySelector('#li-quantity');
+  const priceInput = overlay.querySelector('#li-unit-price');
+  if (!listEl || !addBtn) return;
+
+  async function render() {
+    try {
+      const data = await window.api.listJobLineItems(jobId);
+      const items = data.lineItems || [];
+      if (items.length === 0) {
+        listEl.innerHTML = '<div class="field-hint">No line items yet. Add one below.</div>';
+        return;
+      }
+      const total = items.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+      listEl.innerHTML = items.map((i) => `
+        <div class="job-line-item-row" data-id="${i.id}">
+          <span class="li-desc">${escapeHtml(i.description || '(no description)')}</span>
+          <span class="li-category-badge">${escapeHtml(i.category)}</span>
+          <span class="li-qty">${i.quantity} &times; $${formatMoney(i.unit_price)}</span>
+          <span class="li-amount">$${formatMoney(i.amount)}</span>
+          <button type="button" class="li-remove" data-id="${i.id}">&times;</button>
+        </div>
+      `).join('') + `<div class="job-line-item-total">Total: $${formatMoney(total)}</div>`;
+
+      listEl.querySelectorAll('.li-remove').forEach((btn) => {
+        btn.onclick = async () => {
+          try {
+            await window.api.deleteJobLineItem(jobId, btn.dataset.id);
+            await render();
+          } catch (err) {
+            showToast('Failed to remove line item', 'error');
+          }
+        };
+      });
+    } catch (err) {
+      console.error(err);
+      listEl.innerHTML = '<div class="field-hint">Failed to load line items.</div>';
+    }
+  }
+
+  addBtn.onclick = async () => {
+    const description = descInput.value.trim();
+    const quantity = parseMoney(qtyInput.value) || 1;
+    const unitPrice = parseMoney(priceInput.value) || 0;
+    const category = categorySelect.value;
+    try {
+      addBtn.disabled = true;
+      await window.api.addJobLineItem(jobId, {
+        description,
+        quantity,
+        unit_price: unitPrice,
+        category
+      });
+      descInput.value = '';
+      qtyInput.value = '1';
+      priceInput.value = '';
+      await render();
+      showToast('Line item added', 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to add line item', 'error');
+    } finally {
+      addBtn.disabled = false;
+    }
+  };
+
+  await render();
 }
 
 // ======================================================
@@ -3214,7 +3522,7 @@ async function loadPDFs(clientId) {
   try {
     const data = await window.api.listPDFs(clientId);
     if (!data.files || data.files.length === 0) {
-      container.innerHTML = `<div style="color:#888; font-size:13px;">No PDFs uploaded yet.</div>`;
+      container.innerHTML = `<div style="color:var(--text-muted); font-size:13px;">No PDFs uploaded yet.</div>`;
       return;
     }
 
@@ -3223,22 +3531,20 @@ async function loadPDFs(clientId) {
       card.style.display = "flex";
       card.style.justifyContent = "space-between";
       card.style.alignItems = "center";
-      card.style.background = "linear-gradient(135deg, #4a7899, #010101)";
+      card.style.background = "var(--surface, #ffffff)";
       card.style.padding = "10px 14px";
       card.style.borderRadius = "8px";
       card.style.marginBottom = "8px";
-      card.style.border = "1px solid #007bff";
-      card.style.boxShadow = "0 4px 10px rgba(0,0,0,0.08)";
-      card.style.transition = "0.2s ease";
+      card.style.border = "1px solid var(--border-soft, #e2e8f0)";
+      card.style.boxShadow = "none";
+      card.style.transition = "border-color 0.15s ease";
 
       card.addEventListener("mouseenter", () => {
-        card.style.transform = "translateY(-2px)";
-        card.style.boxShadow = "0 6px 14px rgba(0,0,0,0.12)";
+        card.style.borderColor = "var(--border-strong, #cbd5e1)";
       });
 
       card.addEventListener("mouseleave", () => {
-        card.style.transform = "translateY(0)";
-        card.style.boxShadow = "0 4px 10px rgba(0,0,0,0.08)";
+        card.style.borderColor = "var(--border-soft, #e2e8f0)";
       });
 
       const name = document.createElement("div");
@@ -3254,7 +3560,7 @@ async function loadPDFs(clientId) {
       openBtn.href = file.url;
       openBtn.target = "_blank";
       openBtn.innerText = "Open";
-      openBtn.style.background = "linear-gradient(135deg,#2f80ed,#4f8dfd)";
+      openBtn.style.background = "var(--primary)";
       openBtn.style.color = "white";
       openBtn.style.padding = "5px 12px";
       openBtn.style.borderRadius = "6px";
@@ -3932,7 +4238,7 @@ function renderWorkflowPanel(data) {
   var oneOffPct = totalRev > 0 ? Math.round((rev.oneOffRevenue / totalRev) * 100) : 0;
   var recurringPct = totalRev > 0 ? Math.round((rev.recurringRevenue / totalRev) * 100) : 0;
 
-  html += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(122,183,214,0.12);">';
+  html += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border-soft);">';
   html += '<div style="font-size:0.72rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">Revenue Split</div>';
   html += '<div class="revenue-split-bar"><div class="one-off-bar" style="width:' + oneOffPct + '%"></div><div class="recurring-bar" style="width:' + recurringPct + '%"></div></div>';
   html += '<div class="revenue-split-labels"><span>One-off $' + formatMoney(rev.oneOffRevenue) + '</span><span>Recurring $' + formatMoney(rev.recurringRevenue) + '</span></div>';
@@ -4036,16 +4342,26 @@ function applyBranding(branding) {
 (function initAdminNav() {
   var adminLink = document.getElementById('adminNavLink');
   var roleBadge = document.getElementById('roleBadge');
+  var financeLink = document.getElementById('navFinanceLink');
   if (window.__USER__) {
     if (window.__USER__.role === 'admin') {
       if (adminLink) adminLink.style.display = '';
+      if (financeLink) financeLink.style.display = '';
       if (roleBadge) { roleBadge.textContent = 'Admin'; roleBadge.className = 'role-badge admin'; roleBadge.style.display = ''; }
     } else {
       if (adminLink) adminLink.style.display = 'none';
+      // Financial Overview is admin-only (Section 8) — the backend also
+      // redirects /finance for regular users, this just avoids showing
+      // a link that leads nowhere useful for them.
+      if (financeLink) financeLink.style.display = 'none';
       if (roleBadge) { roleBadge.textContent = 'User'; roleBadge.className = 'role-badge user'; roleBadge.style.display = ''; }
     }
   }
 })();
+
+function isAdminUser() {
+  return Boolean(window.__USER__ && window.__USER__.role === 'admin');
+}
 
 // ======================================================
 // INITIALIZATION

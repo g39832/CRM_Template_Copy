@@ -1,8 +1,23 @@
 const express = require('express');
 const { requireClient } = require('./db-v2');
 const { asyncHandler, assertObject, parseIntField, parseStringField, parseNumberField, AppError } = require('./request-utils');
+const { canAccessClient } = require('./access-control');
 
 const router = express.Router();
+
+// Verifies the session can access the given client (admin, or the
+// client's assigned regular user) before touching its scope services.
+async function assertClientAccess(req, clientId) {
+  const supabase = requireClient();
+  const { data: client, error } = await supabase
+    .from('clients')
+    .select('id, assigned_user_id')
+    .eq('id', clientId)
+    .maybeSingle();
+  if (error) throw new AppError(500, 'Failed to look up client: ' + error.message);
+  if (!client) throw new AppError(404, 'Client not found');
+  if (!canAccessClient(req, client)) throw new AppError(403, 'You do not have access to this client');
+}
 
 function isMissingTableError(err) {
   var msg = String(err?.message || '').toLowerCase();
@@ -205,6 +220,7 @@ router.delete('/services/:id', requireAdmin, asyncHandler(async (req, res) => {
 // GET /api/v2/clients/:clientId/services — List services assigned to a client
 router.get('/clients/:clientId/services', requireAuth, asyncHandler(async (req, res) => {
   const clientId = parseIntField(req.params.clientId, 'clientId', { min: 1 });
+  await assertClientAccess(req, clientId);
   const supabase = requireClient();
 
   const { data, error } = await supabase
@@ -243,6 +259,7 @@ router.get('/clients/:clientId/services', requireAuth, asyncHandler(async (req, 
 router.post('/clients/:clientId/services', requireAuth, asyncHandler(async (req, res) => {
   assertObject(req.body);
   const clientId = parseIntField(req.params.clientId, 'clientId', { min: 1 });
+  await assertClientAccess(req, clientId);
   const serviceIds = req.body.serviceIds || req.body.service_ids || [];
 
   if (!Array.isArray(serviceIds) || serviceIds.length === 0) {
@@ -311,6 +328,7 @@ router.post('/clients/:clientId/services', requireAuth, asyncHandler(async (req,
 router.delete('/clients/:clientId/services/:assignmentId', requireAuth, asyncHandler(async (req, res) => {
   const clientId = parseIntField(req.params.clientId, 'clientId', { min: 1 });
   const assignmentId = parseIntField(req.params.assignmentId, 'assignmentId', { min: 1 });
+  await assertClientAccess(req, clientId);
   const supabase = requireClient();
 
   const { data: existing, error: fetchErr } = await supabase
@@ -337,6 +355,7 @@ router.delete('/clients/:clientId/services/:assignmentId', requireAuth, asyncHan
 router.put('/clients/:clientId/services/reorder', requireAuth, asyncHandler(async (req, res) => {
   assertObject(req.body);
   const clientId = parseIntField(req.params.clientId, 'clientId', { min: 1 });
+  await assertClientAccess(req, clientId);
   var order = req.body.order;
   if (!Array.isArray(order)) throw new AppError(400, 'order must be an array of {id, sortOrder}');
 
@@ -361,7 +380,8 @@ router.put('/clients/:clientId/services/reorder', requireAuth, asyncHandler(asyn
 // ======================================================
 
 // GET /api/v2/clients/:clientId/cash-aggregate
-router.get('/clients/:clientId/cash-aggregate', requireAuth, asyncHandler(async (req, res) => {
+// Financial data (Section 8) — admin only, regardless of client assignment.
+router.get('/clients/:clientId/cash-aggregate', requireAdmin, asyncHandler(async (req, res) => {
   const clientId = parseIntField(req.params.clientId, 'clientId', { min: 1 });
   const supabase = requireClient();
 

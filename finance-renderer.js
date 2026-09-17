@@ -243,12 +243,12 @@ async function updateFinanceMetrics() {
       '<td data-label="Received"><input type="text" id="input-received" inputmode="decimal" value="' + formatCurrencyValue(received) + '" /></td>',
       '<td data-label="Remaining"><input type="text" id="input-remaining" inputmode="decimal" value="' + formatCurrencyValue(remaining) + '" /></td>',
       '<td data-label="Clients"><input type="number" id="input-clients" inputmode="numeric" enterkeyhint="done" pattern="[0-9]*" step="1" value="' + clients + '" /></td>',
-      '<td data-label="Avg Margin" style="font-weight:700; color:' + (avgMargin !== null && avgMargin !== undefined ? (avgMargin >= 30 ? '#27c97a' : avgMargin >= 15 ? '#ffd37a' : '#ff9aa2') : 'var(--text-muted)') + ';">' + avgMarginDisplay + '</td>',
+      '<td data-label="Avg Margin" style="font-weight:700; color:' + (avgMargin !== null && avgMargin !== undefined ? (avgMargin >= 30 ? 'var(--success)' : avgMargin >= 15 ? 'var(--warning)' : 'var(--danger)') : 'var(--text-muted)') + ';">' + avgMarginDisplay + '</td>',
       '</tr>',
       '<tr class="metrics-actions-row">',
       '<td colspan="6" class="metrics-actions-cell" style="text-align:right;">',
-      '<button id="saveFinanceBtn" style="background:linear-gradient(135deg,#2f80ed,#4f8dfd); color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer; font-weight:600;">Save Year Data</button>',
-      '<button id="undoFinanceYearBtn" style="margin-left:10px; background:#4a5568; color:white; border:none; padding:6px 12px; border-radius:5px; cursor:pointer;">Undo</button>',
+      '<button id="saveFinanceBtn" style="background:var(--primary); color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:600;">Save Year Data</button>',
+      '<button id="undoFinanceYearBtn" style="margin-left:10px; background:var(--surface); color:var(--text-main); border:1px solid var(--border-strong); padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:600;">Undo</button>',
       '</td>',
       '</tr>'
     ].join('');
@@ -359,14 +359,14 @@ function addUploadButtons() {
     btn.setAttribute("data-upload", group);
 
     btn.style.marginTop = "10px";
-    btn.style.background = "linear-gradient(135deg,#2f80ed,#4f8dfd)";
+    btn.style.background = "var(--primary)";
     btn.style.color = "#fff";
     btn.style.border = "none";
     btn.style.padding = "8px 14px";
     btn.style.borderRadius = "6px";
     btn.style.cursor = "pointer";
     btn.style.fontWeight = "600";
-    btn.style.boxShadow = "0 2px 6px rgba(0,0,0,0.15)";
+    btn.style.boxShadow = "none";
 
     btn.onclick = () => {
       const input = document.createElement("input");
@@ -529,7 +529,7 @@ async function loadPDFs(group) {
 
     if (!data.files || data.files.length === 0) {
       container.innerHTML =
-        `<div style="color:#888;font-size:13px;">No PDFs uploaded.</div>`;
+        `<div style="color:var(--text-muted);font-size:13px;">No PDFs uploaded.</div>`;
       return;
     }
 
@@ -542,9 +542,9 @@ async function loadPDFs(group) {
       card.style.alignItems = "center";
       card.style.margin = "12px";
       card.style.padding = "10px";
-      card.style.background = "#f8f9fa";
+      card.style.background = "var(--surface)";
       card.style.borderRadius = "8px";
-      card.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
+      card.style.border = "1px solid var(--border-soft)";
 
       if (!isMobile) {
         const thumb = document.createElement("embed");
@@ -567,7 +567,7 @@ async function loadPDFs(group) {
       const viewBtn = document.createElement("button");
       viewBtn.innerText = "View";
       viewBtn.style.marginTop = "8px";
-      viewBtn.style.background = "linear-gradient(135deg,#2f80ed,#4f8dfd)";
+      viewBtn.style.background = "var(--primary)";
       viewBtn.style.color = "#fff";
       viewBtn.style.border = "none";
       viewBtn.style.padding = "6px 12px";

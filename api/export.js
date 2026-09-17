@@ -5,8 +5,12 @@ const { logActivity } = require('./activity-log');
 
 const router = express.Router();
 
+// Every export in this file is a company-wide financial data dump
+// (client totals/balances, payments, margin entries) — admin only,
+// regardless of individual client assignment (Section 8).
 function requireAuth(req, res, next) {
   if (!req.session.user) return res.status(401).json({ success: false, error: 'Not authenticated' });
+  if (req.session.user.role !== 'admin') return res.status(403).json({ success: false, error: 'Admin access required' });
   next();
 }
 

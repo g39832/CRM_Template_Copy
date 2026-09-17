@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS public.companies (
   contact_email         TEXT NOT NULL DEFAULT '',
   logo_url              TEXT NOT NULL DEFAULT '',
   brand_primary_color   TEXT NOT NULL DEFAULT '#2563eb',
-  brand_secondary_color TEXT NOT NULL DEFAULT '#7c3aed',
+  brand_secondary_color TEXT NOT NULL DEFAULT '#2563eb',
   onboarding_step       INT NOT NULL DEFAULT 1,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
