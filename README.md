@@ -146,16 +146,34 @@ server no longer knows the session), and two instances would not share logins. P
 app at your Supabase Postgres database fixes that:
 
 1. In Supabase, open **Project Settings → Database → Connection string** and copy the
-   **Session pooler** URI (port `5432`). Do **not** use the transaction pooler on port `6543` —
-   it does not support session storage.
+   **Session pooler** URI (port `5432`). Render is IPv4-only and Supabase's **Direct connection**
+   is IPv6-only, so the Session pooler is the only connection that works from Render; the
+   **Transaction pooler** (`6543`) cannot hold a session. Replace `[YOUR-PASSWORD]` in the copied
+   string with your database password and keep the `postgres.<project-ref>` username as-is — if
+   you do not know that password, reset it on the same page — then paste the new password into
+   `SUPABASE_DATABASE_URL` too. A reset changes every password-based connection (the pooler
+   URL, migration scripts) but not the app's REST access, which uses the service-role key.
 2. Add it to the Render service as `SUPABASE_DATABASE_URL`, then redeploy.
 3. That's it. The `session` table is created automatically on first use (it is also defined in
    `supabase-schema.sql` if you prefer creating it yourself). If your database user is not
    allowed to create tables, run the session DDL at the end of `supabase-schema.sql` in the
    Supabase SQL editor first — otherwise the app cannot persist sessions and stays on the
-   in-memory store.
+   in-memory store. To create it yourself instead, run this:
 
-On boot the log prints either `[session] Postgres session store active` or an explanation of
+```sql
+-- Only needed if the app cannot create the table itself. Safe to re-run.
+CREATE TABLE IF NOT EXISTS public.session (
+  sid TEXT PRIMARY KEY,
+  sess JSON NOT NULL,
+  expire TIMESTAMP(6) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS session_expire_idx ON public.session (expire);
+```
+
+Row Level Security does not apply here: the app connects directly to Postgres as the `postgres`
+role, so no policy is needed for this table. On boot the log prints either
+`[session] Postgres session store active` or an explanation of
 why it stayed on in-memory sessions. A missing, wrong, or unreachable value never breaks
 sign-in; the app degrades to in-memory sessions instead. Falling back does log the current
 user out once, because their session exists only in Postgres.
