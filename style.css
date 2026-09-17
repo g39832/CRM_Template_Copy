@@ -143,7 +143,7 @@ textarea,
   max-width: 760px;
   background: var(--surface);
   border:1px solid var(--border-soft);
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-soft);
   padding: 20px;
   margin: 0 auto;
@@ -429,7 +429,7 @@ button.btn-primary {
 
 .detail-card {
   padding: 22px;
-  border-radius: 18px;
+  border-radius: var(--radius-lg);
   opacity: 0;
   transform: translateY(20px);
   position: relative;
@@ -832,7 +832,7 @@ a:hover {
     width: 100%;
     max-width: none;
     padding: 16px;
-    border-radius: 18px;
+    border-radius: var(--radius-lg);
     margin: 0;
   }
 
@@ -1224,7 +1224,7 @@ a:hover {
 
   #projectPanel .detail-card {
     padding: 14px 12px;
-    border-radius: 18px;
+    border-radius: var(--radius-lg);
     width: 100%;
     max-width: none;
     margin: 0 auto;
@@ -1344,7 +1344,7 @@ a:hover {
     margin-left: auto !important;
     margin-right: auto !important;
     border-right: none !important;
-    border-radius: 18px !important;
+    border-radius: var(--radius-lg) !important;
   }
 
   .clients-workspace {

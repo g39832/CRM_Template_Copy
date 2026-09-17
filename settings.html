@@ -420,7 +420,8 @@
     @media (max-width: 600px) {
       .field-row { flex-direction: column; gap: 0; }
       .settings-split { grid-template-columns: 1fr; }
-      .tab-btn { font-size: 0.8rem; padding: 10px 8px; }
+      .tab-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .tab-btn { font-size: 0.8rem; padding: 10px 8px; white-space: nowrap; flex: 0 0 auto; }
     }
   </style>
 </head>
