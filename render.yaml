@@ -11,8 +11,10 @@ services:
         sync: false
       - key: SUPABASE_ANON_KEY
         sync: false
-      - key: PORT
-        value: 3000
+      # NOTE: do not hardcode PORT here. Render injects PORT itself (default
+      # 10000) and routes its HTTPS edge proxy to that port; the app binds to
+      # 0.0.0.0:$PORT. Overriding it locally-set values only invites mismatches
+      # between the port Render probes and the port the app listens on.
       - key: SESSION_SECRET
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY

@@ -383,9 +383,15 @@ if (process.env.ENABLE_DB_BACKUPS === 'true') {
 }
 
 // ===== START SERVER =====
-function startServer(port = process.env.PORT || 3000) {
-  const server = app.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}`);
+// Render (like most PaaS platforms) terminates TLS/HTTPS at its edge proxy and
+// forwards plain HTTP to the container. This process must therefore run as a
+// plain HTTP server bound to 0.0.0.0 on the port Render injects via PORT
+// (Render's default is 10000). Never create an HTTPS server or force an
+// internal http->https redirect here: doing either breaks the edge proxy and
+// surfaces as ERR_SSL_PROTOCOL_ERROR in the browser.
+function startServer(port = process.env.PORT || 10000, host = '0.0.0.0') {
+  const server = app.listen(port, host, () => {
+    console.log(`Server running on http://${host}:${port} (HTTP only, TLS terminated by the platform proxy)`);
   });
   return server;
 }
