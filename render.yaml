@@ -19,6 +19,12 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      # Optional but recommended: the Supabase Postgres "Session pooler"
+      # connection string (port 5432, NOT the transaction pooler on 6543).
+      # With it, sessions live in Postgres so logins survive restarts and idle
+      # spin-downs. Left unset, the app falls back to in-memory sessions.
+      - key: SUPABASE_DATABASE_URL
+        sync: false
       - key: SUPABASE_STORAGE_BUCKET
         value: crm-files
       - key: EMAIL_USER

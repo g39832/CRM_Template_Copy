@@ -126,15 +126,39 @@ separate concept from `jobs.status` (a job's own workflow state) and `jobs.tags`
 5. Add environment variables:
    - `SUPABASE_URL`
    - `SUPABASE_ANON_KEY`
-   - `PORT`
-   - `SESSION_SECRET`
+   - `SESSION_SECRET` (required in production — without it a random secret is generated on
+     every boot, so every user is logged out on each restart)
    - `SUPABASE_SERVICE_ROLE_KEY` if you want server-side file upload support
+   - `SUPABASE_DATABASE_URL` for durable sessions (see below)
+   - Do **not** set `PORT` yourself — Render injects it, and the app binds to it on `0.0.0.0`
    - Email vars are optional and only needed if you later re-enable outbound email sending
    - Make sure the Google provider is enabled in Supabase Auth (see Setup step 6 above),
      and add your deployed URL to Supabase's Redirect URLs list.
 6. Deploy the service.
 
 The included `render.yaml` can be used as a starting point for Infrastructure as Code.
+
+### Durable sessions (recommended)
+
+Without extra configuration sessions live in the Node process's memory. That means every
+restart, deploy, or idle spin-down logs everyone out (the browser keeps its cookie, but the
+server no longer knows the session), and two instances would not share logins. Pointing the
+app at your Supabase Postgres database fixes that:
+
+1. In Supabase, open **Project Settings → Database → Connection string** and copy the
+   **Session pooler** URI (port `5432`). Do **not** use the transaction pooler on port `6543` —
+   it does not support session storage.
+2. Add it to the Render service as `SUPABASE_DATABASE_URL`, then redeploy.
+3. That's it. The `session` table is created automatically on first use (it is also defined in
+   `supabase-schema.sql` if you prefer creating it yourself). If your database user is not
+   allowed to create tables, run the session DDL at the end of `supabase-schema.sql` in the
+   Supabase SQL editor first — otherwise the app cannot persist sessions and stays on the
+   in-memory store.
+
+On boot the log prints either `[session] Postgres session store active` or an explanation of
+why it stayed on in-memory sessions. A missing, wrong, or unreachable value never breaks
+sign-in; the app degrades to in-memory sessions instead. Falling back does log the current
+user out once, because their session exists only in Postgres.
 
 ## Customization Guide
 

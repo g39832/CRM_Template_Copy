@@ -460,4 +460,17 @@ CREATE INDEX IF NOT EXISTS job_line_items_job_id_idx ON public.job_line_items (j
 -- rows, default them to 'Miscellaneous' rather than guessing.
 UPDATE public.job_line_items SET category = 'Miscellaneous' WHERE category IS NULL OR category = '';
 
+-- ---- SESSION STORE (keeps logins alive across restarts) --------
+-- Used by express-session via connect-pg-simple when SUPABASE_DATABASE_URL is
+-- set (see the README). Without this table the app creates it on demand at
+-- first use, so you normally do not need to run this section by hand.
+-- Safe to re-run.
+CREATE TABLE IF NOT EXISTS public.session (
+  sid TEXT PRIMARY KEY,
+  sess JSON NOT NULL,
+  expire TIMESTAMP(6) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS session_expire_idx ON public.session (expire);
+
 NOTIFY pgrst, 'reload schema';

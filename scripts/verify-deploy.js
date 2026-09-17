@@ -19,6 +19,7 @@
  *   0 = every layer is healthy
  *   1 = a hard failure (DNS, TLS, or HTTP/app) — takes precedence over 2
  *   2 = the server is healthy but browsers are blocking it (Safe Browsing flag)
+ *   3 = reachable, but no Safe Browsing verdict came back (re-run; NOT a pass)
  */
 const dns = require('dns').promises;
 const http = require('http');
@@ -35,16 +36,19 @@ const SAFE_BROWSING_ENDPOINT =
 
 // Codes returned by that endpoint (field [0][1] of the payload):
 //   1 = no data / not rated
-//   2 = unsafe content found for this URL  (FLAGGED)
-//   3 = site-wide unsafe content           (FLAGGED)
-//   4 = no unsafe content found            (clean)
+//   2 = unsafe content found for this URL   (FLAGGED)
+//   3 = site-wide unsafe content            (FLAGGED)
+//   4 = no unsafe content found             (clean)
+//   6 = no rating on record for this host   (not flagged)
 // Verified by calibration on 2026-09-17: github.com -> 4, onrender.com -> 4,
-// a flagged onrender.com subdomain -> 2 on every path. Advisory only.
+// unrated / sibling onrender.com hostnames -> 6, and a flagged onrender.com
+// subdomain -> 2 on every path. Reverse-engineered, so advisory only.
 const SAFE_BROWSING_CODES = {
   1: 'no rating available',
   2: 'unsafe content found for this URL',
   3: 'site-wide unsafe content',
-  4: 'no unsafe content found'
+  4: 'no unsafe content found',
+  6: 'no rating on record for this hostname'
 };
 
 function fail(msg) {
@@ -247,6 +251,11 @@ async function checkLoginPage(baseUrl) {
     return false;
   }
 
+  if (typeof config !== 'object' || config === null) {
+    warn('window.__AUTH_CONFIG__ did not parse into a config object.');
+    return false;
+  }
+
   if (!config.supabaseUrl || !config.supabaseAnonKey) {
     warn('window.__AUTH_CONFIG__ is injected but its values are empty:');
     info('supabaseUrl:     ' + (config.supabaseUrl || '(missing)'));
@@ -346,7 +355,7 @@ async function checkReputation(host) {
       flagged = true;
       fail(site + ': FLAGGED as unsafe (code ' + status.code + ' — ' + status.description + ')');
     } else {
-      pass(site + ': clean (code ' + status.code + ' — ' + status.description + ')');
+      pass(site + ': not flagged (code ' + status.code + ' — ' + status.description + ')');
     }
   }
 
@@ -356,10 +365,10 @@ async function checkReputation(host) {
     );
   }
 
-  if (answered === 0 && !flagged) {
+  if (answered === 0) {
     warn('No Safe Browsing verdict could be retrieved (the lookup endpoint is rate limited).');
     info('Check manually: https://transparencyreport.google.com/safe-browsing/search?url=' + host);
-    return false;
+    return 'inconclusive';
   }
 
   if (flagged) {
@@ -381,10 +390,10 @@ async function checkReputation(host) {
     console.log('         usually changes the onrender.com hostname, but verify it).');
     console.log('    3. Meanwhile you can click "this unsafe site" on the interstitial');
     console.log('       to reach your own deployment.');
-    return true;
+    return 'flagged';
   }
 
-  return false;
+  return 'clean';
 }
 
 async function main() {
@@ -430,7 +439,8 @@ async function main() {
 
   const loginOk = await checkLoginPage(baseUrl);
   await checkHttpRedirect(host);
-  const flagged = await checkReputation(host);
+  const reputation = await checkReputation(host);
+  const flagged = reputation === 'flagged';
 
   console.log('');
   console.log('  Summary');
@@ -438,7 +448,14 @@ async function main() {
   console.log('    DNS .......... ' + (dnsOk ? 'ok' : 'FAILED'));
   console.log('    TLS/HTTPS .... ok');
   console.log('    /login.html .. ' + (loginOk ? 'ok' : 'FAILED (see auth config check above)'));
-  console.log('    reputation ... ' + (flagged ? 'BLOCKED by Safe Browsing' : 'no flag found'));
+  console.log(
+    '    reputation ... ' +
+      (reputation === 'flagged'
+        ? 'BLOCKED by Safe Browsing'
+        : reputation === 'inconclusive'
+          ? 'inconclusive (lookups throttled — re-run to confirm)'
+          : 'no flag found')
+  );
 
   if (!loginOk) {
     console.log('');
@@ -453,8 +470,18 @@ async function main() {
     process.exit(2);
   }
 
+  // The lookup endpoint throttles bursts, so no verdict is NOT good news —
+  // reporting success here would be a false "clean" result.
+  if (reputation === 'inconclusive') {
+    console.log('');
+    console.log('  No Safe Browsing verdict came back, so this is NOT a clean bill of health.');
+    console.log('  Re-run in a minute, or check manually:');
+    console.log('    https://transparencyreport.google.com/safe-browsing/search?url=' + host);
+    process.exit(3);
+  }
+
   console.log('');
-  console.log('  All checks passed — the deployment is reachable over HTTPS and rated clean.');
+  console.log('  All checks passed — the deployment is reachable over HTTPS and not flagged.');
   console.log('');
 }
 

@@ -1,0 +1,4 @@
+[session] SUPABASE_DATABASE_URL is not set — sessions are kept in memory. Everyone is logged out on each restart or spin-down, and logins are not shared between instances.
+[session] SUPABASE_DATABASE_URL must be the Supabase Postgres *Session pooler* connection string (port 5432) — the transaction pooler on port 6543 does not work for session storage.
+Uploads folder is ready
+Server running on http://0.0.0.0:10150 (HTTP only, TLS terminated by the platform proxy)

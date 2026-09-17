@@ -59,6 +59,166 @@ app.use('/api/v2/auth/test-login', loginLimiter);
 
 // ===== SESSION =====
 const sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+if (!process.env.SESSION_SECRET) {
+  console.warn(
+    '[session] SESSION_SECRET is not set — a new random secret is generated on every boot, ' +
+      'which invalidates every existing login on each restart. Set SESSION_SECRET in production.'
+  );
+}
+
+// Sessions have to outlive a restart: Render redeploys replace the process, and
+// idle instances spin down. express-session's default in-memory store loses
+// every session each time that happens, which shows up as "I keep getting sent
+// back to the login page". When SUPABASE_DATABASE_URL contains the Supabase
+// Postgres *Session pooler* connection string (port 5432), sessions are stored
+// in Postgres instead.
+//
+// SAFETY: the Postgres store is only activated after a successful connection
+// probe, and any later store error permanently degrades to the in-memory store.
+// A missing, wrong, or unreachable connection string therefore can never break
+// logging in — it only means sessions are not persisted.
+function buildPostgresSession() {
+  const dbUrl = String(process.env.SUPABASE_DATABASE_URL || '').trim();
+  if (!dbUrl) return null;
+
+  try {
+    const PgSessionStore = require('connect-pg-simple')(session);
+    const PgPool = require('pg').Pool;
+    const poolOptions = {
+      connectionString: dbUrl,
+      max: 5,
+      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 30000
+    };
+    // Supabase requires TLS, but only force it when the URL does not say
+    // otherwise (so a local `?sslmode=disable` string still connects).
+    if (!/sslmode=/i.test(dbUrl)) {
+      poolOptions.ssl = { rejectUnauthorized: false };
+    }
+    const pool = new PgPool(poolOptions);
+
+    // connect-pg-simple only attaches this when it creates the pool itself.
+    // Without a handler an idle-client error would be an unhandled 'error'
+    // event and take the whole process down.
+    pool.on('error', (err) => {
+      console.error('[session] Postgres pool error: ' + err.message);
+    });
+
+    const store = new PgSessionStore({
+      pool: pool,
+      tableName: 'session',
+      createTableIfMissing: true,
+      pruneSessionInterval: 900, // seconds
+      errorLog: (err) => {
+        console.error('[session] Postgres store error: ' + (err && err.message ? err.message : err));
+      }
+    });
+
+    return { store: store, pool: pool };
+  } catch (err) {
+    console.error('[session] Could not initialise the Postgres session store: ' + err.message);
+    return null;
+  }
+}
+
+function sessionDbHint() {
+  return (
+    'SUPABASE_DATABASE_URL must be the Supabase Postgres *Session pooler* connection string ' +
+    '(port 5432) — the transaction pooler on port 6543 does not work for session storage.'
+  );
+}
+
+function createSessionStore() {
+  const memoryStore = new session.MemoryStore();
+  const primary = buildPostgresSession();
+
+  if (!primary) {
+    console.warn(
+      '[session] SUPABASE_DATABASE_URL is not set — sessions are kept in memory. Everyone is ' +
+        'logged out on each restart or spin-down, and logins are not shared between instances.'
+    );
+    console.warn('[session] ' + sessionDbHint());
+    return memoryStore;
+  }
+
+  const state = { mode: 'memory' };
+  const store = new session.Store();
+
+  function usingPostgres() {
+    return state.mode === 'postgres';
+  }
+
+  function degrade(err) {
+    if (state.mode === 'memory') return;
+    state.mode = 'memory';
+    console.error('[session] Postgres session store failed: ' + (err && err.message ? err.message : err));
+    console.error('[session] Falling back to in-memory sessions; logins will not persist across restarts.');
+    console.error('[session] ' + sessionDbHint());
+  }
+
+  store.get = function (sid, callback) {
+    if (!usingPostgres()) return memoryStore.get(sid, callback);
+    primary.store.get(sid, (err, sess) => {
+      if (err) {
+        degrade(err);
+        return memoryStore.get(sid, callback);
+      }
+      return callback(null, sess);
+    });
+  };
+
+  store.set = function (sid, sess, callback) {
+    if (!usingPostgres()) return memoryStore.set(sid, sess, callback);
+    primary.store.set(sid, sess, (err) => {
+      if (err) {
+        degrade(err);
+        return memoryStore.set(sid, sess, callback);
+      }
+      return callback(null);
+    });
+  };
+
+  store.touch = function (sid, sess, callback) {
+    if (!usingPostgres()) return memoryStore.touch(sid, sess, callback);
+    primary.store.touch(sid, sess, (err) => {
+      if (err) {
+        degrade(err);
+        return memoryStore.touch(sid, sess, callback);
+      }
+      return callback(null);
+    });
+  };
+
+  // Logout must never wait on the database: clear the in-memory copy and answer
+  // immediately, then delete the persisted copy best-effort so a logged-out
+  // session cannot come back to life if the store is re-promoted or another
+  // instance is serving the same hostname.
+  store.destroy = function (sid, callback) {
+    memoryStore.destroy(sid, () => {
+      if (callback) callback(null);
+    });
+    primary.store.destroy(sid, () => {});
+  };
+
+  // Promote to Postgres only once it has actually answered, so a bad
+  // connection string cannot break logging in. Until then sessions live in
+  // memory, so a session created during that brief window is not persisted;
+  // the window closes long before real traffic arrives.
+  primary.pool
+    .query('select 1')
+    .then(() => {
+      state.mode = 'postgres';
+      console.log('[session] Postgres session store active — logins survive restarts and spin-downs.');
+    })
+    .catch((err) => {
+      console.error('[session] Could not reach the session database: ' + err.message);
+      console.error('[session] Staying on in-memory sessions; logins will not persist across restarts.');
+      console.error('[session] ' + sessionDbHint());
+    });
+
+  return store;
+}
+
 app.use(
   session({
     name: 'crm.template.sid',
@@ -66,15 +226,16 @@ app.use(
     proxy: true,
     resave: false,
     saveUninitialized: false,
-      cookie: {
-        httpOnly: true,
-        sameSite: 'lax',
-        // Allow local HTTP testing unless secure cookies are explicitly enabled.
-        secure: process.env.SESSION_COOKIE_SECURE === 'true',
-        maxAge: 1000 * 60 * 60 * 12
-      }
-    })
-  );
+    store: createSessionStore(),
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      // Allow local HTTP testing unless secure cookies are explicitly enabled.
+      secure: process.env.SESSION_COOKIE_SECURE === 'true',
+      maxAge: 1000 * 60 * 60 * 12
+    }
+  })
+);
 
 function isAuthenticated(req) {
   if (disableAuth) return true;
