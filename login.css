@@ -149,13 +149,11 @@ button {
   color: white;
 }
 
-#login-btn,
-#password-login-btn {
+#login-btn {
   background: var(--primary);
 }
 
-#login-btn:hover,
-#password-login-btn:hover {
+#login-btn:hover {
   background: var(--primary-hover);
 }
 

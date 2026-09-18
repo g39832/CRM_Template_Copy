@@ -8,58 +8,6 @@ document.addEventListener("DOMContentLoaded", () => {
     feedback.className = "feedback show " + (type || "");
   }
 
-  // ===== TEMPORARY password fallback =====
-  const passwordForm = document.getElementById("passwordLoginForm");
-  const passwordInput = document.getElementById("fallback-password");
-  const passwordFeedback = document.getElementById("passwordLoginFeedback");
-  const passwordBtn = document.getElementById("password-login-btn");
-  const showPasswordBtn = document.getElementById("showPasswordFallback");
-
-  if (showPasswordBtn && passwordForm) {
-    showPasswordBtn.addEventListener("click", () => {
-      const isHidden = passwordForm.style.display === "none";
-      passwordForm.style.display = isHidden ? "block" : "none";
-      showPasswordBtn.style.display = isHidden ? "none" : "block";
-      if (isHidden) passwordInput.focus();
-    });
-  }
-
-  function showPasswordFeedback(message, type) {
-    if (!passwordFeedback) return;
-    passwordFeedback.textContent = message;
-    passwordFeedback.className = "feedback show " + (type || "");
-  }
-
-  if (passwordForm) {
-    passwordForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      showPasswordFeedback("", "");
-      const password = passwordInput.value;
-      if (!password) return;
-
-      passwordBtn.disabled = true;
-      try {
-        const res = await fetch("/api/v2/auth/password-login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ password })
-        });
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || "Incorrect password.");
-        }
-        window.location.href = "/main";
-      } catch (err) {
-        console.error("Password login error:", err);
-        showPasswordFeedback(err.message || "Login failed.", "error");
-        passwordInput.value = "";
-        passwordInput.focus();
-      } finally {
-        passwordBtn.disabled = false;
-      }
-    });
-  }
-
   const params = new URLSearchParams(window.location.search);
   if (params.get("error")) {
     showFeedback("Sign-in failed. Please try again.", "error");

@@ -31,21 +31,6 @@
       </button>
 
       <div id="loginFeedback" class="feedback"></div>
-
-      <!-- ===== TEMPORARY password fallback (while Google sign-in isn't
-           configured yet in Supabase Auth). Kept low-key on purpose —
-           remove this block once Google sign-in is set up. ===== -->
-      <div id="passwordFallback" style="margin-top:20px;">
-        <button type="button" id="showPasswordFallback" style="background:none;border:none;color:var(--text-muted);font-size:0.82rem;font-weight:500;cursor:pointer;padding:4px;text-decoration:underline;min-height:auto;">
-          Use a password instead
-        </button>
-        <form id="passwordLoginForm" style="display:none;margin-top:12px;">
-          <label class="sr-only" for="fallback-password">Password</label>
-          <input type="password" id="fallback-password" placeholder="Enter password" autocomplete="current-password">
-          <button type="submit" id="password-login-btn">Sign In</button>
-        </form>
-        <div id="passwordLoginFeedback" class="feedback"></div>
-      </div>
     </div>
   </div>
 

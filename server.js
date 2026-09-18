@@ -54,7 +54,6 @@ const loginLimiter = rateLimit({
   message: { success: false, error: 'Too many login attempts. Try again in 15 minutes.' }
 });
 app.use('/api/v2/auth/google-session', loginLimiter);
-app.use('/api/v2/auth/password-login', loginLimiter);
 app.use('/api/v2/auth/test-login', loginLimiter);
 
 // ===== SESSION =====
