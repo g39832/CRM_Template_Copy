@@ -13,6 +13,7 @@
     "test:complete-flow": "node scripts/test-complete-flow.js",
     "migrate": "node scripts/migrate-v2.js",
     "migrate:v3": "node scripts/migrate-v3-crm-improvements.js",
+    "migrate:v4": "node scripts/migrate-v4-job-notes-files.js",
     "diagnose": "node scripts/diagnose-connection.js",
     "verify:deploy": "node scripts/verify-deploy.js",
     "seed-demo-data": "node scripts/seed-demo-data.js",

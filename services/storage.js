@@ -92,25 +92,31 @@ async function ensureRemoteBucket() {
   await remoteBucketPromise;
 }
 
+// `file` is a multer file object — either memoryStorage (has `.buffer`) or
+// diskStorage (has `.path`, used for large uploads so the whole request
+// body isn't held in memory while it's being received). Either shape works
+// here; disk-backed files are read once, as a single bounded read, right
+// before handing their bytes to the storage backend.
+async function readFileBody(file) {
+  if (file.buffer) return file.buffer;
+  if (file.path) return fs.readFile(file.path);
+  throw new Error('Uploaded file has neither a buffer nor a path');
+}
+
 async function remoteUploadFile(file, objectPath) {
+  const body = await readFileBody(file);
+
   if (isLocalStorageEnabled()) {
     const prefix = path.dirname(objectPath);
     const fileName = path.basename(objectPath);
     await ensureLocalBucket(prefix);
-    await fs.writeFile(localObjectPath(prefix, fileName), file.buffer);
+    await fs.writeFile(localObjectPath(prefix, fileName), body);
     return objectPath;
   }
 
-  console.log('remoteUploadFile called');
-  console.log('Supabase bucket:', SUPABASE_STORAGE_BUCKET);
   await ensureRemoteBucket();
   if (!supabase) {
     throw new Error('Supabase storage is not configured');
-  }
-
-  const body = file.buffer;
-  if (!body) {
-    throw new Error('Missing upload buffer for remote upload');
   }
 
   const { error } = await supabase.storage
@@ -126,6 +132,52 @@ async function remoteUploadFile(file, objectPath) {
   }
 
   return objectPath;
+}
+
+// Signed URL / delete-by-exact-path variants for callers (job_files) that
+// already know the precise storage path from a database row, instead of
+// having to list a whole prefix first.
+async function remoteSignedUrl(objectPath, expiresIn = 60 * 60) {
+  if (isLocalStorageEnabled()) return null;
+  await ensureRemoteBucket();
+  if (!supabase) {
+    throw new Error('Supabase storage is not configured');
+  }
+  const { data, error } = await supabase.storage
+    .from(SUPABASE_STORAGE_BUCKET)
+    .createSignedUrl(objectPath, expiresIn);
+  if (error) {
+    throw new Error(`Remote signed URL failed: ${error.message}`);
+  }
+  return data?.signedUrl || null;
+}
+
+function localFilePathForObject(objectPath) {
+  const prefix = path.dirname(objectPath);
+  const fileName = path.basename(objectPath);
+  return localObjectPath(prefix, fileName);
+}
+
+async function remoteDeleteByPath(objectPath) {
+  if (isLocalStorageEnabled()) {
+    try {
+      await fs.unlink(localFilePathForObject(objectPath));
+      return true;
+    } catch (err) {
+      if (err && err.code === 'ENOENT') return false;
+      throw err;
+    }
+  }
+
+  await ensureRemoteBucket();
+  if (!supabase) {
+    throw new Error('Supabase storage is not configured');
+  }
+  const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET).remove([objectPath]);
+  if (error) {
+    throw new Error(`Remote delete failed: ${error.message}`);
+  }
+  return true;
 }
 
 async function remoteListFiles(prefix) {
@@ -259,5 +311,8 @@ module.exports = {
   ensureRemoteBucket,
   remoteUploadFile,
   remoteListFiles,
-  remoteDeleteFile
+  remoteDeleteFile,
+  remoteSignedUrl,
+  remoteDeleteByPath,
+  localFilePathForObject
 };

@@ -73,9 +73,10 @@ router.post('/', asyncHandler(async (req, res) => {
   const title = parseStringField(req.body.title ?? 'New Job', 'title', { required: false, maxLength: 200, defaultValue: 'New Job' });
   const status = parseStringField(req.body.status ?? 'Prospect', 'status', { required: false, maxLength: 30, defaultValue: 'Prospect' });
   const scopeOfWork = parseStringField(req.body.scope_of_work ?? '', 'scope_of_work', { required: false, maxLength: 5000, defaultValue: '' });
-  // total_due / job_cost are financial fields — only admins may set them
-  // directly on create. Regular users create jobs without pricing.
-  const totalDue = isAdmin(req) ? parseNumberField(req.body.total_due ?? 0, 'total_due', { required: false, defaultValue: 0 }) : 0;
+  // total_due is the job's quoted/contracted total — operational info any
+  // assigned user may enter. job_cost is what the job actually costs (used
+  // to compute margin against total_due) and stays admin-only.
+  const totalDue = parseNumberField(req.body.total_due ?? 0, 'total_due', { required: false, defaultValue: 0 });
   const jobCost = isAdmin(req) ? parseNumberField(req.body.job_cost ?? 0, 'job_cost', { required: false, defaultValue: 0 }) : 0;
   const createdAt = new Date().toISOString();
 
@@ -102,8 +103,9 @@ router.put('/:jobId', asyncHandler(async (req, res) => {
   const status = parseStringField(req.body.status ?? job.status, 'status', { required: false, maxLength: 30, defaultValue: job.status });
   const scopeOfWork = parseStringField(req.body.scope_of_work ?? job.scope_of_work, 'scope_of_work', { required: false, maxLength: 5000, defaultValue: job.scope_of_work });
 
-  // Financial fields (Section 8) — only admins may change these.
-  const totalDue = isAdmin(req) && typeof req.body.total_due !== 'undefined'
+  // total_due (the job's quoted total) is editable by anyone with access to
+  // the job. job_cost (Section 8) stays admin-only since it feeds margin.
+  const totalDue = typeof req.body.total_due !== 'undefined'
     ? parseNumberField(req.body.total_due, 'total_due', { required: false, defaultValue: Number(job.total_due || 0) })
     : Number(job.total_due || 0);
   const amountPaid = Number(job.amount_paid || 0);

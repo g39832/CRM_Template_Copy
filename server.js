@@ -296,6 +296,7 @@ const invoiceRoutes = require('./api/invoice');
 const pdfRoutes = require('./api/pdf');
 const notesRoutes = require('./api/notes');
 const jobsRoutes = require('./api/jobs');
+const jobFilesRoutes = require('./api/job-files');
 const supabaseConfigRoutes = require('./api/supabase-config');
 
 // Mount routers under /api
@@ -307,6 +308,7 @@ app.use('/api/pdf', pdfRoutes);
 app.use('/api/supabase-config', supabaseConfigRoutes);
 app.use('/api/notes', notesRoutes);
 app.use('/api/jobs', jobsRoutes);
+app.use('/api/job-files', jobFilesRoutes);
 
 // ===== V2 API ROUTES =====
 const authSystemRoutes = require('./api/auth-system');
@@ -553,6 +555,9 @@ app.use((err, req, res, next) => {
   }
 
   if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ success: false, error: 'That file is too large (150MB limit per file).' });
+    }
     return res.status(400).json({ success: false, error: err.message });
   }
 
@@ -579,6 +584,11 @@ function startServer(port = process.env.PORT || 10000, host = '0.0.0.0') {
   const server = app.listen(port, host, () => {
     console.log(`Server running on http://${host}:${port} (HTTP only, TLS terminated by the platform proxy)`);
   });
+  // Node's default request/headers timeouts (a few minutes) are too tight for
+  // large photo-report PDFs uploaded over a slow mobile connection — raise
+  // them so a slow upload is not cut off mid-transfer.
+  server.requestTimeout = 10 * 60 * 1000;
+  server.headersTimeout = 10 * 60 * 1000 + 5000;
   return server;
 }
 

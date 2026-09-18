@@ -993,6 +993,89 @@ window.api = {
     return this._downloadDocument(jobId, 'estimate', true);
   },
 
+  // ==========================
+  // JOB NOTES API (separate from client notes — scoped to one job)
+  // ==========================
+  async listJobNotes(jobId) {
+    const res = await fetch(`/api/notes/job/${jobId}`);
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to list job notes'));
+    return res.json();
+  },
+
+  async addJobNote(jobId, content) {
+    const res = await fetch(`/api/notes/job/${jobId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: content })
+    });
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to add job note'));
+    return res.json();
+  },
+
+  async updateJobNote(jobId, noteId, content) {
+    const res = await fetch(`/api/notes/job/${jobId}/${noteId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: content })
+    });
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to update job note'));
+    return res.json();
+  },
+
+  async deleteJobNote(jobId, noteId) {
+    const res = await fetch(`/api/notes/job/${jobId}/${noteId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to delete job note'));
+    return res.json();
+  },
+
+  // ==========================
+  // JOB FILES API — documents and photos are the same storage, kept apart
+  // only by the `category` each file is uploaded/listed under.
+  // ==========================
+  async listJobFiles(jobId, category) {
+    const res = await fetch(`/api/job-files/${jobId}${category ? `?category=${encodeURIComponent(category)}` : ''}`);
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to list files'));
+    return res.json();
+  },
+
+  // XHR (not fetch) so upload progress can be reported for large files.
+  uploadJobFiles(jobId, category, files, onProgress) {
+    return new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append('category', category);
+      Array.from(files).forEach((file) => formData.append('files', file));
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `/api/job-files/${jobId}/upload`);
+      xhr.upload.onprogress = (e) => {
+        if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        let data = null;
+        try { data = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
+        if (xhr.status >= 200 && xhr.status < 300 && data) {
+          resolve(data);
+        } else {
+          reject(new Error((data && (data.error || data.message)) || `Upload failed (HTTP ${xhr.status})`));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Upload failed — check your connection and try again'));
+      xhr.ontimeout = () => reject(new Error('Upload timed out — try again or use a smaller file'));
+      xhr.timeout = 10 * 60 * 1000;
+      xhr.send(formData);
+    });
+  },
+
+  jobFileDownloadUrl(jobId, fileId) {
+    return `/api/job-files/${jobId}/${fileId}/download`;
+  },
+
+  async deleteJobFile(jobId, fileId) {
+    const res = await fetch(`/api/job-files/${jobId}/${fileId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to delete file'));
+    return res.json();
+  },
+
   async getEmailSettings() {
     if (this._emailSettings) return this._emailSettings;
     const res = await fetch('/api/email-settings');
@@ -2000,8 +2083,9 @@ async function openClient(id) {
           </div>
 
           <div class="panel-actions panel-full-span">
+            ${isAdminUser() ? `
             <button id="estimateBtn" class="btn-primary" style="flex:2;">Download Estimate</button>
-            <button id="invoiceBtn" class="btn-primary" style="background:var(--primary); flex:2;">Download Invoice</button>
+            <button id="invoiceBtn" class="btn-primary" style="background:var(--primary); flex:2;">Download Invoice</button>` : ''}
             <button id="reviewBtn" class="btn-primary" style="background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft); flex:2;">Send Google Review</button>
             <button id="saveBtn" class="btn-primary" style="background:var(--primary); flex:2;">Save Changes</button>
             <button id="delBtn" style="background:var(--danger-soft); color:var(--danger); border:1px solid var(--danger-soft); flex:1;">Delete</button>
@@ -2408,7 +2492,11 @@ async function setupJobsSection(clientId) {
 
       jobs.forEach(job => {
         const color = STATUS_COLORS_JOB[job.status] || '#2563eb';
-        const margin = job.total_due > 0
+        const jobCardAdmin = isAdminUser();
+        // amount_paid/balance/job_cost are stripped server-side for regular
+        // users (see api/access-control.js), so margin/balance can only be
+        // shown here for admins — total_due is fine for everyone.
+        const margin = jobCardAdmin && job.total_due > 0
           ? Math.round(((job.total_due - job.job_cost) / job.total_due) * 100)
           : null;
 
@@ -2436,9 +2524,10 @@ async function setupJobsSection(clientId) {
               <div style="font-size:0.9rem;font-weight:700;color:var(--text-main);">
                 $${formatMoney(job.total_due)}
               </div>
+              ${jobCardAdmin ? `
               <div style="font-size:0.78rem;color:var(--text-muted);">
                 Bal: $${formatMoney(job.balance)}
-              </div>
+              </div>` : ''}
             </div>
           </div>
         `;
@@ -2546,6 +2635,12 @@ async function openNewJobModal(clientId) {
         <span class="field-hint">Pre-filled from this client's default scope. Edit freely — it's saved as this job's own copy.</span>
       </div>
 
+      <div class="job-modal-field">
+        <label for="new-job-notes">Notes</label>
+        <textarea id="new-job-notes" rows="4" placeholder="Anything worth noting about this job — site details, customer preferences, follow-ups..."></textarea>
+        <span class="field-hint">Optional. Shows up on this job's Notes section right away.</span>
+      </div>
+
       <div class="job-modal-actions">
         <button id="createJobBtn" class="btn-primary">Add Job</button>
         <button id="cancelNewJobBtn" class="btn-primary" style="background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft);">Cancel</button>
@@ -2595,6 +2690,16 @@ async function openNewJobModal(clientId) {
         total_due: 0,
         job_cost: 0
       });
+
+      const notesText = overlay.querySelector('#new-job-notes').value.trim();
+      if (notesText && result.job) {
+        try {
+          await window.api.addJobNote(result.job.id, notesText);
+        } catch (err) {
+          console.error(err);
+          showToast('Job created, but the note could not be saved', 'error');
+        }
+      }
 
       showToast('Job created', 'success');
       overlay.remove();
@@ -3157,11 +3262,11 @@ function openJobPanel(job, clientId, onSave) {
             ${STATUS_ORDER_JOB.map(s => `<option value="${s}" ${job.status === s ? 'selected' : ''}>${s}</option>`).join('')}
           </select>
         </div>
-        ${admin ? `
         <div class="job-modal-field">
           <label>Total Due</label>
           <input id="job-total" type="text" inputmode="decimal" value="${formatMoney(job.total_due)}">
         </div>
+        ${admin ? `
         <div class="job-modal-field">
           <label>Job Cost</label>
           <input id="job-cost" type="text" inputmode="decimal" value="${formatMoney(job.job_cost)}">
@@ -3226,10 +3331,51 @@ function openJobPanel(job, clientId, onSave) {
         <textarea id="job-scope" rows="5" placeholder="Describe the work for this job...">${escapeHtml(job.scope_of_work || '')}</textarea>
       </div>
 
+      <!-- ===== JOB NOTES — separate from the client-level notes panel ===== -->
+      <div class="job-modal-field job-notes-field">
+        <label>Job Notes</label>
+        <div id="job-notes-list" class="notes-list"></div>
+        <div class="notes-actions">
+          <textarea id="job-new-note-input" placeholder="Add a note..." rows="4"></textarea>
+          <button type="button" id="job-add-note-btn" class="btn-primary add-note-btn" style="background:var(--primary);">Add Note</button>
+        </div>
+      </div>
+
+      <!-- ===== DOCUMENTS — contracts, estimates, invoices, reports ===== -->
+      <div class="job-modal-field job-files-field">
+        <label>Documents</label>
+        <span class="field-hint">Contracts, estimates, invoices, reports, and other business PDFs.</span>
+        <div id="job-documents-list" class="job-files-list"></div>
+        <div class="job-files-upload-row">
+          <input type="file" id="job-documents-input" multiple hidden accept=".pdf,.doc,.docx,.xls,.xlsx,application/pdf">
+          <button type="button" id="job-documents-upload-btn" class="panel-secondary-btn">Upload Document</button>
+        </div>
+        <div id="job-documents-progress" class="job-file-progress" hidden>
+          <div class="job-file-progress-track"><div class="job-file-progress-bar"></div></div>
+          <span class="job-file-progress-label"></span>
+        </div>
+      </div>
+
+      <!-- ===== PHOTOS — job/progress/site photo documentation ===== -->
+      <div class="job-modal-field job-files-field">
+        <label>Photos</label>
+        <span class="field-hint">Job photos, progress photos, and photo documentation.</span>
+        <div id="job-photos-list" class="job-files-list job-photos-grid"></div>
+        <div class="job-files-upload-row">
+          <input type="file" id="job-photos-input" multiple hidden accept="image/*">
+          <button type="button" id="job-photos-upload-btn" class="panel-secondary-btn">Upload Photos</button>
+        </div>
+        <div id="job-photos-progress" class="job-file-progress" hidden>
+          <div class="job-file-progress-track"><div class="job-file-progress-bar"></div></div>
+          <span class="job-file-progress-label"></span>
+        </div>
+      </div>
+
       <div class="job-modal-actions">
         <button id="job-save-btn" class="btn-primary" style="background:var(--primary);">Save Job</button>
+        ${admin ? `
         <button id="job-estimate-btn" class="btn-primary">Download Estimate</button>
-        <button id="job-invoice-btn" class="btn-primary" style="background:var(--primary);">Download Invoice</button>
+        <button id="job-invoice-btn" class="btn-primary" style="background:var(--primary);">Download Invoice</button>` : ''}
         <button id="job-delete-btn" class="btn-primary" style="background:#4a5568;">Delete</button>
       </div>
     </div>
@@ -3303,6 +3449,11 @@ function openJobPanel(job, clientId, onSave) {
     setupJobLineItems(overlay, job.id);
   }
 
+  // ===== Job notes, documents, photos =====
+  setupJobNotesSection(overlay, job.id);
+  setupJobFilesSection(overlay, job.id, 'document');
+  setupJobFilesSection(overlay, job.id, 'photo');
+
   // Save
   overlay.querySelector('#job-save-btn').onclick = async () => {
     const btn = overlay.querySelector('#job-save-btn');
@@ -3311,10 +3462,10 @@ function openJobPanel(job, clientId, onSave) {
       const payload = {
         title: overlay.querySelector('#job-title').value.trim() || 'New Job',
         status: overlay.querySelector('#job-status').value,
-        scope_of_work: overlay.querySelector('#job-scope').value
+        scope_of_work: overlay.querySelector('#job-scope').value,
+        total_due: parseMoney(overlay.querySelector('#job-total')?.value) || 0
       };
       if (admin) {
-        payload.total_due = parseMoney(overlay.querySelector('#job-total')?.value) || 0;
         payload.job_cost = parseMoney(overlay.querySelector('#job-cost')?.value) || 0;
       }
       await window.api.updateJob(job.id, payload);
@@ -3347,33 +3498,36 @@ function openJobPanel(job, clientId, onSave) {
     };
   }
 
-  // Estimate
-  overlay.querySelector('#job-estimate-btn').onclick = async () => {
-    const btn = overlay.querySelector('#job-estimate-btn');
-    try {
-      btn.disabled = true; btn.textContent = 'Downloading...';
-      await window.api.sendJobEstimate(job.id);
-      showToast('Estimate downloaded', 'success');
-    } catch (err) {
-      showToast(err.message || 'Failed to generate estimate', 'error');
-    } finally {
-      btn.disabled = false; btn.textContent = 'Download Estimate';
-    }
-  };
+  // Estimate / Invoice (admin only — buttons don't exist otherwise)
+  const jobEstimateBtn = overlay.querySelector('#job-estimate-btn');
+  if (jobEstimateBtn) {
+    jobEstimateBtn.onclick = async () => {
+      try {
+        jobEstimateBtn.disabled = true; jobEstimateBtn.textContent = 'Downloading...';
+        await window.api.sendJobEstimate(job.id);
+        showToast('Estimate downloaded', 'success');
+      } catch (err) {
+        showToast(err.message || 'Failed to generate estimate', 'error');
+      } finally {
+        jobEstimateBtn.disabled = false; jobEstimateBtn.textContent = 'Download Estimate';
+      }
+    };
+  }
 
-  // Invoice
-  overlay.querySelector('#job-invoice-btn').onclick = async () => {
-    const btn = overlay.querySelector('#job-invoice-btn');
-    try {
-      btn.disabled = true; btn.textContent = 'Downloading...';
-      await window.api.sendJobInvoice(job.id);
-      showToast('Invoice downloaded', 'success');
-    } catch (err) {
-      showToast(err.message || 'Failed to generate invoice', 'error');
-    } finally {
-      btn.disabled = false; btn.textContent = 'Download Invoice';
-    }
-  };
+  const jobInvoiceBtn = overlay.querySelector('#job-invoice-btn');
+  if (jobInvoiceBtn) {
+    jobInvoiceBtn.onclick = async () => {
+      try {
+        jobInvoiceBtn.disabled = true; jobInvoiceBtn.textContent = 'Downloading...';
+        await window.api.sendJobInvoice(job.id);
+        showToast('Invoice downloaded', 'success');
+      } catch (err) {
+        showToast(err.message || 'Failed to generate invoice', 'error');
+      } finally {
+        jobInvoiceBtn.disabled = false; jobInvoiceBtn.textContent = 'Download Invoice';
+      }
+    };
+  }
 
   // Delete
   overlay.querySelector('#job-delete-btn').onclick = async () => {
@@ -3387,6 +3541,231 @@ function openJobPanel(job, clientId, onSave) {
       showToast('Failed to delete job', 'error');
     }
   };
+}
+
+// ======================================================
+// JOB NOTES — same pattern as the client notes panel, scoped to one job.
+// ======================================================
+async function setupJobNotesSection(overlay, jobId) {
+  const notesList = overlay.querySelector('#job-notes-list');
+  const newNoteInput = overlay.querySelector('#job-new-note-input');
+  const addNoteBtn = overlay.querySelector('#job-add-note-btn');
+  if (!notesList || !newNoteInput || !addNoteBtn) return;
+
+  async function loadNotes() {
+    notesList.innerHTML = '<div class="field-hint">Loading notes...</div>';
+    try {
+      const data = await window.api.listJobNotes(jobId);
+      const notes = data.notes || [];
+      if (!notes.length) {
+        notesList.innerHTML = `<div class="field-hint">No notes yet.</div>`;
+        return;
+      }
+      notesList.innerHTML = '';
+      notes.forEach((note) => {
+        const noteDiv = document.createElement('div');
+        noteDiv.className = 'job-note-row';
+
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'job-note-content';
+        contentDiv.innerText = note.content || '';
+
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'job-note-action-btn';
+        editBtn.innerText = 'Edit';
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'job-note-action-btn job-note-delete-btn';
+        deleteBtn.innerText = 'Delete';
+
+        editBtn.onclick = () => {
+          const textarea = document.createElement('textarea');
+          textarea.className = 'job-note-edit-textarea';
+          textarea.value = note.content || '';
+          textarea.rows = 4;
+
+          const saveBtn = document.createElement('button');
+          saveBtn.type = 'button';
+          saveBtn.className = 'job-note-action-btn';
+          saveBtn.innerText = 'Save';
+
+          const cancelBtn = document.createElement('button');
+          cancelBtn.type = 'button';
+          cancelBtn.className = 'job-note-action-btn';
+          cancelBtn.innerText = 'Cancel';
+
+          noteDiv.replaceChild(textarea, contentDiv);
+          noteDiv.insertBefore(saveBtn, editBtn);
+          noteDiv.insertBefore(cancelBtn, editBtn);
+          editBtn.style.display = 'none';
+          deleteBtn.style.display = 'none';
+
+          cancelBtn.onclick = () => loadNotes();
+          saveBtn.onclick = async () => {
+            const trimmed = textarea.value.trim();
+            if (!trimmed) { showToast('Note cannot be empty', 'error'); return; }
+            try {
+              await window.api.updateJobNote(jobId, note.id, trimmed);
+              loadNotes();
+            } catch (err) {
+              console.error(err);
+              showToast('Failed to update note', 'error');
+            }
+          };
+        };
+
+        deleteBtn.onclick = async () => {
+          if (!confirm('Delete this note?')) return;
+          try {
+            await window.api.deleteJobNote(jobId, note.id);
+            loadNotes();
+          } catch (err) {
+            console.error(err);
+            showToast('Failed to delete note', 'error');
+          }
+        };
+
+        noteDiv.appendChild(contentDiv);
+        noteDiv.appendChild(editBtn);
+        noteDiv.appendChild(deleteBtn);
+        notesList.appendChild(noteDiv);
+      });
+    } catch (err) {
+      console.error(err);
+      notesList.innerHTML = `<div class="field-hint">Failed to load notes.</div>`;
+    }
+  }
+
+  addNoteBtn.onclick = async () => {
+    const content = newNoteInput.value.trim();
+    if (!content) { showToast('Cannot add empty note', 'error'); return; }
+    try {
+      addNoteBtn.disabled = true;
+      await window.api.addJobNote(jobId, content);
+      newNoteInput.value = '';
+      loadNotes();
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to add note', 'error');
+    } finally {
+      addNoteBtn.disabled = false;
+    }
+  };
+
+  loadNotes();
+}
+
+// ======================================================
+// JOB FILES — Documents and Photos are the same upload/list/delete flow,
+// kept visually and functionally separate purely by `category` so the two
+// never end up mixed in one generic file list.
+// ======================================================
+function formatFileSize(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function setupJobFilesSection(overlay, jobId, category) {
+  const isPhoto = category === 'photo';
+  const listEl = overlay.querySelector(isPhoto ? '#job-photos-list' : '#job-documents-list');
+  const uploadBtn = overlay.querySelector(isPhoto ? '#job-photos-upload-btn' : '#job-documents-upload-btn');
+  const fileInput = overlay.querySelector(isPhoto ? '#job-photos-input' : '#job-documents-input');
+  const progressEl = overlay.querySelector(isPhoto ? '#job-photos-progress' : '#job-documents-progress');
+  if (!listEl || !uploadBtn || !fileInput) return;
+
+  const progressBar = progressEl ? progressEl.querySelector('.job-file-progress-bar') : null;
+  const progressLabel = progressEl ? progressEl.querySelector('.job-file-progress-label') : null;
+
+  function setProgress(pct, label) {
+    if (!progressEl) return;
+    progressEl.hidden = false;
+    if (progressBar) progressBar.style.width = `${pct}%`;
+    if (progressLabel) progressLabel.textContent = label;
+  }
+  function hideProgress() {
+    if (progressEl) progressEl.hidden = true;
+  }
+
+  async function loadFiles() {
+    listEl.innerHTML = `<div class="field-hint">Loading ${isPhoto ? 'photos' : 'documents'}...</div>`;
+    try {
+      const data = await window.api.listJobFiles(jobId, category);
+      const files = data.files || [];
+      if (!files.length) {
+        listEl.innerHTML = `<div class="field-hint">No ${isPhoto ? 'photos' : 'documents'} yet.</div>`;
+        return;
+      }
+      listEl.innerHTML = '';
+      files.forEach((file) => {
+        const row = document.createElement(isPhoto ? 'a' : 'div');
+        row.className = isPhoto ? 'job-photo-thumb' : 'job-file-row';
+        const url = window.api.jobFileDownloadUrl(jobId, file.id);
+
+        if (isPhoto) {
+          row.href = url;
+          row.target = '_blank';
+          row.rel = 'noopener';
+          row.innerHTML = `
+            <img src="${url}" alt="${escapeHtml(file.file_name)}" loading="lazy">
+            <button type="button" class="job-file-delete-btn" title="Delete photo">&times;</button>
+          `;
+        } else {
+          row.innerHTML = `
+            <a href="${url}" target="_blank" rel="noopener" class="job-file-name">📄 ${escapeHtml(file.file_name)}</a>
+            <span class="job-file-meta">${formatFileSize(file.size_bytes)}</span>
+            <button type="button" class="job-file-delete-btn" title="Delete document">&times;</button>
+          `;
+        }
+
+        row.querySelector('.job-file-delete-btn').addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!confirm(`Delete this ${isPhoto ? 'photo' : 'document'}?`)) return;
+          try {
+            await window.api.deleteJobFile(jobId, file.id);
+            loadFiles();
+          } catch (err) {
+            console.error(err);
+            showToast(`Failed to delete ${isPhoto ? 'photo' : 'document'}`, 'error');
+          }
+        });
+
+        listEl.appendChild(row);
+      });
+    } catch (err) {
+      console.error(err);
+      listEl.innerHTML = `<div class="field-hint">Failed to load ${isPhoto ? 'photos' : 'documents'}.</div>`;
+    }
+  }
+
+  uploadBtn.onclick = () => fileInput.click();
+
+  fileInput.addEventListener('change', async () => {
+    const files = fileInput.files;
+    if (!files || !files.length) return;
+    uploadBtn.disabled = true;
+    setProgress(0, `Uploading ${files.length} file${files.length > 1 ? 's' : ''}...`);
+    try {
+      await window.api.uploadJobFiles(jobId, category, files, (pct) => {
+        setProgress(pct, `Uploading... ${pct}%`);
+      });
+      showToast(`${isPhoto ? 'Photo' : 'Document'}${files.length > 1 ? 's' : ''} uploaded`, 'success');
+      loadFiles();
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || `Failed to upload ${isPhoto ? 'photos' : 'documents'}`, 'error');
+    } finally {
+      uploadBtn.disabled = false;
+      fileInput.value = '';
+      hideProgress();
+    }
+  });
+
+  loadFiles();
 }
 
 // ======================================================

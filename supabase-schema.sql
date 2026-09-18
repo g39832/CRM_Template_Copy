@@ -474,3 +474,54 @@ CREATE TABLE IF NOT EXISTS public.session (
 CREATE INDEX IF NOT EXISTS session_expire_idx ON public.session (expire);
 
 NOTIFY pgrst, 'reload schema';
+
+-- =============================================================
+-- TEMPLATE UPGRADE v4: job-level notes, and a proper documents/photos
+-- attachment system for jobs (separate from the older per-client PDF
+-- upload feature, which is untouched and keeps working as-is).
+--
+-- Purely additive: a new nullable column and a new table. Nothing here
+-- drops a column, drops a table, or deletes a row. Safe to run multiple
+-- times.
+-- =============================================================
+
+-- ---- NOTES: optional job scoping ------------------------------
+-- Existing notes stay client-only (job_id left null). A note created from
+-- a job's own Notes section gets both job_id and its parent client_id set,
+-- so it shows up on that job specifically rather than in the client-level
+-- notes list.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'notes' AND column_name = 'job_id'
+  ) THEN
+    ALTER TABLE public.notes ADD COLUMN job_id BIGINT REFERENCES public.jobs(id) ON DELETE CASCADE;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS notes_job_id_idx ON public.notes (job_id);
+
+-- ---- JOB FILES: documents vs. photos, with real metadata -------
+-- One row per uploaded file. `category` is what keeps Documents and
+-- Photos visually and functionally separate on the job page — storage_path
+-- is the exact object path in the configured storage backend (Supabase
+-- Storage, or the local uploads/ folder in dev), so listing/downloading a
+-- file never has to re-derive it from a filename convention.
+CREATE TABLE IF NOT EXISTS public.job_files (
+  id BIGSERIAL PRIMARY KEY,
+  job_id BIGINT NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  client_id BIGINT NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+  category TEXT NOT NULL DEFAULT 'document' CHECK (category IN ('document', 'photo')),
+  file_name TEXT NOT NULL,
+  storage_path TEXT NOT NULL,
+  mime_type TEXT DEFAULT '',
+  size_bytes BIGINT DEFAULT 0,
+  uploaded_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS job_files_job_id_idx ON public.job_files (job_id);
+CREATE INDEX IF NOT EXISTS job_files_category_idx ON public.job_files (job_id, category);
+
+NOTIFY pgrst, 'reload schema';

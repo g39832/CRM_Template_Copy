@@ -5,7 +5,7 @@ const { getClient } = require('./db-v2');
 const { asyncHandler, AppError } = require('./request-utils');
 const { buildInvoiceData, generateInvoicePDF } = require('../services/invoice');
 const { normalizeCompanyProfile } = require('../services/company-profile');
-const { canAccessClient } = require('./access-control');
+const { canAccessClient, requireAdmin } = require('./access-control');
 
 const router = express.Router();
 
@@ -99,11 +99,14 @@ async function handleDocumentGeneration(req, res, mode) {
   }
 }
 
-router.post('/send-invoice/:clientId', asyncHandler((req, res) =>
+// Invoice/estimate PDFs embed total_due/amount_paid/balance — the same
+// financial fields regular users never receive from the JSON API — so
+// generating one is admin-only, same as every other financial surface.
+router.post('/send-invoice/:clientId', requireAdmin, asyncHandler((req, res) =>
   handleDocumentGeneration(req, res, 'invoice')
 ));
 
-router.post('/send-estimate/:clientId', asyncHandler((req, res) =>
+router.post('/send-estimate/:clientId', requireAdmin, asyncHandler((req, res) =>
   handleDocumentGeneration(req, res, 'estimate')
 ));
 
@@ -184,11 +187,11 @@ async function handleJobDocumentGeneration(req, res, mode) {
   }
 }
 
-router.post('/jobs/:jobId/invoice', asyncHandler((req, res) =>
+router.post('/jobs/:jobId/invoice', requireAdmin, asyncHandler((req, res) =>
   handleJobDocumentGeneration(req, res, 'invoice')
 ));
 
-router.post('/jobs/:jobId/estimate', asyncHandler((req, res) =>
+router.post('/jobs/:jobId/estimate', requireAdmin, asyncHandler((req, res) =>
   handleJobDocumentGeneration(req, res, 'estimate')
 ));
 
