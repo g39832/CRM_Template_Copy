@@ -117,48 +117,42 @@ router.get('/search/filtered', asyncHandler(async (req, res) => {
   var revenueMax = req.query.revenueMax ? Number(req.query.revenueMax) : null;
 
   await db.schemaReady;
-  var conditions = [];
-  var params = [];
-  var pIdx = 1;
+
+  // db.js's query() only recognizes a fixed set of exact SQL strings (see
+  // api/db.js) — it can't handle this route's conditionally-built WHERE
+  // clause, so this goes straight through the real Supabase client instead.
+  const supabase = getClient();
+  if (!supabase) throw new AppError(503, 'Database not configured');
+
+  let query = supabase.from('clients').select('*');
 
   if (term) {
-    var like = '%' + term + '%';
-    conditions.push('(clients.name ILIKE $' + pIdx + ' OR clients.phone ILIKE $' + (pIdx + 1) + ' OR clients.email ILIKE $' + (pIdx + 2) + ' OR clients.address ILIKE $' + (pIdx + 3) + ')');
-    params.push(like, like, like, like);
-    pIdx += 4;
+    const like = `%${term}%`;
+    query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like},address.ilike.${like}`);
   }
   if (clientType === 'one-off' || clientType === 'recurring') {
-    conditions.push('clients.client_type = $' + pIdx++);
-    params.push(clientType);
+    query = query.eq('client_type', clientType);
   }
   if (status) {
-    conditions.push('clients.status = $' + pIdx++);
-    params.push(status);
+    query = query.eq('status', status);
   }
   if (dateFrom) {
-    conditions.push('clients.created_at >= $' + pIdx++);
-    params.push(dateFrom);
+    query = query.gte('created_at', dateFrom);
   }
   if (dateTo) {
-    conditions.push('clients.created_at <= $' + pIdx++ + '::date + interval \'1 day\'');
-    params.push(dateTo);
+    query = query.lt('created_at', dateTo + 'T23:59:59.999');
   }
   if (revenueMin !== null && Number.isFinite(revenueMin)) {
-    conditions.push('clients.total_due >= $' + pIdx++);
-    params.push(revenueMin);
+    query = query.gte('total_due', revenueMin);
   }
   if (revenueMax !== null && Number.isFinite(revenueMax)) {
-    conditions.push('clients.total_due <= $' + pIdx++);
-    params.push(revenueMax);
+    query = query.lte('total_due', revenueMax);
   }
 
-  var sql = 'SELECT * FROM clients';
-  if (conditions.length) sql += ' WHERE ' + conditions.join(' AND ');
-  sql += ' ORDER BY clients.created_at DESC LIMIT $' + pIdx++ + ' OFFSET $' + pIdx;
-  params.push(500, 0);
+  const { data, error } = await query.order('created_at', { ascending: false }).limit(500);
+  if (error) throw new AppError(500, 'Filtered search failed: ' + error.message);
 
-  var { rows } = await db.query(sql, params);
-  return res.json(sanitizeClients(req, filterClientsForUser(req, rows)));
+  return res.json(sanitizeClients(req, filterClientsForUser(req, data || [])));
 }));
 
 router.get('/search', asyncHandler(async (req, res) => {

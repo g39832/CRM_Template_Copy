@@ -8,12 +8,12 @@
 // regardless of what the frontend shows or hides.
 
 const FINANCIAL_CLIENT_FIELDS = ['total_due', 'amount_paid', 'balance', 'job_cost'];
-// Jobs are more permissive than clients: regular users manage the day-to-day
-// operational side of a job, including its quoted total (total_due), so that
-// field is NOT stripped here. Money actually received (amount_paid/balance)
-// and cost/margin data (job_cost, which total_due is compared against to
-// compute margin) stay admin-only.
-const FINANCIAL_JOB_FIELDS = ['amount_paid', 'balance', 'job_cost'];
+// Jobs are more permissive than clients: a regular user needs enough
+// financial info to tell a customer their balance, so total_due/amount_paid/
+// balance are NOT stripped here. Only job_cost stays hidden — it is the
+// internal cost figure that, combined with total_due, would let someone
+// derive profit/margin, which must stay admin-only.
+const FINANCIAL_JOB_FIELDS = ['job_cost'];
 
 function isAdmin(req) {
   return Boolean(req.session && req.session.user && req.session.user.role === 'admin');

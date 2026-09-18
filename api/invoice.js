@@ -187,11 +187,16 @@ async function handleJobDocumentGeneration(req, res, mode) {
   }
 }
 
-router.post('/jobs/:jobId/invoice', requireAdmin, asyncHandler((req, res) =>
+// Job-scoped invoice/estimate PDFs only ever show total_due/amount_paid/
+// balance and the customer-facing line-item pricing (see buildInvoiceData/
+// generateInvoicePDF) — never job_cost, profit, or margin — so a regular
+// user with access to the job may generate one. Ownership is still
+// enforced inside handleJobDocumentGeneration via canAccessClient.
+router.post('/jobs/:jobId/invoice', asyncHandler((req, res) =>
   handleJobDocumentGeneration(req, res, 'invoice')
 ));
 
-router.post('/jobs/:jobId/estimate', requireAdmin, asyncHandler((req, res) =>
+router.post('/jobs/:jobId/estimate', asyncHandler((req, res) =>
   handleJobDocumentGeneration(req, res, 'estimate')
 ));
 

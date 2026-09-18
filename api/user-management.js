@@ -13,6 +13,21 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// Multiple admins per company are allowed, but a company must always keep
+// at least one — this counts how many would remain after excluding a given
+// user (used before a demotion/deletion to make sure it wouldn't zero them out).
+async function countAdmins(supabase, companyId, excludeUserId) {
+  var query = supabase
+    .from('users')
+    .select('id', { count: 'exact', head: true })
+    .eq('company_id', companyId)
+    .eq('role', 'admin');
+  if (excludeUserId) query = query.neq('id', excludeUserId);
+  var { count, error } = await query;
+  if (error) throw new AppError(500, 'Failed to check admin count: ' + error.message);
+  return count || 0;
+}
+
 router.get('/users', requireAdmin, asyncHandler(async (req, res) => {
   const supabase = getClient();
   if (!supabase) throw new AppError(503, 'Database not configured');
@@ -32,10 +47,7 @@ router.post('/users', requireAdmin, asyncHandler(async (req, res) => {
   var email = parseStringField(req.body.email, 'email', { maxLength: 255 }).toLowerCase();
   var password = parseStringField(req.body.password, 'password', { minLength: 6, maxLength: 128 });
   var displayName = parseStringField(req.body.displayName || req.body.display_name || '', 'displayName', { required: false, maxLength: 100, defaultValue: '' });
-  var role = 'user';
-  if (req.body.role === 'admin') {
-    throw new AppError(400, 'Only one admin account is allowed per company. Create a user account instead.');
-  }
+  var role = req.body.role === 'admin' ? 'admin' : 'user';
 
   var passwordHash = bcrypt.hashSync(password, 10);
 
@@ -76,10 +88,22 @@ router.put('/users/:id', requireAdmin, asyncHandler(async (req, res) => {
     updates.display_name = parseStringField(req.body.displayName || req.body.display_name, 'displayName', { required: false, maxLength: 100, defaultValue: '' });
   }
   if (req.body.role) {
-    if (req.body.role === 'admin') {
-      throw new AppError(400, 'Only one admin account is allowed per company.');
+    var requestedRole = req.body.role === 'admin' ? 'admin' : 'user';
+    if (requestedRole === 'user') {
+      var { data: targetUser } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', id)
+        .eq('company_id', req.session.user.companyId)
+        .maybeSingle();
+      if (targetUser && targetUser.role === 'admin') {
+        var remainingAdmins = await countAdmins(supabase, req.session.user.companyId, id);
+        if (remainingAdmins === 0) {
+          throw new AppError(400, 'Cannot remove the last admin. Promote another user to admin first.');
+        }
+      }
     }
-    updates.role = 'user';
+    updates.role = requestedRole;
   }
   if (req.body.password) {
     updates.password_hash = bcrypt.hashSync(parseStringField(req.body.password, 'password', { minLength: 6, maxLength: 128 }), 10);
@@ -121,7 +145,12 @@ router.delete('/users/:id', requireAdmin, asyncHandler(async (req, res) => {
     .single();
 
   if (!existing) throw new AppError(404, 'User not found');
-  if (existing.role === 'admin') throw new AppError(400, 'Cannot delete the admin user');
+  if (existing.role === 'admin') {
+    var remainingAdmins = await countAdmins(supabase, req.session.user.companyId, id);
+    if (remainingAdmins === 0) {
+      throw new AppError(400, 'Cannot delete the last admin. Promote another user to admin first.');
+    }
+  }
 
   var { error } = await supabase
     .from('users')

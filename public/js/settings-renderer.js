@@ -361,20 +361,46 @@
           var roleBadge = u.role === 'admin'
             ? '<span style="background:rgba(37,99,235,0.2);color:#60a5fa;padding:2px 10px;border-radius:999px;font-size:0.78rem;font-weight:600;">Admin</span>'
             : '<span style="background:rgba(255,255,255,0.06);color:#94a3b8;padding:2px 10px;border-radius:999px;font-size:0.78rem;font-weight:600;">User</span>';
+          var roleToggleLabel = u.role === 'admin' ? 'Remove Admin' : 'Make Admin';
+          var roleToggleTarget = u.role === 'admin' ? 'user' : 'admin';
           html += '<tr style="border-bottom:1px solid rgba(122,183,214,0.08);">' +
             '<td style="padding:10px 8px;">' + escapeHtml(u.display_name || '—') + '</td>' +
             '<td style="padding:10px 8px;color:#94a3b8;">' + escapeHtml(u.email) + '</td>' +
             '<td style="padding:10px 8px;">' + roleBadge + '</td>' +
             '<td style="padding:10px 8px;color:#94a3b8;font-size:0.82rem;">' + created + '</td>' +
-            '<td style="padding:10px 8px;text-align:center;">';
-          if (u.role !== 'admin') {
-            html += '<button type="button" class="delete-user-btn" data-id="' + u.id + '" data-email="' + escapeHtml(u.email) + '" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;">Delete</button>';
-          } else {
-            html += '<span style="color:#94a3b8;font-size:0.78rem;">—</span>';
-          }
-          html += '</td></tr>';
+            '<td style="padding:10px 8px;text-align:center;white-space:nowrap;">' +
+            '<button type="button" class="role-toggle-btn" data-id="' + u.id + '" data-role="' + roleToggleTarget + '" style="background:rgba(37,99,235,0.15);color:#60a5fa;border:1px solid rgba(37,99,235,0.3);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;margin-right:6px;">' + roleToggleLabel + '</button>' +
+            '<button type="button" class="delete-user-btn" data-id="' + u.id + '" data-email="' + escapeHtml(u.email) + '" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;">Delete</button>' +
+            '</td></tr>';
         });
         tbody.innerHTML = html;
+
+        tbody.querySelectorAll('.role-toggle-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var id = this.getAttribute('data-id');
+            var newRole = this.getAttribute('data-role');
+            var verb = newRole === 'admin' ? 'promote this user to admin' : 'remove admin access from this user';
+            if (!confirm('Are you sure you want to ' + verb + '?')) return;
+            var roleXhr = new XMLHttpRequest();
+            roleXhr.open('PUT', USERS_API + '/' + id, true);
+            roleXhr.setRequestHeader('Content-Type', 'application/json');
+            roleXhr.onload = function () {
+              if (roleXhr.status >= 200 && roleXhr.status < 300) {
+                showSuccess(newRole === 'admin' ? 'User promoted to admin' : 'Admin access removed');
+                loadUsers();
+              } else {
+                try {
+                  var errResp = JSON.parse(roleXhr.responseText);
+                  showError(errResp.error || 'Failed to update role');
+                } catch (_) {
+                  showError('Failed to update role');
+                }
+              }
+            };
+            roleXhr.onerror = function () { showError('Network error'); };
+            roleXhr.send(JSON.stringify({ role: newRole }));
+          });
+        });
 
         tbody.querySelectorAll('.delete-user-btn').forEach(function (btn) {
           btn.addEventListener('click', function () {

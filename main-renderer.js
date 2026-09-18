@@ -1653,6 +1653,7 @@ if (applyFilterBtn) {
     };
     _filterActive = true;
     refreshList();
+    renderQuickFilterIndicator();
   });
 }
 
@@ -1667,7 +1668,54 @@ if (clearFilterBtn) {
     _filterState = { type: '', status: '', dateFrom: '', dateTo: '', revenueMin: '', revenueMax: '' };
     _filterActive = false;
     refreshList();
+    renderQuickFilterIndicator();
   });
+}
+
+// ======================================================
+// QUICK FILTER (Section 3) — clicking a status or type badge on a client
+// card filters the list to that value, reusing the same advanced-filter
+// state/endpoint above rather than a separate filtering system.
+// ======================================================
+function applyQuickFilter(field, value) {
+  if (!value) return;
+  const onlyFieldSet = _filterActive && _filterState[field] === value &&
+    Object.keys(_filterState).every((k) => k === field || !_filterState[k]);
+  if (onlyFieldSet) {
+    clearQuickFilter();
+    return;
+  }
+  _filterState = { type: '', status: '', dateFrom: '', dateTo: '', revenueMin: '', revenueMax: '' };
+  _filterState[field] = value;
+  _filterActive = true;
+  if (field === 'status' && filterStatus) filterStatus.value = value;
+  if (field === 'type' && filterType) filterType.value = value;
+  refreshList();
+  renderQuickFilterIndicator();
+}
+
+function clearQuickFilter() {
+  _filterState = { type: '', status: '', dateFrom: '', dateTo: '', revenueMin: '', revenueMax: '' };
+  _filterActive = false;
+  if (filterStatus) filterStatus.value = '';
+  if (filterType) filterType.value = '';
+  refreshList();
+  renderQuickFilterIndicator();
+}
+
+function renderQuickFilterIndicator() {
+  const bar = document.getElementById('quickFilterBar');
+  if (!bar) return;
+  if (!_filterActive) {
+    bar.style.display = 'none';
+    bar.innerHTML = '';
+    return;
+  }
+  const label = _filterState.status || _filterState.type || 'Custom filter';
+  bar.style.display = 'flex';
+  bar.innerHTML = `<span>Filtering by <strong>${escapeHtml(label)}</strong></span><button type="button" id="clearQuickFilterBtn">&times; Clear</button>`;
+  const clearBtn = document.getElementById('clearQuickFilterBtn');
+  if (clearBtn) clearBtn.onclick = clearQuickFilter;
 }
 
 // ======================================================
@@ -1780,9 +1828,9 @@ function buildClientCard(c, term = "") {
 
   var clientTypeBadge = '';
   if (c.client_type === 'recurring') {
-    clientTypeBadge = '<span class="client-type-badge recurring">Recurring</span>';
+    clientTypeBadge = '<span class="client-type-badge recurring" data-filter-type="recurring" title="Filter clients by Recurring">Recurring</span>';
   } else if (c.client_type === 'one-off') {
-    clientTypeBadge = '<span class="client-type-badge one-off">One-Off</span>';
+    clientTypeBadge = '<span class="client-type-badge one-off" data-filter-type="one-off" title="Filter clients by One-Off">One-Off</span>';
   }
 
   // Portal link badge — only shown for recurring clients when
@@ -1815,7 +1863,7 @@ function buildClientCard(c, term = "") {
 
       ${c.email ? `<div class="client-meta" style="font-size:0.82rem; opacity:0.8;">✉️ ${c.email}</div>` : ''}
 
-      <div class="client-status" style="color:${color};">
+      <div class="client-status" style="color:${color};" data-filter-status="${escapeHtml(c.status || "Lead")}" title="Filter clients by this status">
         ${escapeHtml(c.status || "Lead")}
       </div>
     </div>
@@ -2088,7 +2136,7 @@ async function openClient(id) {
             <button id="invoiceBtn" class="btn-primary" style="background:var(--primary); flex:2;">Download Invoice</button>` : ''}
             <button id="reviewBtn" class="btn-primary" style="background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft); flex:2;">Send Google Review</button>
             <button id="saveBtn" class="btn-primary" style="background:var(--primary); flex:2;">Save Changes</button>
-            <button id="delBtn" style="background:var(--danger-soft); color:var(--danger); border:1px solid var(--danger-soft); flex:1;">Delete</button>
+            <button id="delBtn" class="btn-primary" style="background:var(--danger-soft); color:var(--danger); border:1px solid var(--danger-soft); flex:1;">Delete</button>
             <button id="printBtn" class="btn-primary" style="background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft); flex:1;">Print</button>
           </div>
 
@@ -2227,6 +2275,33 @@ function setupFinancialSection(client) {
   };
 }
 
+// If the client panel is closed with a valid, unsubmitted amount still sitting
+// in the Payment input (i.e. the user typed one but never clicked "Add
+// Payment"), save it before closing instead of silently discarding it. A
+// blank/invalid input is left alone — no record is created.
+async function autoSavePendingClientPayment() {
+  const paymentInput = document.getElementById("paymentInput");
+  if (!paymentInput || !activeId) return;
+  const raw = paymentInput.value.trim();
+  if (!raw) return;
+  const amount = parseMoney(raw);
+  if (!Number.isFinite(amount) || amount <= 0) return;
+
+  try {
+    financeUndoStack.push({
+      clientId: activeId,
+      total_due: activeClient?.total_due,
+      amount_paid: activeClient?.amount_paid,
+      balance: activeClient?.balance
+    });
+    await window.api.addPayment(activeId, amount);
+    await refreshList();
+    triggerFinanceUpdate();
+  } catch (err) {
+    console.error(err);
+    showToast("Failed to save payment", "error");
+  }
+}
 
 // ======================================================
 // SAVE STATUS UI
@@ -2499,9 +2574,9 @@ async function setupJobsSection(clientId) {
       jobs.forEach(job => {
         const color = STATUS_COLORS_JOB[job.status] || '#2563eb';
         const jobCardAdmin = isAdminUser();
-        // amount_paid/balance/job_cost are stripped server-side for regular
-        // users (see api/access-control.js), so margin/balance can only be
-        // shown here for admins — total_due is fine for everyone.
+        // job_cost is stripped server-side for regular users (see
+        // api/access-control.js), so margin can only be shown to admins —
+        // total_due/balance are visible to everyone.
         const margin = jobCardAdmin && job.total_due > 0
           ? Math.round(((job.total_due - job.job_cost) / job.total_due) * 100)
           : null;
@@ -2530,10 +2605,9 @@ async function setupJobsSection(clientId) {
               <div style="font-size:0.9rem;font-weight:700;color:var(--text-main);">
                 $${formatMoney(job.total_due)}
               </div>
-              ${jobCardAdmin ? `
               <div style="font-size:0.78rem;color:var(--text-muted);">
                 Bal: $${formatMoney(job.balance)}
-              </div>` : ''}
+              </div>
             </div>
           </div>
         `;
@@ -3269,13 +3343,21 @@ function openJobPanel(job, clientId, onSave) {
           </select>
         </div>
         <div class="job-modal-field">
-          <label>Total Due</label>
-          <input id="job-total" type="text" inputmode="decimal" value="${formatMoney(job.total_due)}">
+          <label>Job Total</label>
+          ${admin
+            ? `<input id="job-total" type="text" inputmode="decimal" value="${formatMoney(job.total_due)}">`
+            : `<div class="job-modal-readout">$${formatMoney(job.total_due)}</div>`}
         </div>
         ${admin ? `
         <div class="job-modal-field">
           <label>Job Cost</label>
           <input id="job-cost" type="text" inputmode="decimal" value="${formatMoney(job.job_cost)}">
+        </div>
+        <div class="job-modal-field">
+          <label>Profit</label>
+          <div id="job-profit-display" class="job-modal-readout">
+            $${formatMoney(Number(job.total_due || 0) - Number(job.job_cost || 0))}
+          </div>
         </div>
         <div class="job-modal-field">
           <label>Margin</label>
@@ -3298,22 +3380,26 @@ function openJobPanel(job, clientId, onSave) {
         <span class="field-hint">Tags track this specific job only. They never change the client's stage.</span>
       </div>
 
-      ${admin ? `
+      <!-- ===== PAYMENTS — amount paid/balance are visible to any user
+           with access to this job (they need it to tell a customer their
+           balance); only admins can add a payment. ===== -->
       <div class="job-modal-field">
         <div class="job-balance-row">
-          <label>Amount Paid</label>
+          <label>Payments Received</label>
           <strong>$${formatMoney(job.amount_paid)}</strong>
         </div>
         <div class="job-balance-row">
-          <label>Balance</label>
+          <label>Remaining Balance</label>
           <strong>$${formatMoney(job.balance)}</strong>
         </div>
+        ${admin ? `
         <div class="job-payment-row">
           <input id="job-payment-input" type="text" inputmode="decimal" placeholder="Add Payment">
           <button id="job-add-payment-btn" class="btn-primary" style="background:var(--primary);">Add Payment</button>
-        </div>
+        </div>` : ''}
       </div>
 
+      ${admin ? `
       <!-- ===== COST LINE ITEMS (Section 1) — description/qty/unit price
            with a required Cost Type category. Admin only. ===== -->
       <div class="job-modal-field">
@@ -3379,9 +3465,8 @@ function openJobPanel(job, clientId, onSave) {
 
       <div class="job-modal-actions">
         <button id="job-save-btn" class="btn-primary" style="background:var(--primary);">Save Job</button>
-        ${admin ? `
         <button id="job-estimate-btn" class="btn-primary">Download Estimate</button>
-        <button id="job-invoice-btn" class="btn-primary" style="background:var(--primary);">Download Invoice</button>` : ''}
+        <button id="job-invoice-btn" class="btn-primary" style="background:var(--primary);">Download Invoice</button>
         <button id="job-delete-btn" class="btn-primary" style="background:#4a5568;">Delete</button>
       </div>
     </div>
@@ -3389,23 +3474,76 @@ function openJobPanel(job, clientId, onSave) {
 
   document.body.appendChild(overlay);
 
-  // Live margin update (admin only — fields don't exist for regular users)
+  // Live margin/profit update (admin only — fields don't exist for regular users)
   const totalInput = overlay.querySelector('#job-total');
   const costInput = overlay.querySelector('#job-cost');
   const marginDisplay = overlay.querySelector('#job-margin-display');
+  const profitDisplay = overlay.querySelector('#job-profit-display');
   if (totalInput && costInput && marginDisplay) {
     function updateMargin() {
       const t = parseMoney(totalInput.value) || 0;
       const c = parseMoney(costInput.value) || 0;
       marginDisplay.textContent = t > 0 ? Math.round(((t - c) / t) * 100) + '%' : '—';
+      if (profitDisplay) profitDisplay.textContent = '$' + formatMoney(t - c);
     }
     totalInput.addEventListener('input', updateMargin);
     costInput.addEventListener('input', updateMargin);
   }
 
+  // Auto-save pending Job Cost / Payment entries when the panel is closed
+  // without an explicit Save/Add Payment click (Section 4). Job cost is a
+  // plain field update (safe to resend if unchanged — the value check below
+  // just avoids a pointless call). Payment is additive, so it only fires
+  // when there is a genuinely unsubmitted amount sitting in the input —
+  // a successful "Add Payment" click tears down and rebuilds this whole
+  // panel, so a stale already-submitted amount can never linger here.
+  async function autoSaveBeforeClose() {
+    if (!admin) return;
+    const costEl = overlay.querySelector('#job-cost');
+    if (costEl) {
+      const raw = costEl.value.trim();
+      if (raw) {
+        const val = parseMoney(raw);
+        if (Number.isFinite(val) && val >= 0 && val !== Number(job.job_cost || 0)) {
+          try {
+            await window.api.updateJob(job.id, { job_cost: val });
+            if (onSave) await onSave();
+          } catch (err) {
+            console.error(err);
+            showToast('Failed to save job cost', 'error');
+          }
+        }
+      }
+    }
+    const paymentEl = overlay.querySelector('#job-payment-input');
+    if (paymentEl) {
+      const raw = paymentEl.value.trim();
+      if (raw) {
+        const amount = parseMoney(raw);
+        if (Number.isFinite(amount) && amount > 0) {
+          try {
+            await window.api.addJobPayment(job.id, amount);
+            if (onSave) await onSave();
+          } catch (err) {
+            console.error(err);
+            showToast('Failed to save payment', 'error');
+          }
+        }
+      }
+    }
+  }
+
   // Close
-  overlay.querySelector('#closeJobPanel').onclick = () => overlay.remove();
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector('#closeJobPanel').onclick = async () => {
+    await autoSaveBeforeClose();
+    overlay.remove();
+  };
+  overlay.addEventListener('click', async (e) => {
+    if (e.target === overlay) {
+      await autoSaveBeforeClose();
+      overlay.remove();
+    }
+  });
 
   // ===== Job tags =====
   const tagsListEl = overlay.querySelector('#job-tags-list');
@@ -3468,10 +3606,10 @@ function openJobPanel(job, clientId, onSave) {
       const payload = {
         title: overlay.querySelector('#job-title').value.trim() || 'New Job',
         status: overlay.querySelector('#job-status').value,
-        scope_of_work: overlay.querySelector('#job-scope').value,
-        total_due: parseMoney(overlay.querySelector('#job-total')?.value) || 0
+        scope_of_work: overlay.querySelector('#job-scope').value
       };
       if (admin) {
+        payload.total_due = parseMoney(overlay.querySelector('#job-total')?.value) || 0;
         payload.job_cost = parseMoney(overlay.querySelector('#job-cost')?.value) || 0;
       }
       await window.api.updateJob(job.id, payload);
@@ -3504,7 +3642,8 @@ function openJobPanel(job, clientId, onSave) {
     };
   }
 
-  // Estimate / Invoice (admin only — buttons don't exist otherwise)
+  // Estimate / Invoice — available to any user with access to this job;
+  // these PDFs never include job_cost/profit/margin.
   const jobEstimateBtn = overlay.querySelector('#job-estimate-btn');
   if (jobEstimateBtn) {
     jobEstimateBtn.onclick = async () => {
@@ -4116,6 +4255,7 @@ if (target.id === "undoFinanceBtn") {
     }
 
     if (target.id === "closeBtn") {
+      await autoSavePendingClientPayment();
       await savePanelChanges({ silent: true, force: true });
       closePanel();
     }
@@ -4494,6 +4634,18 @@ if (clientList) {
   });
 
   clientList.addEventListener("click", (e) => {
+    const statusBadge = e.target.closest(".client-status");
+    if (statusBadge && statusBadge.dataset.filterStatus) {
+      e.stopPropagation();
+      applyQuickFilter('status', statusBadge.dataset.filterStatus);
+      return;
+    }
+    const typeBadge = e.target.closest(".client-type-badge");
+    if (typeBadge && typeBadge.dataset.filterType) {
+      e.stopPropagation();
+      applyQuickFilter('type', typeBadge.dataset.filterType);
+      return;
+    }
     const item = e.target.closest(".client-card");
     if (item) openClient(parseInt(item.dataset.id));
   });

@@ -525,3 +525,17 @@ CREATE INDEX IF NOT EXISTS job_files_job_id_idx ON public.job_files (job_id);
 CREATE INDEX IF NOT EXISTS job_files_category_idx ON public.job_files (job_id, category);
 
 NOTIFY pgrst, 'reload schema';
+
+-- =============================================================
+-- TEMPLATE UPGRADE v5: allow multiple admins per company.
+--
+-- Originally each company could only ever have one admin (enforced by
+-- users_single_admin_idx, added in the v3 upgrade above). That is no
+-- longer the desired behavior — an admin should be able to promote any
+-- number of other users to admin from Settings — so the constraint is
+-- dropped. Nothing else about the users table changes, and no rows are
+-- affected: every existing admin simply keeps their role.
+-- =============================================================
+DROP INDEX IF EXISTS public.users_single_admin_idx;
+
+NOTIFY pgrst, 'reload schema';
