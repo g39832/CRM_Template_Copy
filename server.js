@@ -381,6 +381,18 @@ app.use('/assets', express.static(path.join(__dirname, 'assets'), {
   etag: true,
   lastModified: true
 }));
+
+// Serve the installed @supabase/supabase-js UMD build ourselves instead of
+// pulling it from a third-party CDN (cdn.jsdelivr.net) at page-load time.
+// This avoids browser tracking-prevention features (e.g. Edge) flagging
+// third-party script storage access, and pins every page to the exact
+// supabase-js version actually installed/tested rather than whatever the
+// CDN happens to resolve "latest" to.
+app.get('/vendor/supabase.js', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.type('application/javascript');
+  res.sendFile(path.join(__dirname, 'node_modules', '@supabase', 'supabase-js', 'dist', 'umd', 'supabase.js'));
+});
 app.get('/favicon.ico', (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=86400');
   res.type('image/svg+xml');
