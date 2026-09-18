@@ -145,14 +145,17 @@ restart, deploy, or idle spin-down logs everyone out (the browser keeps its cook
 server no longer knows the session), and two instances would not share logins. Pointing the
 app at your Supabase Postgres database fixes that:
 
-1. In Supabase, open **Project Settings → Database → Connection string** and copy the
-   **Session pooler** URI (port `5432`). Render is IPv4-only and Supabase's **Direct connection**
-   is IPv6-only, so the Session pooler is the only connection that works from Render; the
-   **Transaction pooler** (`6543`) cannot hold a session. Replace `[YOUR-PASSWORD]` in the copied
-   string with your database password and keep the `postgres.<project-ref>` username as-is — if
-   you do not know that password, reset it on the same page — then paste the new password into
-   `SUPABASE_DATABASE_URL` too. A reset changes every password-based connection (the pooler
-   URL, migration scripts) but not the app's REST access, which uses the service-role key.
+1. In Supabase, open **Project Settings → Database → Connection string**, switch the selector (or the
+   top-bar **Connect** button) to **Session pooler**, and copy that URI (port `5432`). If the host in
+   the string is `db.<project-ref>.supabase.co` you are still on **Direct connection**: Render is
+   IPv4-only and that host is IPv6-only (unless Supabase's IPv4 add-on is enabled), so it cannot
+   connect — the pooler host contains `pooler.supabase.com` instead. The **Transaction pooler**
+   (`6543`) does connect, but it cannot hold a session, so it is not an option here. Replace
+   `[YOUR-PASSWORD]` in the copied string with your database password — keeping the
+   `postgres.<project-ref>` username as-is and percent-encoding any special characters — then paste
+   that password into `SUPABASE_DATABASE_URL` too. If you do not know the password, reset it on the
+   same page; a reset changes every password-based connection (the pooler URL, migration scripts)
+   but not the app's REST access, which uses the service-role key.
 2. Add it to the Render service as `SUPABASE_DATABASE_URL`, then redeploy.
 3. That's it. The `session` table is created automatically on first use (it is also defined in
    `supabase-schema.sql` if you prefer creating it yourself). If your database user is not
