@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CRM Template - Finance</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
+  <script src="/js/theme.js"></script>
   <link rel="stylesheet" href="style.css?v=4">
 
   <style>
@@ -1099,6 +1100,7 @@
       <p class="page-subtitle">Review annual totals, payments, and tax files from the same live database.</p>
     </div>
     <div class="page-header-actions">
+      <button type="button" id="themeToggleBtn" class="theme-toggle-btn" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
       <button id="toggleClientsBtn">Back to Clients</button>
     </div>
   </header>
@@ -1208,6 +1210,15 @@
       .addEventListener('click', () => {
         window.location.href = 'main.html';
       });
+
+    (function setupThemeToggle() {
+      var btn = document.getElementById('themeToggleBtn');
+      if (!btn || !window.crmTheme) return;
+      function render() { btn.textContent = window.crmTheme.getTheme() === 'dark' ? '☀️' : '🌙'; }
+      render();
+      btn.addEventListener('click', function () { window.crmTheme.toggleTheme(); render(); });
+      document.addEventListener('crm-theme-change', render);
+    })();
 
     // Set page title from company profile
     (async () => {

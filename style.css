@@ -40,6 +40,34 @@
   --space-4: 16px;
 }
 
+/* Dark mode — a deliberately designed dark palette (not an inverted one):
+   deep slate backgrounds, a brighter blue accent for contrast, and the
+   same semantic colors (success/danger/warning) shifted lighter so they
+   stay readable on dark surfaces. Every component reads these variables,
+   so switching theme is just swapping this block in via [data-theme]. */
+:root[data-theme="dark"] {
+  --bg-main: #0b1220;
+  --bg-secondary: #111a2c;
+  --surface: #16213a;
+  --surface-muted: #101a2e;
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --primary-soft: rgba(59, 130, 246, 0.18);
+  --accent: #3b82f6;
+  --text-main: #e2e8f0;
+  --text-muted: #94a3b8;
+  --border-soft: #263449;
+  --border-strong: #35455c;
+  --success: #4ade80;
+  --success-soft: rgba(74, 222, 128, 0.14);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.14);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.14);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-lift: 0 4px 16px rgba(0, 0, 0, 0.55);
+}
+
 input,
 select,
 textarea,
@@ -325,6 +353,32 @@ a:focus-visible {
 
 button.btn-primary {
   padding: 12px;
+}
+
+/* ======================================================
+   THEME TOGGLE — small icon button, used in the main nav and the
+   finance page header. Shared here so both pages get one definition.
+   ====================================================== */
+.theme-toggle-btn {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  margin-left: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--border-soft);
 }
 
 #showReset,

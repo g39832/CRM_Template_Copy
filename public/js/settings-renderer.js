@@ -12,6 +12,18 @@
   var feedback = document.getElementById('formFeedback');
   var loadingOverlay = document.getElementById('loadingOverlay');
 
+  // ==================== DARK MODE ====================
+  var darkModeToggle = document.getElementById('prefDarkMode');
+  if (darkModeToggle && window.crmTheme) {
+    darkModeToggle.checked = window.crmTheme.getTheme() === 'dark';
+    darkModeToggle.addEventListener('change', function () {
+      window.crmTheme.setTheme(darkModeToggle.checked ? 'dark' : 'light');
+    });
+    document.addEventListener('crm-theme-change', function (e) {
+      darkModeToggle.checked = e.detail.theme === 'dark';
+    });
+  }
+
   // Feature descriptions
   var DESCRIPTIONS = {
     hero: 'Large headline section with call-to-action button',

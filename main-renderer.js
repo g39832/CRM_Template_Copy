@@ -2320,7 +2320,7 @@ async function setupNotesSection(clientId) {
     try {
       const data = await window.api.listNotes(clientId);
       if (!data.notes || data.notes.length === 0) {
-        notesList.innerHTML = `<div style="color:#888; font-size:13px;">No notes yet.</div>`;
+        notesList.innerHTML = `<div style="color:var(--text-muted); font-size:13px;">No notes yet.</div>`;
         return;
       }
 
@@ -2329,7 +2329,8 @@ async function setupNotesSection(clientId) {
         noteDiv.style.display = "flex";
         noteDiv.style.justifyContent = "space-between";
         noteDiv.style.alignItems = "center";
-        noteDiv.style.background = "#f5f5f5";
+        noteDiv.style.background = "var(--surface-muted)";
+        noteDiv.style.border = "1px solid var(--border-soft)";
         noteDiv.style.padding = "6px 10px";
         noteDiv.style.borderRadius = "6px";
 
@@ -2337,7 +2338,7 @@ async function setupNotesSection(clientId) {
         contentDiv.innerText = note.content || "";
         contentDiv.style.flex = "1";
         contentDiv.style.marginRight = "6px";
-        contentDiv.style.color = "#000";
+        contentDiv.style.color = "var(--text-main)";
         contentDiv.style.whiteSpace = "pre-wrap";
         contentDiv.style.wordBreak = "break-word";
 
@@ -2367,6 +2368,11 @@ async function setupNotesSection(clientId) {
           textarea.style.flex = "1";
           textarea.style.padding = "6px 8px";
           textarea.style.resize = "vertical";
+          textarea.style.background = "var(--surface)";
+          textarea.style.color = "var(--text-main)";
+          textarea.style.border = "1px solid var(--border-soft)";
+          textarea.style.borderRadius = "4px";
+          textarea.style.fontFamily = "inherit";
           textarea.dataset.noteId = note.id;
           textarea.dataset.clientId = clientId;
           textarea.dataset.original = current;
@@ -2384,8 +2390,8 @@ async function setupNotesSection(clientId) {
           const cancelBtn = document.createElement("button");
           cancelBtn.innerText = "Cancel";
           cancelBtn.style.background = "var(--surface-muted)";
-          cancelBtn.style.color = "#1a202c";
-          cancelBtn.style.border = "none";
+          cancelBtn.style.color = "var(--text-main)";
+          cancelBtn.style.border = "1px solid var(--border-soft)";
           cancelBtn.style.padding = "4px 8px";
           cancelBtn.style.borderRadius = "4px";
           cancelBtn.style.cursor = "pointer";
@@ -4736,6 +4742,24 @@ function applyBranding(branding) {
       if (roleBadge) { roleBadge.textContent = 'User'; roleBadge.className = 'role-badge user'; roleBadge.style.display = ''; }
     }
   }
+})();
+
+// ======================================================
+// THEME TOGGLE (Light/Dark mode) — theme.js (loaded in <head>) already
+// applied the saved theme before this ran; this just wires the button.
+// ======================================================
+(function initThemeToggle() {
+  var btn = document.getElementById('themeToggleBtn');
+  if (!btn || !window.crmTheme) return;
+  function render() {
+    btn.textContent = window.crmTheme.getTheme() === 'dark' ? '☀️' : '🌙';
+  }
+  render();
+  btn.addEventListener('click', function () {
+    window.crmTheme.toggleTheme();
+    render();
+  });
+  document.addEventListener('crm-theme-change', render);
 })();
 
 function isAdminUser() {
