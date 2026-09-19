@@ -1574,6 +1574,19 @@ if (searchInput) {
           return;
         }
 
+        // Same exact-match shortcut as status, for the Recurring/One-Off
+        // badge (client_type isn't part of the regular name/phone/email/
+        // address text search, so it needs its own match here).
+        const matchedType = ["recurring", "one-off"].includes(term) ? term : null;
+        if (matchedType) {
+          const allClients = await window.api.searchClients("", { signal: searchRequestController.signal });
+          renderSidebar(
+            allClients.filter(c => (c.client_type || "") === matchedType),
+            term
+          );
+          return;
+        }
+
         const filtered = await window.api.searchClients(term, { signal: searchRequestController.signal });
         renderSidebar(filtered, term);
 
@@ -1653,7 +1666,6 @@ if (applyFilterBtn) {
     };
     _filterActive = true;
     refreshList();
-    renderQuickFilterIndicator();
   });
 }
 
@@ -1668,54 +1680,20 @@ if (clearFilterBtn) {
     _filterState = { type: '', status: '', dateFrom: '', dateTo: '', revenueMin: '', revenueMax: '' };
     _filterActive = false;
     refreshList();
-    renderQuickFilterIndicator();
   });
 }
 
 // ======================================================
-// QUICK FILTER (Section 3) — clicking a status or type badge on a client
-// card filters the list to that value, reusing the same advanced-filter
-// state/endpoint above rather than a separate filtering system.
+// QUICK SEARCH FROM TAG CLICK (Section 3) — clicking a status or type
+// badge on a client card behaves exactly like typing that value into the
+// search box: it fills the box and fires the same input event, so it goes
+// through the normal search/debounce/status-exact-match path below.
 // ======================================================
-function applyQuickFilter(field, value) {
-  if (!value) return;
-  const onlyFieldSet = _filterActive && _filterState[field] === value &&
-    Object.keys(_filterState).every((k) => k === field || !_filterState[k]);
-  if (onlyFieldSet) {
-    clearQuickFilter();
-    return;
-  }
-  _filterState = { type: '', status: '', dateFrom: '', dateTo: '', revenueMin: '', revenueMax: '' };
-  _filterState[field] = value;
-  _filterActive = true;
-  if (field === 'status' && filterStatus) filterStatus.value = value;
-  if (field === 'type' && filterType) filterType.value = value;
-  refreshList();
-  renderQuickFilterIndicator();
-}
-
-function clearQuickFilter() {
-  _filterState = { type: '', status: '', dateFrom: '', dateTo: '', revenueMin: '', revenueMax: '' };
-  _filterActive = false;
-  if (filterStatus) filterStatus.value = '';
-  if (filterType) filterType.value = '';
-  refreshList();
-  renderQuickFilterIndicator();
-}
-
-function renderQuickFilterIndicator() {
-  const bar = document.getElementById('quickFilterBar');
-  if (!bar) return;
-  if (!_filterActive) {
-    bar.style.display = 'none';
-    bar.innerHTML = '';
-    return;
-  }
-  const label = _filterState.status || _filterState.type || 'Custom filter';
-  bar.style.display = 'flex';
-  bar.innerHTML = `<span>Filtering by <strong>${escapeHtml(label)}</strong></span><button type="button" id="clearQuickFilterBtn">&times; Clear</button>`;
-  const clearBtn = document.getElementById('clearQuickFilterBtn');
-  if (clearBtn) clearBtn.onclick = clearQuickFilter;
+function searchByTagClick(value) {
+  if (!value || !searchInput) return;
+  searchInput.value = value;
+  searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+  searchInput.focus();
 }
 
 // ======================================================
@@ -1828,9 +1806,9 @@ function buildClientCard(c, term = "") {
 
   var clientTypeBadge = '';
   if (c.client_type === 'recurring') {
-    clientTypeBadge = '<span class="client-type-badge recurring" data-filter-type="recurring" title="Filter clients by Recurring">Recurring</span>';
+    clientTypeBadge = '<span class="client-type-badge recurring" data-filter-type="recurring" title="Click to search Recurring clients">Recurring</span>';
   } else if (c.client_type === 'one-off') {
-    clientTypeBadge = '<span class="client-type-badge one-off" data-filter-type="one-off" title="Filter clients by One-Off">One-Off</span>';
+    clientTypeBadge = '<span class="client-type-badge one-off" data-filter-type="one-off" title="Click to search One-Off clients">One-Off</span>';
   }
 
   // Portal link badge — only shown for recurring clients when
@@ -1863,7 +1841,7 @@ function buildClientCard(c, term = "") {
 
       ${c.email ? `<div class="client-meta" style="font-size:0.82rem; opacity:0.8;">✉️ ${c.email}</div>` : ''}
 
-      <div class="client-status" style="color:${color};" data-filter-status="${escapeHtml(c.status || "Lead")}" title="Filter clients by this status">
+      <div class="client-status" style="color:${color};" data-filter-status="${escapeHtml(c.status || "Lead")}" title="Click to search this status">
         ${escapeHtml(c.status || "Lead")}
       </div>
     </div>
@@ -4637,13 +4615,13 @@ if (clientList) {
     const statusBadge = e.target.closest(".client-status");
     if (statusBadge && statusBadge.dataset.filterStatus) {
       e.stopPropagation();
-      applyQuickFilter('status', statusBadge.dataset.filterStatus);
+      searchByTagClick(statusBadge.textContent.trim());
       return;
     }
     const typeBadge = e.target.closest(".client-type-badge");
     if (typeBadge && typeBadge.dataset.filterType) {
       e.stopPropagation();
-      applyQuickFilter('type', typeBadge.dataset.filterType);
+      searchByTagClick(typeBadge.textContent.trim());
       return;
     }
     const item = e.target.closest(".client-card");

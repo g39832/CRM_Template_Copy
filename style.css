@@ -486,31 +486,6 @@ button.btn-primary {
   filter: brightness(0.94);
 }
 
-.quick-filter-bar {
-  display: none;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 8px 0;
-  padding: 6px 10px;
-  border-radius: var(--radius-md);
-  background: var(--primary-soft);
-  border: 1px solid var(--primary);
-  color: var(--primary);
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.quick-filter-bar #clearQuickFilterBtn {
-  background: transparent;
-  border: none;
-  color: var(--primary);
-  font-weight: 700;
-  cursor: pointer;
-  padding: 2px 6px;
-  min-height: auto;
-}
-
 .main-content {
   display: none;
 }
