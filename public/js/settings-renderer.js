@@ -778,6 +778,8 @@
             if (nameEl) nameEl.value = data.user.displayName || '';
             if (emailEl) emailEl.value = data.user.email || '';
             if (roleEl) roleEl.textContent = data.user.role === 'admin' ? 'Admin' : 'User';
+            var businessConfigSection = document.getElementById('businessConfigSection');
+            if (businessConfigSection) businessConfigSection.style.display = data.user.role === 'admin' ? '' : 'none';
           }
         } catch (_) {}
       }

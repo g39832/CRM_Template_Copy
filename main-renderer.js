@@ -4861,15 +4861,21 @@ function applyBranding(branding) {
 // ======================================================
 (function initAdminNav() {
   var adminLink = document.getElementById('adminNavLink');
+  var userSettingsLink = document.getElementById('userSettingsNavLink');
   var roleBadge = document.getElementById('roleBadge');
   var financeLink = document.getElementById('navFinanceLink');
   if (window.__USER__) {
     if (window.__USER__.role === 'admin') {
+      // Both links go to the same /settings page — showing both was just
+      // a duplicate "Settings" entry, so admins get the one link, labeled
+      // for what they can actually do there.
       if (adminLink) adminLink.style.display = '';
+      if (userSettingsLink) userSettingsLink.style.display = 'none';
       if (financeLink) financeLink.style.display = '';
       if (roleBadge) { roleBadge.textContent = 'Admin'; roleBadge.className = 'role-badge admin'; roleBadge.style.display = ''; }
     } else {
       if (adminLink) adminLink.style.display = 'none';
+      if (userSettingsLink) userSettingsLink.style.display = '';
       // Financial Overview is admin-only (Section 8) — the backend also
       // redirects /finance for regular users, this just avoids showing
       // a link that leads nowhere useful for them.
@@ -4908,6 +4914,24 @@ function isAdminUser() {
 
 refreshList();
 loadDashboardStats();
+
+// Email Setup / Company Profile now link in from the Settings page (they
+// used to be buttons directly on this dashboard) — open the matching
+// modal here and drop the query param so a refresh doesn't reopen it.
+(function openModalFromQueryParam() {
+  var params = new URLSearchParams(window.location.search);
+  var open = params.get('open');
+  if (open === 'email-settings') {
+    openEmailSettingsModal();
+  } else if (open === 'company-profile') {
+    openCompanyProfileModal();
+  } else {
+    return;
+  }
+  params.delete('open');
+  var query = params.toString();
+  window.history.replaceState({}, document.title, window.location.pathname + (query ? '?' + query : ''));
+})();
 
 // Set page title from company profile (fallback if dashboard API fails)
 (async () => {
