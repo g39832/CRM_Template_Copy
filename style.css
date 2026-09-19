@@ -486,6 +486,10 @@ button.btn-primary {
   filter: brightness(0.94);
 }
 
+.status-count-row:hover {
+  text-decoration: underline;
+}
+
 .main-content {
   display: none;
 }

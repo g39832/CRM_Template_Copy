@@ -1769,7 +1769,7 @@ function renderSidebar(list = [], term = "") {
   const countsHTML = `
     <li class="status-counts" style="list-style:none; padding:0; margin:0 0 8px 0;">
       ${STATUS_ORDER.map(s =>
-        `<div style="color:${STATUS_COLORS[s] || "#2563eb"}">
+        `<div class="status-count-row" data-filter-status="${escapeHtml(s)}" title="Click to search this status" style="color:${STATUS_COLORS[s] || "#2563eb"}; cursor:pointer;">
           ${s}: ${counts[s]}
         </div>`
       ).join("")}
@@ -4612,6 +4612,11 @@ if (clientList) {
   });
 
   clientList.addEventListener("click", (e) => {
+    const countRow = e.target.closest(".status-count-row");
+    if (countRow && countRow.dataset.filterStatus) {
+      searchByTagClick(countRow.dataset.filterStatus);
+      return;
+    }
     const statusBadge = e.target.closest(".client-status");
     if (statusBadge && statusBadge.dataset.filterStatus) {
       e.stopPropagation();

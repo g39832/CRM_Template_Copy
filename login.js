@@ -9,8 +9,18 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   const params = new URLSearchParams(window.location.search);
-  if (params.get("error")) {
-    showFeedback("Sign-in failed. Please try again.", "error");
+  const authError = params.get("error");
+  if (authError) {
+    // Surface the real reason instead of a generic message — the callback
+    // page passes back exactly why it failed (e.g. "no_session" means
+    // Google/Supabase never handed back a session; anything else is the
+    // actual error from finishing sign-in server-side).
+    const friendly = authError === "no_session"
+      ? "Google didn't return a session — please try signing in again."
+      : authError;
+    showFeedback("Sign-in failed: " + friendly, "error");
+    // Drop the error from the URL so a refresh/retry doesn't keep showing it.
+    window.history.replaceState({}, document.title, window.location.pathname);
   }
 
   const config = window.__AUTH_CONFIG__ || {};

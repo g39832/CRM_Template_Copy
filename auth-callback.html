@@ -39,10 +39,26 @@
         return;
       }
 
+      // getSession() already waits for the Google redirect to be fully
+      // processed internally, but on a slow device/network (or a browser
+      // extension delaying storage access) that can still take a moment
+      // longer than a single check accounts for. Retry a few times before
+      // concluding there's really no session, rather than bouncing back to
+      // the login page (which is what previously made sign-in look like it
+      // needed two attempts).
+      async function waitForSession(authClient) {
+        for (var attempt = 0; attempt < 5; attempt++) {
+          var result = await authClient.auth.getSession();
+          var session = result.data && result.data.session;
+          if (session) return session;
+          if (attempt < 4) await new Promise(function (r) { setTimeout(r, 400); });
+        }
+        return null;
+      }
+
       try {
         var authClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
-        var sessionResult = await authClient.auth.getSession();
-        var session = sessionResult.data && sessionResult.data.session;
+        var session = await waitForSession(authClient);
 
         if (!session) {
           window.location.href = '/?error=no_session';
