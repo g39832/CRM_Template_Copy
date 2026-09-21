@@ -2,70 +2,68 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Nunito', sans-serif;
 }
 
-/* ============================================================
-   DESIGN SYSTEM — clean, minimal, professional blue CRM.
-   Light backgrounds, dark text, one restrained blue accent,
-   subtle gray borders, modest radii, no gradients/glow/blur.
-   ============================================================ */
 :root {
-  --bg-main: #f4f6f8;         /* page background */
-  --bg-secondary: #ffffff;     /* header/sidebar surface */
-  --surface: #ffffff;          /* card/panel surface */
-  --surface-muted: #f8fafc;    /* subtle recessed surface (readouts, hover rows) */
-  --primary: #2563eb;          /* single blue brand accent */
-  --primary-hover: #1d4ed8;
-  --primary-soft: #eff6ff;     /* light blue tint for badges/hover */
-  --accent: #2563eb;
-  --text-main: #0f172a;        /* near-black */
-  --text-muted: #64748b;       /* gray */
-  --border-soft: #e2e8f0;      /* light gray border */
-  --border-strong: #cbd5e1;
-  --success: #15803d;
-  --success-soft: #f0fdf4;
-  --danger: #b91c1c;
-  --danger-soft: #fef2f2;
-  --warning: #b45309;
-  --warning-soft: #fffbeb;
-  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-lift: 0 4px 14px rgba(15, 23, 42, 0.10);
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
   --tap-size: 44px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+
+  /* Devries palette, exposed as variables so pages/scripts that still
+     read var(--surface) etc. (main.html, finance.html, settings.html,
+     main-renderer.js, finance-renderer.js, margin-tracker.js) render
+     with the same look instead of falling back to unset values. */
+  --bg-main: linear-gradient(135deg, #1a1a2e, #162447);
+  --bg-secondary: #1c2b4a;
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-muted: rgba(255, 255, 255, 0.04);
+  --primary: #2f80ed;
+  --primary-hover: #2569c7;
+  --primary-soft: rgba(127, 219, 255, 0.12);
+  --accent: #7fdbff;
+  --text-main: #f5f7ff;
+  --text-muted: rgba(230, 235, 255, 0.72);
+  --border-soft: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --success: #28a745;
+  --success-soft: rgba(40, 167, 69, 0.14);
+  --danger: #dc3545;
+  --danger-soft: rgba(220, 53, 69, 0.14);
+  --warning: #ffc107;
+  --warning-soft: rgba(255, 193, 7, 0.14);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-lift: 0 10px 30px rgba(0, 0, 0, 0.25);
 }
 
-/* Dark mode — a deliberately designed dark palette (not an inverted one):
-   deep slate backgrounds, a brighter blue accent for contrast, and the
-   same semantic colors (success/danger/warning) shifted lighter so they
-   stay readable on dark surfaces. Every component reads these variables,
-   so switching theme is just swapping this block in via [data-theme]. */
+/* Devries has one look, not separate light/dark themes — mirror the
+   same values here so the CRM's existing theme toggle doesn't break
+   things by switching to the old light palette. */
 :root[data-theme="dark"] {
-  --bg-main: #0b1220;
-  --bg-secondary: #111a2c;
-  --surface: #16213a;
-  --surface-muted: #101a2e;
-  --primary: #3b82f6;
-  --primary-hover: #60a5fa;
-  --primary-soft: rgba(59, 130, 246, 0.18);
-  --accent: #3b82f6;
-  --text-main: #e2e8f0;
-  --text-muted: #94a3b8;
-  --border-soft: #263449;
-  --border-strong: #35455c;
-  --success: #4ade80;
-  --success-soft: rgba(74, 222, 128, 0.14);
-  --danger: #f87171;
-  --danger-soft: rgba(248, 113, 113, 0.14);
-  --warning: #fbbf24;
-  --warning-soft: rgba(251, 191, 36, 0.14);
-  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.45);
-  --shadow-lift: 0 4px 16px rgba(0, 0, 0, 0.55);
+  --bg-main: linear-gradient(135deg, #1a1a2e, #162447);
+  --bg-secondary: #1c2b4a;
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-muted: rgba(255, 255, 255, 0.04);
+  --primary: #2f80ed;
+  --primary-hover: #2569c7;
+  --primary-soft: rgba(127, 219, 255, 0.12);
+  --accent: #7fdbff;
+  --text-main: #f5f7ff;
+  --text-muted: rgba(230, 235, 255, 0.72);
+  --border-soft: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --success: #28a745;
+  --success-soft: rgba(40, 167, 69, 0.14);
+  --danger: #dc3545;
+  --danger-soft: rgba(220, 53, 69, 0.14);
+  --warning: #ffc107;
+  --warning-soft: rgba(255, 193, 7, 0.14);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-lift: 0 10px 30px rgba(0, 0, 0, 0.25);
 }
 
 input,
@@ -78,16 +76,22 @@ button {
 body {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  color: var(--text-main);
-  background: var(--bg-main);
 }
 
 body.dashboard-body {
   overflow-x: hidden;
   overscroll-behavior-y: none;
-  min-height: 100vh;
+}
+
+/* =========================
+   BODY & DASHBOARD LAYOUT
+========================= */
+body.dashboard-body {
+  background: linear-gradient(135deg, #1a1a2e, #162447);
   display: flex;
   flex-direction: column;
+  min-height: 100vh;
+  color: #fff;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -98,34 +102,13 @@ body.dashboard-body {
   }
 }
 
-button,
-a,
-input,
-select,
-textarea,
-.client-card,
-.client-item,
-.detail-card,
-.section,
-.tax-group,
-.toast {
-  transition: all 0.2s ease-in-out;
-}
-
-#Main_header,
-.page-header {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 16px 24px;
-  background: var(--surface);
-  color: var(--text-main);
-  border-bottom: 1px solid var(--border-soft);
-  box-shadow: var(--shadow-soft);
-  
+#Main_header {
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 900;
+  padding: 15px 0;
+  background-color: rgba(20, 20, 40, 0.3);
+  text-shadow: 1px 1px 6px rgba(0,0,0,0.5);
 }
 
 .page-kicker,
@@ -134,27 +117,17 @@ textarea,
   display: block;
 }
 
-.page-kicker {
-  font-size: 0.75rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--accent);
-  font-weight: 700;
+.page-header-actions button {
+  min-height: 44px;
 }
 
-.page-title {
-  color: var(--text-main);
-  font-weight: 800;
-  line-height: 1.1;
-}
-
-.page-subtitle {
-  color: var(--text-muted);
+.section-copy {
   margin: 0;
 }
 
-.page-header-actions button {
-  min-height: 44px;
+.page-header {
+  position: relative;
+  z-index: 2;
 }
 
 .crm-dashboard {
@@ -162,62 +135,39 @@ textarea,
   flex: 1;
   overflow: hidden;
   width: 100%;
-  padding: 14px 16px 24px;
-  gap: 16px;
 }
 
+/* =========================
+   SIDEBAR
+========================= */
 .sidebar {
   width: min(760px, calc(100vw - 32px));
   max-width: 760px;
-  background: var(--surface);
-  border:1px solid var(--border-soft);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-soft);
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(10px);
+  border-right: 1px solid rgba(255,255,255,0.08);
   padding: 20px;
   margin: 0 auto;
+
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
-  align-items: center;
-  overflow-y: auto;
-  
-}
 
-.sidebar h2,
-.section h3,
-.panel-section h3,
-.notes-section h3,
-.tax-group h4 {
-  color: var(--text-main);
+  justify-content: flex-start;  /* ✅ NOT center */
+  align-items: stretch;         /* ✅ NOT center */
+
+  overflow-y: auto;
 }
 
 .sidebar h2 {
-  margin-bottom: 14px;
-  font-weight: 700;
+  font-weight: 600;
+  margin-bottom: 15px;
+  color: #dcd6f7;
 }
 
 .sidebar form {
   display: flex;
   flex-direction: column;
   margin-bottom: 20px;
-}
-
-.clients-workspace,
-.sidebar h2,
-.sidebar form,
-.search-bar,
-.client-list {
-  width: min(680px, 100%);
-}
-
-.clients-workspace {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-}
-
-.sidebar form {
-  margin: 0 auto 20px;
 }
 
 .input-row {
@@ -228,56 +178,40 @@ textarea,
 
 .input-row input {
   flex: 1;
+  padding: 10px;
+  border-radius: 6px;
+  border: none;
+  outline: none;
 }
 
+/* Intake row: First Name / Last Name / Job Address */
 .sidebar .input-row {
   align-items: stretch;
-}
-
-input,
-select,
-textarea,
-.search-bar input,
-.sidebar #fName,
-.sidebar #lName,
-.sidebar #address,
-input[type="email"],
-input[type="tel"],
-.details-grid input,
-.details-grid select,
-.details-grid textarea,
-.notes-actions textarea,
-#finance-year,
-.metrics-table input {
-  border-radius: 12px;
-  border:1px solid var(--border-strong);
-  background:var(--surface);
-  color: var(--text-main);
-  outline: none;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
-}
-
-input::placeholder,
-textarea::placeholder,
-select::placeholder {
-  color: var(--text-muted);
-}
-
-input:focus,
-select:focus,
-textarea:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
 .sidebar #fName,
 .sidebar #lName,
 .sidebar #address {
   min-height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.1);
+  color: #f5f7ff;
+  border-radius: 8px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
-.sidebar #address {
-  flex: 1.35;
+.sidebar #fName::placeholder,
+.sidebar #lName::placeholder,
+.sidebar #address::placeholder {
+  color: rgba(230, 235, 255, 0.72);
+}
+
+.sidebar #fName:focus,
+.sidebar #lName:focus,
+.sidebar #address:focus {
+  border-color: #7fdbff;
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 0 0 3px rgba(127, 219, 255, 0.2);
 }
 
 .sidebar #fName,
@@ -285,131 +219,113 @@ textarea:focus {
   flex: 0.9;
 }
 
+.sidebar #address {
+  flex: 1.35;
+}
+
+/* Inputs */
 input[type="email"],
 input[type="tel"] {
   margin-bottom: 10px;
   padding: 10px;
   min-height: 42px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  outline: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: #f5f7ff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+input[type="email"]::placeholder,
+input[type="tel"]::placeholder {
+  color: rgba(230, 235, 255, 0.72);
 }
 
 input[type="tel"] {
-  color: var(--text-main);
+  color: #bfefff;
 }
 
-/* Default button: neutral/secondary. Blue is reserved for explicit
-   primary actions (.btn-primary, #login-btn, etc.) so the UI doesn't
-   paint every small control in brand blue. */
-button {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-weight: 600;
-  color: var(--text-main);
-  background: var(--surface);
-  box-shadow: none;
+input[type="email"]:focus,
+input[type="tel"]:focus {
+  border-color: #7fdbff;
+  box-shadow: 0 0 0 3px rgba(127, 219, 255, 0.2);
+  background: rgba(255, 255, 255, 0.14);
 }
 
-button:hover {
-  background: var(--surface-muted);
-}
-
-button.btn-primary,
-.page-header-actions button:not(.secondary),
-#toggleClientsBtn,
-#toggleFinance,
-#login-btn,
-#changePasswordBtn,
-.panel-actions .btn-primary,
-.notes-actions .add-note-btn {
-  border: 1px solid var(--primary);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-weight: 600;
-  color: #fff;
-  background: var(--primary);
-  box-shadow: none;
-}
-
-button.btn-primary:hover,
-.page-header-actions button:not(.secondary):hover,
-#toggleClientsBtn:hover,
-#toggleFinance:hover,
-#login-btn:hover,
-#changePasswordBtn:hover,
-.panel-actions .btn-primary:hover,
-.notes-actions .add-note-btn:hover {
-  background: var(--primary-hover);
-  border-color: var(--primary-hover);
-}
-
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-a:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-
+/* Buttons */
 button.btn-primary {
   padding: 12px;
-}
-
-/* ======================================================
-   THEME TOGGLE — small icon button, used in the main nav and the
-   finance page header. Shared here so both pages get one definition.
-   ====================================================== */
-.theme-toggle-btn {
-  width: 36px;
-  height: 36px;
-  min-height: 36px;
-  padding: 0;
-  margin-left: 4px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-soft);
-  background: var(--surface-muted);
-  font-size: 1rem;
-  line-height: 1;
+  border: none;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #2f80ed, #4f8dfd);
+  color: white;
+  font-weight: 600;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.2s;
+  transition: all 0.3s ease;
 }
 
-.theme-toggle-btn:hover {
-  background: var(--border-soft);
+button.btn-primary:hover {
+  background: #2569c7;
 }
 
-#showReset,
-.panel-secondary-btn,
-.metrics-actions-cell button {
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  color: var(--text-main);
+.search-bar input {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  outline: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: #f5f7ff;
 }
-
-#showReset:hover,
-.panel-secondary-btn:hover,
-.metrics-actions-cell button:hover {
-  background: var(--surface-muted);
+.search-bar input::placeholder {
+  color: rgba(230, 235, 255, 0.72);
+}
+.search-bar input:focus {
+  border-color: #7fdbff;
+  box-shadow: 0 0 0 3px rgba(127, 219, 255, 0.2);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .search-bar {
   position: sticky;
   top: 0;
   z-index: 3;
+  background: rgba(22, 36, 71, 0.92);
   padding: 8px 0 6px;
-  background: var(--bg-main);
-  border-bottom: 1px solid var(--border-soft);
+  backdrop-filter: blur(6px);
 }
 
-.search-bar input {
-  width: 100%;
-  padding: 10px;
-  min-height: 44px;
+.status-counts {
+  position: static;
+  background: transparent;
+  padding-bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.status-count-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.status-count-chip:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.status-count-chip.active {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: #7fdbff;
+  box-shadow: 0 0 0 1px rgba(127, 219, 255, 0.6);
 }
 
+/* =========================
+   CLIENT LIST
+========================= */
 .client-list {
   list-style: none;
   margin-top: 15px;
@@ -417,97 +333,134 @@ button.btn-primary {
   flex: 1;
 }
 
-.client-item,
-.client-card {
-  position: relative;
-  padding: 14px 16px 18px;
-  margin-bottom: 10px;
-  border-radius: var(--radius-md);
+.sidebar {
+  align-items: center;
+}
+
+.sidebar h2,
+.sidebar form,
+.search-bar,
+.client-list {
+  width: min(680px, 100%);
+}
+
+.sidebar h2 {
+  text-align: center;
+}
+
+#clientIntakeForm {
+  margin: 0 auto 20px;
+  align-self: center;
+}
+
+.sidebar .search-bar,
+.sidebar .client-list {
+  margin-inline: auto;
+}
+
+.client-item {
+  padding: 12px 14px;
+  border-radius: 8px;
   cursor: pointer;
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
-  box-shadow: none;
+  transition: all 0.25s ease;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 8px;
+  position: relative;
 }
 
-.client-item:hover,
+.client-item:hover {
+  background: rgba(108, 92, 231, 0.25);
+  border: 1px solid rgba(108, 92, 231, 0.6);
+  transform: translateX(4px);
+}
+
+.client-item.active {
+  background: rgba(108, 92, 231, 0.35);
+  border: 1px solid #a29bfe;
+}
+
+/* Client cards (renderer) */
+.client-card {
+  padding: 12px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 8px;
+  position: relative;
+}
+
 .client-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-soft);
+  background: rgba(108, 92, 231, 0.25);
+  border: 1px solid rgba(108, 92, 231, 0.6);
+  transform: translateX(4px);
 }
 
-.client-item.active,
 .client-card.active {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
+  background: rgba(108, 92, 231, 0.35);
+  border: 1px solid #a29bfe;
 }
 
 .client-card.kb-selected {
-  outline: 2px solid var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
+  outline: 2px solid rgba(127, 219, 255, 0.9);
+  box-shadow: 0 0 0 3px rgba(127, 219, 255, 0.2);
 }
 
-.client-item mark,
-.client-card mark {
-  background: var(--primary-soft);
-  color: var(--text-main);
+.client-card mark,
+.client-item mark {
+  background: rgba(255, 232, 143, 0.5);
+  color: inherit;
   padding: 0 2px;
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
-.client-card .client-name,
-.client-item .client-name {
-  font-weight: 700;
-  color: var(--text-main);
+/* Line separator between clients (across bottom) */
+.client-item,
+.client-card {
+  padding-bottom: 16px;
 }
 
-.client-card .client-meta,
-.client-item .client-meta,
-.client-card .client-status,
-.client-item .client-status {
-  margin-top: 4px;
-  font-size: 0.9rem;
-  color: var(--text-muted);
+.client-item::after,
+.client-card::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -8px;
+  height: 3px;
+  background: rgba(180, 200, 255, 0.85);
+  box-shadow: 0 0 10px rgba(120, 140, 255, 0.7);
 }
 
-/* Section 3 — status/type badges double as quick filters. cursor + a subtle
-   underline-on-hover are the only visual change; colors/shape are untouched. */
-.client-card .client-status,
-.client-item .client-status,
-.client-type-badge {
-  cursor: pointer;
+/* Extra spacing between items */
+.client-item + .client-item,
+.client-card + .client-card {
+  margin-top: 8px;
 }
 
-.client-card .client-status:hover,
-.client-item .client-status:hover {
-  text-decoration: underline;
-}
-
-.client-type-badge:hover {
-  filter: brightness(0.94);
-}
-
-.status-count-row:hover {
-  text-decoration: underline;
-}
-
+/* =========================
+   MAIN PANEL
+========================= */
 .main-content {
   display: none;
 }
 
-.detail-card,
-#projectPanel {
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
-  color: var(--text-main);
-  box-shadow: var(--shadow-lift);
-}
+
 
 .detail-card {
+  background:
+    radial-gradient(circle at top right, rgba(127, 219, 255, 0.09), transparent 34%),
+    linear-gradient(180deg, rgba(20,20,40,0.96), rgba(17, 22, 40, 0.97));
   padding: 22px;
-  border-radius: var(--radius-lg);
+  border-radius: 18px;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.38);
   opacity: 0;
   transform: translateY(20px);
+  transition: all 0.3s ease;
   position: relative;
+  border: 1px solid rgba(255,255,255,0.08);
 }
 
 .animate-panel {
@@ -525,7 +478,7 @@ button.btn-primary {
 
 .detail-header h2 {
   font-size: 1.75rem;
-  color: var(--text-main);
+  color: #f1f3ff;
   margin-bottom: 4px;
 }
 
@@ -533,7 +486,7 @@ button.btn-primary {
   align-items: flex-start;
   padding-bottom: 16px;
   margin-bottom: 18px;
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 
 .panel-title-block {
@@ -547,12 +500,12 @@ button.btn-primary {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.16em;
-  color: var(--accent);
+  color: rgba(127, 219, 255, 0.95);
   font-weight: 700;
 }
 
 .panel-subtitle {
-  color: var(--text-muted);
+  color: rgba(227, 232, 255, 0.72);
   font-size: 0.92rem;
 }
 
@@ -562,31 +515,47 @@ button.btn-primary {
   align-items: flex-end;
   gap: 6px;
   font-size: 0.9rem;
-  color: var(--text-muted);
+  color: rgba(227, 232, 255, 0.88);
 }
 
 .panel-contact-links a,
-.maps-link,
-a {
-  color: var(--primary);
+.maps-link {
+  color: #7fdbff;
   text-decoration: none;
 }
 
+.panel-contact-links a[href^="mailto:"],
+.panel-contact-links a[href^="tel:"] {
+  color: #7fdbff;
+  -webkit-text-fill-color: #7fdbff;
+  word-break: break-word;
+}
+
+.panel-contact-links a[href^="mailto:"]:visited,
+.panel-contact-links a[href^="tel:"]:visited {
+  color: #b8e7ff;
+  -webkit-text-fill-color: #b8e7ff;
+}
+
+.panel-contact-links a[href^="mailto:"]:hover,
+.panel-contact-links a[href^="tel:"]:hover {
+  color: #e2f5ff;
+  -webkit-text-fill-color: #e2f5ff;
+}
+
 .panel-contact-links a:hover,
-.maps-link:hover,
-a:hover {
-  color: var(--accent);
+.maps-link:hover {
   text-decoration: underline;
 }
 
 .save-status-chip {
   margin-left: auto;
   font-size: 12px;
-  color: var(--text-main);
+  color: #9ad0ff;
   padding: 6px 10px;
   border-radius: 999px;
-  background: var(--primary-soft);
-  border: 1px solid var(--primary);
+  background: rgba(127, 219, 255, 0.08);
+  border: 1px solid rgba(127, 219, 255, 0.16);
   white-space: nowrap;
 }
 
@@ -604,9 +573,8 @@ a:hover {
   gap: 6px;
 }
 
-.panel-section,
-.notes-section {
-  border-top: 1px solid var(--border-soft);
+.panel-section {
+  border-top: 1px solid rgba(255,255,255,0.08);
   padding-top: 16px;
   margin-top: 10px;
 }
@@ -619,8 +587,12 @@ a:hover {
   margin-bottom: 10px;
 }
 
+.panel-section-header h3 {
+  margin: 0;
+}
+
 .panel-section-note {
-  color: var(--text-muted);
+  color: rgba(227, 232, 255, 0.62);
   font-size: 0.86rem;
 }
 
@@ -648,18 +620,18 @@ a:hover {
   flex-direction: column;
   gap: 4px;
   padding: 10px 12px;
-  border-radius: 12px;
-  background: var(--surface-muted);
-  border:1px solid var(--border-soft);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.06);
 }
 
 .panel-metric span {
-  color: var(--text-muted);
+  color: rgba(227, 232, 255, 0.66);
   font-size: 0.82rem;
 }
 
 .panel-metric strong {
-  color: var(--text-main);
+  color: #fff;
   font-size: 1.05rem;
 }
 
@@ -677,43 +649,54 @@ a:hover {
   flex: 1;
 }
 
-.details-grid {
+.panel-secondary-btn {
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.18);
+}
+
+/* Roofing grid */
+.roofing-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 
-.details-grid input,
-.details-grid select,
-.details-grid textarea {
-  padding: 10px 12px;
+.roofing-grid input,
+.roofing-grid select,
+.roofing-grid textarea {
+  padding: 8px;
+  border-radius: 6px;
+  border: none;
+  outline: none;
   width: 100%;
-  background: var(--surface);
+  background: rgba(255,255,255,0.08);
+  color: #f5f5f5;
+  border: 1px solid rgba(255,255,255,0.12);
 }
 
-.details-grid input:focus,
-.details-grid select:focus,
-.details-grid textarea:focus,
-.notes-actions textarea:focus {
-  box-shadow: 0 0 0 3px var(--primary-soft);
-  border-color: var(--primary);
+.roofing-grid input:focus,
+.roofing-grid select:focus,
+.roofing-grid textarea:focus {
+  box-shadow: 0 0 0 3px rgba(127,219,255,0.22);
+  border-color: rgba(127,219,255,0.7);
 }
 
+/* Drop zone */
 .drop-zone {
-  border: 1px dashed var(--border-strong);
+  border: 2px dashed rgba(255,255,255,0.3);
   padding: 20px;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   text-align: center;
-  background: var(--surface-muted);
+  transition: all 0.3s ease;
 }
 
 .drop-zone-active {
-  background: var(--primary-soft);
-  border-color: var(--primary);
+  background: rgba(108, 92, 231, 0.2);
+  border-color: #6c5ce7;
 }
 
+/* Close button */
 .close-x {
-  color: var(--accent);
+  color: #ff6b6b;
   font-size: 1.5rem;
   border: none;
   background: none;
@@ -723,23 +706,23 @@ a:hover {
   right: 10px;
 }
 
+/* Animations */
 @keyframes slideInUp {
-  from {
-    transform: translateY(20px);
-    opacity: 0;
-  }
-
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
+/* =========================
+   PDF MODAL
+========================= */
 #pdfModal {
   display: none;
   position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.5);
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.8);
   justify-content: center;
   align-items: center;
   z-index: 9999;
@@ -750,14 +733,12 @@ a:hover {
   width: 95%;
   max-width: 1200px;
   height: 90%;
-  background: var(--surface);
-  border-radius: 16px;
+  background: #fff;
+  border-radius: 8px;
   overflow: hidden;
   display: flex;
   justify-content: center;
   align-items: center;
-  box-shadow: var(--shadow-lift);
-  border:1px solid var(--border-soft);
 }
 
 #pdfViewer {
@@ -765,18 +746,26 @@ a:hover {
   height: 100%;
 }
 
-#pdfViewer object,
-#pdfViewer canvas {
+#pdfViewer object {
   width: 100%;
-  height: auto;
+  height: 100%;
 }
 
 #p-status {
-  background-color: var(--surface);
-  color: var(--text-main);
+  background-color: #1e293b;
+  color: white;
   padding: 6px 10px;
-  border-radius: 8px;
-  border:1px solid var(--border-soft);
+  border-radius: 6px;
+  border: 1px solid #334155;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+/* Notes section */
+.notes-section {
+  margin-top: 18px;
+  padding-top: 14px;
 }
 
 .notes-list {
@@ -797,13 +786,35 @@ a:hover {
 
 .notes-actions textarea {
   width: 100%;
-  padding: 12px;
+  padding: 10px 12px;
   resize: vertical;
   min-height: 140px;
-  border-radius: var(--radius-md);
-  background:var(--surface);
-  color: var(--text-main);
-  border:1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+
+.notes-list .note-edit-textarea {
+  width: 100%;
+  min-height: 120px;
+  flex: 1;
+  padding: 10px 12px;
+  resize: vertical;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: #fff;
+  color: #111827;
+  caret-color: #111827;
+  font-family: inherit;
+  line-height: 1.45;
+  box-sizing: border-box;
+}
+
+.notes-list .note-edit-textarea:focus {
+  outline: none;
+  border-color: #7fdbff;
+  box-shadow: 0 0 0 3px rgba(127, 219, 255, 0.2);
 }
 
 .notes-actions .add-note-btn {
@@ -817,50 +828,28 @@ a:hover {
 
 .loading-state,
 .empty-state {
-  color: var(--text-muted);
+  color: #ffb4b4;
   font-size: 13px;
   padding: 10px;
 }
 
-.toast-container {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  z-index: 99999;
-  pointer-events: none;
+.panel-section h3,
+.notes-section h3 {
+  color: #f1f3ff;
 }
 
-.toast {
-  min-width: 180px;
-  max-width: 320px;
-  color: var(--text-main);
-  border-radius: 12px;
-  padding: 10px 12px;
-  box-shadow: var(--shadow-soft);
-  font-size: 0.85rem;
-  opacity: 0;
-  transform: translateY(6px);
-  background:var(--surface);
+.client-card .client-name,
+.client-item .client-name {
+  font-weight: 700;
+  color: #f6f8ff;
 }
 
-.toast.show {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.toast.success {
-  border: 1px solid var(--success);
-}
-
-.toast.error {
-  border: 1px solid var(--danger);
-}
-
-.toast.info {
-  border: 1px solid var(--primary);
+.client-card .client-meta,
+.client-item .client-meta,
+.client-card .client-status,
+.client-item .client-status {
+  margin-top: 4px;
+  font-size: 0.9rem;
 }
 
 @media (max-width: 768px) {
@@ -876,6 +865,10 @@ a:hover {
     align-items: stretch;
     gap: 12px;
     padding: 12px 14px;
+  }
+
+  .page-header-copy {
+    gap: 6px;
   }
 
   .page-title {
@@ -900,6 +893,9 @@ a:hover {
     padding: 12px;
     gap: 12px;
     overflow: visible;
+  }
+
+  .crm-dashboard {
     flex-direction: column;
   }
 
@@ -907,7 +903,7 @@ a:hover {
     width: 100%;
     max-width: none;
     padding: 16px;
-    border-radius: var(--radius-lg);
+    border-radius: 18px;
     margin: 0;
   }
 
@@ -936,7 +932,6 @@ a:hover {
   .sidebar h2 {
     font-size: 1.05rem;
     margin-bottom: 12px;
-    text-align: center;
   }
 
   .sidebar form {
@@ -957,7 +952,7 @@ a:hover {
     max-height: none;
   }
 
-  .details-grid {
+  .roofing-grid {
     grid-template-columns: 1fr;
   }
 
@@ -970,12 +965,7 @@ a:hover {
 
   .detail-card {
     padding: 14px;
-    border-radius: var(--radius-lg);
-  }
-
-  .detail-header h2 {
-    font-size: 1.3rem;
-    line-height: 1.2;
+    border-radius: 18px;
   }
 
   .detail-card .btn-primary {
@@ -1052,7 +1042,6 @@ a:hover {
   #projectPanel .save-status-chip {
     margin-left: 0;
     align-self: flex-start;
-    width: auto;
   }
 
   #projectPanel .panel-contact-links {
@@ -1060,14 +1049,14 @@ a:hover {
     width: 100%;
   }
 
-  #projectPanel .details-grid {
+  #projectPanel .roofing-grid {
     display: flex;
     flex-direction: column;
     gap: 14px;
     align-items: stretch;
   }
 
-  #projectPanel .details-grid > * {
+  #projectPanel .roofing-grid > * {
     width: 100%;
   }
 
@@ -1079,19 +1068,26 @@ a:hover {
     width: 100%;
   }
 
-  #projectPanel .details-grid > label {
+  #projectPanel .roofing-grid > label {
     display: block;
     margin-top: 6px;
     margin-bottom: -6px;
-    color: var(--text-main);
+    color: rgba(241, 243, 255, 0.92);
     font-size: 0.92rem;
     font-weight: 700;
     letter-spacing: 0.01em;
   }
 
-  #projectPanel .details-grid > input,
-  #projectPanel .details-grid > select,
-  #projectPanel .details-grid > textarea,
+  #projectPanel .roofing-grid > input,
+  #projectPanel .roofing-grid > select,
+  #projectPanel .roofing-grid > textarea,
+  #projectPanel .roofing-grid > .field-stack {
+    min-width: 0;
+  }
+
+  #projectPanel .roofing-grid > input,
+  #projectPanel .roofing-grid > select,
+  #projectPanel .roofing-grid > textarea,
   #projectPanel .field-stack input,
   #projectPanel .field-stack select,
   #projectPanel .field-stack textarea {
@@ -1235,6 +1231,15 @@ a:hover {
     right: 8px;
   }
 
+  .sidebar h2,
+  .sidebar form,
+  .search-bar,
+  .client-list,
+  .clients-workspace {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
   .clients-workspace {
     align-items: stretch !important;
     width: 100% !important;
@@ -1293,13 +1298,23 @@ a:hover {
     margin-bottom: 14px;
   }
 
+  .sidebar #fName,
+  .sidebar #lName,
+  .sidebar #address,
+  input[type="email"],
+  input[type="tel"],
+  .search-bar input,
+  .sidebar button.btn-primary {
+    width: 100%;
+  }
+
   #projectPanel {
     padding: 8px;
   }
 
   #projectPanel .detail-card {
     padding: 14px 12px;
-    border-radius: var(--radius-lg);
+    border-radius: 18px;
     width: 100%;
     max-width: none;
     margin: 0 auto;
@@ -1324,6 +1339,18 @@ a:hover {
   #projectPanel .panel-actions .btn-primary {
     width: min(100%, 420px);
   }
+}
+/* ===== MOBILE CLIENT VIEW SWITCH ===== */
+@media (max-width: 768px) {
+
+  .sidebar.mobile-hidden {
+    display: none;
+  }
+
+  .main-content.mobile-full {
+    width: 100%;
+  }
+
 }
 
 @media (max-width: 768px) and (orientation: landscape) {
@@ -1389,6 +1416,9 @@ a:hover {
   }
 }
 
+/* =========================
+   DESKTOP CENTERED WORKSPACE
+========================= */
 @media (min-width: 769px) {
   .crm-dashboard {
     flex-direction: column;
@@ -1408,6 +1438,9 @@ a:hover {
   }
 }
 
+/* =========================
+   CENTER CLIENT WORKSPACE
+========================= */
 @media (min-width: 769px) {
   .crm-dashboard {
     justify-content: center !important;
@@ -1419,7 +1452,8 @@ a:hover {
     margin-left: auto !important;
     margin-right: auto !important;
     border-right: none !important;
-    border-radius: var(--radius-lg) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 18px !important;
   }
 
   .clients-workspace {
@@ -1463,15 +1497,12 @@ a:hover {
   }
 }
 
+
+
+/* =========================
+   MOBILE ADJUSTMENTS
+========================= */
 @media (max-width: 768px) {
-  .sidebar.mobile-hidden {
-    display: none;
-  }
-
-  .main-content.mobile-full {
-    width: 100%;
-  }
-
   #projectPanel {
     top: 0;
     left: 0;
@@ -1485,8 +1516,14 @@ a:hover {
   }
 }
 
+
+
+/* =========================
+   CLIENT MODAL PANEL
+========================= */
+
 #projectPanel {
-  display: none;
+  display: none; /* hidden by default */
   position: fixed;
   top: 50%;
   left: 50%;
@@ -1497,8 +1534,12 @@ a:hover {
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+
+  background: rgba(20,20,40,0.98);
   padding: 25px;
   border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+
   z-index: 10000;
 }
 
@@ -1519,512 +1560,675 @@ a:hover {
   }
 }
 
+
+/* dark background overlay */
 #projectOverlay {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.4);
-  z-index: 9999;
+  background: transparent;
+  z-index: 0;
   pointer-events: none;
-  transition: opacity 0.25s ease;
 }
-
-/* ======================================================
-   CLIENT STAGE / FIELD HINTS (Section 2/6)
-   ====================================================== */
-.field-hint {
-  display: block;
-  margin-top: 6px;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-
-.client-stage-field select {
-  font-weight: 700;
-}
-
-/* ======================================================
-   + JOB button (top of Client Workspace)
-   ====================================================== */
-.add-job-row {
-  display: flex;
-}
-
-.add-job-btn {
-  width: 100%;
-}
-
-/* ======================================================
-   JOB / NEW-JOB MODALS (Section 5) — shared responsive shell
-   ====================================================== */
-.job-modal-overlay {
+.toast-container {
   position: fixed;
-  inset: 0;
-  background: rgba(15,23,42,0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 20000;
-  padding: 16px;
-  overflow-y: auto;
-}
-
-.job-modal-card {
-  position: relative;
-  width: min(680px, 100%);
-  max-height: 90vh;
-  overflow-y: auto;
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  box-shadow: var(--shadow-lift);
-  color: var(--text-main);
+  right: 16px;
+  bottom: 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
+  z-index: 99999;
+  pointer-events: none;
 }
 
-.job-modal-close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: var(--tap-size);
-  height: var(--tap-size);
+.toast {
+  min-width: 180px;
+  max-width: 320px;
+  background: rgba(20, 20, 40, 0.92);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+  font-size: 0.85rem;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.toast.success { border-color: rgba(40, 167, 69, 0.5); }
+.toast.error { border-color: rgba(220, 53, 69, 0.5); }
+.toast.info { border-color: rgba(23, 162, 184, 0.5); }
+
+/* ============================================================
+   v2/v3 UI — jobs, tags, notifications, settings
+   ============================================================ */
+.user-badge {
+  color: #e7edf7;
+}
+
+.icon-btn {
+  cursor: pointer;
+  border-radius: 10px;
   border: none;
+  color: white;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+}
+
+/* Tag filter bar (sidebar) */
+.tag-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 4px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  align-items: center;
+}
+.tag-filter-label {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.tag-chip {
+  background: rgba(127, 217, 255, 0.12);
+  color: #9ad0ff;
+  border: 1px solid rgba(127, 217, 255, 0.25);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.tag-chip:hover { background: rgba(127, 217, 255, 0.25); }
+.tag-chip.active {
+  background: #2f80ed;
+  color: #fff;
+  border-color: #2f80ed;
+}
+
+/* View toggle (Jobs | Clients) */
+.view-toggle {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 4px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+.view-toggle-btn {
+  flex: 1;
+  border: none;
+  border-radius: 8px;
   background: transparent;
-  color: var(--accent);
-  font-size: 1.6rem;
-  line-height: 1;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  min-height: 36px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.view-toggle-btn.active {
+  background: #2f80ed;
+  color: #fff;
+}
+
+/* Job status filter tabs (front page dashboard) */
+.status-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 4px;
+}
+.job-status-tab {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #cfd8ef;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.job-status-tab:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.job-status-tab.active {
+  background: #2f80ed;
+  color: #fff;
+  border-color: #2f80ed;
+}
+
+/* Job dashboard cards */
+.job-dash-card {
+  padding: 12px 14px;
+}
+.job-dash-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.job-dash-client {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: #7fdbff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+  min-height: 24px;
+}
+.job-dash-client:hover {
+  text-decoration: underline;
+}
+.job-dash-status {
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.job-dash-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.job-dash-sales {
+  font-size: 0.8rem;
+  color: #cfe4ff;
+}
+.job-dash-fin {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: #9ad0ff;
+}
+.job-dash-tag {
+  background: rgba(127, 217, 255, 0.12);
+  border: 1px solid rgba(127, 217, 255, 0.25);
+  color: #9ad0ff;
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 0.78rem;
   cursor: pointer;
 }
-
-.job-modal-kicker {
-  font-size: 0.75rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--accent);
-  font-weight: 700;
+.job-dash-tag:hover {
+  background: rgba(127, 217, 255, 0.25);
 }
-
-.job-modal-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.job-modal-field label {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.job-modal-field input,
-.job-modal-field select,
-.job-modal-field textarea {
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-soft);
-  background:var(--surface);
-  color: var(--text-main);
+.job-dash-name {
   font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* Grouped front page: clients with their jobs nested inside */
+.grouped-client {
+  margin: 0 0 14px;
+  padding: 0;
+}
+.grouped-client-head {
+  cursor: pointer;
+  margin-bottom: 0;
+  padding-bottom: 12px;
+}
+.grouped-client-head::after {
+  display: none;
+}
+.grouped-client-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.grouped-client-head .client-meta {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.62);
+  margin-top: 4px;
+}
+.client-primary-tag-mini {
+  display: inline-block;
+  background: rgba(162, 155, 254, 0.22);
+  border: 1px solid rgba(162, 155, 254, 0.5);
+  color: #c4b5fd;
+  border-radius: 20px;
+  padding: 1px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
   font-family: inherit;
 }
-
-.job-modal-field textarea {
-  resize: vertical;
+.client-primary-tag-mini:hover {
+  background: rgba(162, 155, 254, 0.35);
 }
-
-.job-title-input {
-  font-size: 1.2rem !important;
-  font-weight: 700 !important;
-  background: transparent !important;
-  border: none !important;
-  border-bottom: 1px solid var(--border-soft) !important;
-  border-radius: 0 !important;
-  padding: 4px 0 !important;
+.grouped-jobs {
+  margin: 0 0 8px 14px;
+  padding-left: 8px;
+  border-left: 2px solid rgba(127, 219, 255, 0.2);
 }
-
-.job-modal-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.job-modal-readout {
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  background: var(--surface-muted);
-  border:1px solid var(--border-soft);
-  font-weight: 700;
-  min-height: var(--tap-size);
-  display: flex;
-  align-items: center;
-}
-
-.job-modal-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.job-modal-actions .btn-primary {
-  flex: 1 1 160px;
-}
-
-.job-balance-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.job-payment-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.job-payment-row input {
-  flex: 1 1 160px;
-}
-
-.job-payment-row button {
-  flex: 0 0 auto;
-}
-
-/* ======================================================
-   JOB TAGS (Section 2/7) — distinct from client stage & job status
-   ====================================================== */
-.job-tags-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-height: 28px;
-}
-
-.job-tag-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px 4px 12px;
-  border-radius: 999px;
-  background: var(--surface-muted);
-  border: 1px solid var(--border-strong);
-  font-size: 0.82rem;
-  color: var(--text-main);
-}
-
-.job-tag-remove {
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 1rem;
-  line-height: 1;
-  min-height: auto;
-  padding: 0 2px;
-}
-
-.job-tag-add-row input {
-  width: 100%;
-}
-
-/* ======================================================
-   JOB LINE ITEMS (Section 1) — estimate/invoice cost breakdown
-   ====================================================== */
-.job-line-items-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.job-line-item-row {
-  display: grid;
-  grid-template-columns: 1fr auto auto auto auto;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-muted);
-  border:1px solid var(--border-soft);
-  font-size: 0.85rem;
-}
-
-.li-category-badge {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--primary-soft);
-  border: 1px solid var(--primary);
-  color: var(--primary-hover);
-  font-size: 0.72rem;
-  white-space: nowrap;
-}
-
-.li-amount {
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.li-remove {
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 1.1rem;
-  min-height: auto;
-  padding: 0 4px;
-}
-
-.job-line-item-total {
-  text-align: right;
-  font-weight: 700;
-  padding: 6px 10px;
-}
-
-.job-line-item-add-grid {
-  display: grid;
-  grid-template-columns: 2fr 1.2fr 0.7fr 1fr auto;
-  gap: 8px;
-}
-
-/* ======================================================
-   JOB NOTES (job details panel) — same look as the client notes panel,
-   scoped to a single job.
-   ====================================================== */
-.job-notes-field .notes-list {
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.job-note-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 8px;
-  background: var(--surface-muted);
-  border: 1px solid var(--border-soft);
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
+.grouped-jobs .client-card {
   margin-bottom: 6px;
 }
-
-.job-note-content {
-  flex: 1;
-  color: var(--text-main);
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 0.9rem;
+.grouped-jobs .client-card::after {
+  display: none;
+}
+.grouped-orphan {
+  margin-top: 12px;
 }
 
-.job-note-edit-textarea {
-  flex: 1;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-soft);
-  background: var(--surface);
-  color: var(--text-main);
-  font-family: inherit;
-  resize: vertical;
+/* Job tags (inside panels) */
+.job-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.job-tag {
+  background: rgba(47, 128, 237, 0.14);
+  color: #1e3c72;
+  border: 1px solid rgba(47, 128, 237, 0.3);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.job-tag-remove { color: #c2410c; font-weight: 700; }
+
+/* Client panel: jobs list */
+.client-jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.job-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: linear-gradient(135deg, rgba(47, 128, 237, 0.08), rgba(20, 20, 40, 0.35));
+  border: 1px solid rgba(47, 128, 237, 0.25);
+  border-radius: 10px;
+  padding: 10px 14px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.job-row:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12);
+}
+.job-row-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+.job-row-meta {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.75);
+  margin-top: 2px;
+}
+.job-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.job-open-btn {
+  background: linear-gradient(135deg, #2f80ed, #4f8dfd);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
 }
 
-.job-note-action-btn {
-  background: var(--primary);
+/* Job photos grid */
+.job-photos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.job-photo-card {
+  position: relative;
+  background: #f8f9fa;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  min-height: 100px;
+  display: flex;
+  flex-direction: column;
+}
+.job-photo-card img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  cursor: pointer;
+  display: block;
+}
+.job-photo-card a {
+  color: #1e3c72;
+  font-size: 0.82rem;
+  text-decoration: none;
+  padding: 10px 8px;
+}
+.job-photo-delete {
+  background: rgba(74, 85, 104, 0.9);
   color: #fff;
   border: none;
   padding: 4px 8px;
-  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 0.8rem;
-  min-height: auto;
-  flex: 0 0 auto;
+  font-size: 0.72rem;
+  margin-top: auto;
 }
 
-.job-note-delete-btn {
-  background: var(--surface);
-  color: var(--danger);
-  border: 1px solid var(--danger-soft);
+/* Job finance rows */
+.list-section-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 10px 0 4px;
 }
-
-/* ======================================================
-   JOB FILES — Documents & Photos (separate categories, same component)
-   ====================================================== */
-.job-files-field .field-hint {
-  margin-top: -4px;
-  margin-bottom: 4px;
-}
-
-.job-files-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-height: 32px;
-}
-
-.job-file-row {
+.job-finance-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  background: var(--surface-muted);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  font-size: 0.88rem;
+  color: #e7edf7;
+}
+.job-finance-row small { color: rgba(255, 255, 255, 0.55); }
+.job-finance-delete:hover { color: #ff6b6b; }
+
+/* Notifications panel */
+.notifications-panel {
+  position: fixed;
+  top: 62px;
+  right: 16px;
+  width: min(400px, calc(100vw - 32px));
+  max-height: 70vh;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
+  z-index: 10002;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  color: #1e3c72;
+}
+.notifications-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #eef2f7;
+  font-size: 0.95rem;
+}
+.notifications-mark-all {
+  background: none;
+  border: none;
+  color: #2f80ed;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.notifications-list {
+  overflow-y: auto;
+  max-height: 60vh;
+}
+.notification-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #eef2f7;
+  cursor: pointer;
+  font-size: 0.88rem;
+  color: #1e3c72;
+}
+.notification-item:hover { background: #f8fafc; }
+.notification-item.read { opacity: 0.6; }
+.notification-icon { font-size: 1.05rem; }
+.notification-body small { color: #94a3b8; }
+
+/* Settings modal */
+.settings-modal {
+  position: fixed;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 10000;
+}
+.settings-modal-card {
+  position: relative;
+  width: min(680px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.2);
+  color: #1e3c72;
+  padding: 24px;
+}
+.settings-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.settings-tab {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #d0d7de;
+  background: #f1f5fa;
+  color: #53657d;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+.settings-tab.active {
+  background: linear-gradient(135deg, #2f80ed, #4f8dfd);
+  color: #fff;
+  border-color: transparent;
+}
+.settings-tab-panel { font-size: 0.92rem; }
+
+/* Link-style button */
+.link-btn { font-weight: 700; }
+.link-btn:hover { text-decoration: underline; }
+
+/* Print: keep only the panel content */
+@media print {
+  .notifications-panel,
+  .settings-modal {
+    display: none !important;
+  }
 }
 
-.job-file-name {
-  flex: 1;
-  color: var(--primary);
-  text-decoration: none;
+/* ================================================================
+   V3 — Client/Job workspace, tags, sales, line items, disclosure
+   ================================================================ */
+.client-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 28px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+.client-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+}
+.client-meta-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.5);
+}
+.client-meta-value {
+  font-size: 0.9rem;
+  color: #e7edf7;
+  font-weight: 600;
+}
+.sales-chip {
+  display: inline-block;
+  background: rgba(47, 128, 237, 0.16);
+  border: 1px solid rgba(47, 128, 237, 0.3);
+  color: #9ad0ff;
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 0.78rem;
+}
+.client-primary-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.client-primary-tag-chip {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+}
+.client-tag-assign {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #e7edf7;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.85rem;
+  max-width: 180px;
+}
+.client-tag-assign option {
+  color: #111827;
+  background: #fff;
+}
+.client-filter-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0 4px;
+  padding: 6px 10px;
+  background: rgba(47, 128, 237, 0.16);
+  border: 1px solid rgba(47, 128, 237, 0.3);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: #cfe4ff;
+}
+.client-filter-notice-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.job-file-name:hover {
-  text-decoration: underline;
-}
-
-.job-file-meta {
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  white-space: nowrap;
-}
-
-.job-file-delete-btn {
-  border: none;
+.client-filter-clear {
   background: transparent;
-  color: var(--text-muted);
+  border: none;
+  color: #9ad0ff;
   cursor: pointer;
-  font-size: 1.1rem;
-  line-height: 1;
-  min-height: auto;
-  padding: 0 4px;
-  flex: 0 0 auto;
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 6px 8px;
+  min-height: 32px;
+  flex-shrink: 0;
 }
-
-.job-photos-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 8px;
-}
-
-.job-photo-thumb {
-  position: relative;
-  display: block;
-  aspect-ratio: 1;
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  border: 1px solid var(--border-soft);
-  background: var(--surface-muted);
-}
-
-.job-photo-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.job-photo-thumb .job-file-delete-btn {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  background: rgba(15, 23, 42, 0.65);
-  color: #fff;
-  border-radius: 999px;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-
-.job-files-upload-row {
-  display: flex;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.job-file-progress {
-  margin-top: 8px;
+.client-filter-clear:hover { color: #fff; }
+.job-row-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
-
-.job-file-progress-track {
-  flex: 1;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--surface-muted);
-  border: 1px solid var(--border-soft);
-  overflow: hidden;
-}
-
-.job-file-progress-bar {
-  height: 100%;
-  width: 0%;
-  background: var(--primary);
-  transition: width 0.2s ease;
-}
-
-.job-file-progress-label {
-  font-size: 0.78rem;
-  color: var(--text-muted);
+.job-duplicate-btn {
+  background: rgba(255, 255, 255, 0.12);
+  color: #e7edf7;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
   white-space: nowrap;
 }
+.job-row-meta span { margin-right: 12px; white-space: nowrap; }
+.job-tag { font-family: inherit; }
+.tag-chip-clear {
+  background: rgba(232, 72, 77, 0.2);
+  border-color: rgba(232, 72, 77, 0.4);
+  color: #ffb4b6;
+}
 
-/* ======================================================
-   RESPONSIVE: tablet / mobile collapse for job modals
-   ====================================================== */
-@media (max-width: 640px) {
-  .job-modal-card {
-    padding: 16px;
-    max-height: 95vh;
-  }
+/* Collapsible sections (progressive disclosure) */
+.panel-collapse { margin-top: 6px; }
+.panel-collapse > summary {
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 1rem;
+  color: #fff;
+  padding: 8px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  list-style-position: inside;
+}
+.panel-collapse > summary:hover { color: #7fd9ff; }
+.panel-inner-grid { margin-top: 12px; }
 
-  .job-modal-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .job-modal-actions .btn-primary {
-    flex: 1 1 100%;
-  }
-
-  .job-line-item-row {
-    grid-template-columns: 1fr 1fr;
-    grid-template-areas:
-      "desc desc"
-      "cat qty"
-      "amount remove";
-  }
-
-  .job-line-item-row .li-desc { grid-area: desc; }
-  .job-line-item-row .li-category-badge { grid-area: cat; }
-  .job-line-item-row .li-qty { grid-area: qty; }
-  .job-line-item-row .li-amount { grid-area: amount; }
-  .job-line-item-row .li-remove { grid-area: remove; justify-self: end; }
-
-  .job-line-item-add-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .job-files-upload-row {
+/* Comfortable tap targets + no horizontal overflow on phones */
+@media (max-width: 768px) {
+  html, body { overflow-x: hidden; }
+  .job-row {
     flex-direction: column;
+    align-items: stretch;
   }
-
-  .job-files-upload-row .panel-secondary-btn {
-    width: 100%;
-  }
-
-  .job-photos-grid {
-    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-  }
-
-  .job-file-row {
+  .job-row-actions {
+    justify-content: flex-end;
     flex-wrap: wrap;
+  }
+  .job-row-meta span {
+    display: inline-block;
+    margin: 2px 8px 2px 0;
+    white-space: normal;
+  }
+  .job-open-btn, .job-duplicate-btn, .sales-assign, .tag-chip, .job-tag, .client-filter-clear, .job-status-tab, .job-dash-tag, .job-dash-client {
+    min-height: 40px;
+  }
+  .client-meta-item { min-width: 100%; }
+  .panel-inline-row { flex-wrap: wrap; }
+  #projectPanel input, #projectPanel select, #projectPanel textarea {
+    max-width: 100%;
   }
 }
