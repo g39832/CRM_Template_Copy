@@ -6,12 +6,17 @@
 }
 
 /* =========================
-   BODY
+   BODY — solid brand-color backdrop, single truly-centered card.
+   The color itself carries the "pop"; the card stays flat/professional.
 ========================= */
 body {
   min-height: 100vh;
-  background: var(--bg-main);
+  background: var(--primary);
   color: var(--text-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
   animation: pageFade 0.3s ease-out;
 }
 
@@ -21,96 +26,11 @@ body {
   to { opacity: 1; }
 }
 
-/* =========================
-   SHELL — split screen: solid brand panel + form panel.
-========================= */
 .login-shell {
-  display: flex;
-  min-height: 100vh;
   width: 100%;
-}
-
-/* =========================
-   BRAND PANEL (left) — personality through color, type and layout,
-   not gradients/glow/glass.
-========================= */
-.login-brand-panel {
-  flex: 1 1 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--primary);
-  color: #fff;
-  padding: 56px 48px;
-}
-
-.login-brand-panel-inner {
-  width: 100%;
-  max-width: 420px;
-}
-
-.login-brand-mark {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 0.9rem;
-  letter-spacing: 0.02em;
-  margin-bottom: 32px;
-}
-
-.login-brand-headline {
-  font-size: 2.1rem;
-  font-weight: 800;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
-  margin-bottom: 14px;
-}
-
-.login-brand-sub {
-  font-size: 1rem;
-  line-height: 1.55;
-  color: rgba(255, 255, 255, 0.85);
-  margin-bottom: 36px;
-}
-
-.login-value-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.login-value-list li {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 0.95rem;
-  font-weight: 600;
-}
-
-.login-value-list li i {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  color: #fff;
-}
-
-/* =========================
-   FORM PANEL (right)
-========================= */
-.login-form-panel {
-  flex: 1 1 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-main);
-  padding: 40px 24px;
 }
 
 /* =========================
@@ -118,8 +38,12 @@ body {
 ========================= */
 .container {
   width: 100%;
-  max-width: 380px;
+  max-width: 400px;
   text-align: center;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lift);
+  padding: 40px 36px;
 
   opacity: 0;
   animation: cardEntrance 0.35s ease forwards;
@@ -326,62 +250,15 @@ button {
 /* =========================
    RESPONSIVE
 ========================= */
-
-/* Below this width the brand panel's value list starts feeling cramped
-   next to the form — stack instead of squeezing both columns. */
-@media (max-width: 860px) {
-  .login-shell {
-    flex-direction: column;
-  }
-
-  .login-brand-panel {
-    flex: 0 0 auto;
-    padding: 36px 28px;
-  }
-
-  .login-brand-panel-inner {
-    max-width: none;
-  }
-
-  .login-brand-headline {
-    font-size: 1.5rem;
-  }
-
-  .login-brand-sub {
-    margin-bottom: 20px;
-  }
-
-  .login-value-list {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 10px 20px;
-  }
-
-  .login-value-list li span {
-    display: none;
-  }
-
-  .login-brand-mark {
-    margin-bottom: 16px;
-  }
-
-  .login-form-panel {
-    padding: 40px 20px;
-  }
-}
-
-@media (max-width: 400px) {
-  .login-brand-panel {
-    padding: 28px 20px;
-  }
-
-  .login-value-list {
-    display: none;
-  }
-}
-
-/* Prevent mobile height cut-off */
 @media (max-width: 480px) {
+  body {
+    padding: 16px;
+  }
+
+  .container {
+    padding: 32px 22px;
+  }
+
   .brand-copy h1 {
     font-size: 1.4rem;
   }
