@@ -24,6 +24,36 @@
     });
   }
 
+  // ==================== NAV THEME TOGGLE BUTTON ====================
+  (function () {
+    var btn = document.getElementById('themeToggleBtn');
+    if (!btn || !window.crmTheme) return;
+    function render() {
+      btn.innerHTML = '<i data-lucide="' + (window.crmTheme.getTheme() === 'dark' ? 'sun' : 'moon') + '"></i>';
+      if (window.lucide) window.lucide.createIcons();
+    }
+    render();
+    btn.addEventListener('click', function () {
+      window.crmTheme.toggleTheme();
+      render();
+    });
+    document.addEventListener('crm-theme-change', render);
+  })();
+
+  // ==================== NAV: ROLE BADGE + FINANCE LINK ====================
+  (function () {
+    var financeLink = document.getElementById('navFinanceLink');
+    var roleBadge = document.getElementById('roleBadge');
+    if (!window.__USER__) return;
+    var isAdmin = window.__USER__.role === 'admin';
+    if (financeLink) financeLink.style.display = isAdmin ? '' : 'none';
+    if (roleBadge) {
+      roleBadge.textContent = isAdmin ? 'Admin' : 'User';
+      roleBadge.className = 'role-badge ' + (isAdmin ? 'admin' : 'user');
+      roleBadge.style.display = '';
+    }
+  })();
+
   // Feature descriptions
   var DESCRIPTIONS = {
     hero: 'Large headline section with call-to-action button',
@@ -344,7 +374,7 @@
   function loadUsers() {
     var tbody = document.getElementById('usersTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:#94a3b8;">Loading users...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--text-muted);">Loading users...</td></tr>';
     var xhr = new XMLHttpRequest();
     xhr.open('GET', USERS_API, true);
     xhr.onload = function () {
@@ -352,25 +382,25 @@
         var resp = JSON.parse(xhr.responseText);
         var users = resp.data || [];
         if (users.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:#94a3b8;">No users found.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--text-muted);">No users found.</td></tr>';
           return;
         }
         var html = '';
         users.forEach(function (u) {
           var created = u.created_at ? new Date(u.created_at).toLocaleDateString() : '—';
           var roleBadge = u.role === 'admin'
-            ? '<span style="background:rgba(37,99,235,0.2);color:#60a5fa;padding:2px 10px;border-radius:999px;font-size:0.78rem;font-weight:600;">Admin</span>'
-            : '<span style="background:rgba(255,255,255,0.06);color:#94a3b8;padding:2px 10px;border-radius:999px;font-size:0.78rem;font-weight:600;">User</span>';
+            ? '<span style="background:var(--primary-soft);color:var(--primary);padding:2px 10px;border-radius:var(--radius-sm);font-size:0.78rem;font-weight:600;">Admin</span>'
+            : '<span style="background:var(--surface-muted);color:var(--text-muted);padding:2px 10px;border-radius:var(--radius-sm);font-size:0.78rem;font-weight:600;">User</span>';
           var roleToggleLabel = u.role === 'admin' ? 'Remove Admin' : 'Make Admin';
           var roleToggleTarget = u.role === 'admin' ? 'user' : 'admin';
-          html += '<tr style="border-bottom:1px solid rgba(122,183,214,0.08);">' +
+          html += '<tr style="border-bottom:1px solid var(--border-soft);">' +
             '<td style="padding:10px 8px;">' + escapeHtml(u.display_name || '—') + '</td>' +
-            '<td style="padding:10px 8px;color:#94a3b8;">' + escapeHtml(u.email) + '</td>' +
+            '<td style="padding:10px 8px;color:var(--text-muted);">' + escapeHtml(u.email) + '</td>' +
             '<td style="padding:10px 8px;">' + roleBadge + '</td>' +
-            '<td style="padding:10px 8px;color:#94a3b8;font-size:0.82rem;">' + created + '</td>' +
+            '<td style="padding:10px 8px;color:var(--text-muted);font-size:0.82rem;">' + created + '</td>' +
             '<td style="padding:10px 8px;text-align:center;white-space:nowrap;">' +
-            '<button type="button" class="role-toggle-btn" data-id="' + u.id + '" data-role="' + roleToggleTarget + '" style="background:rgba(37,99,235,0.15);color:#60a5fa;border:1px solid rgba(37,99,235,0.3);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;margin-right:6px;">' + roleToggleLabel + '</button>' +
-            '<button type="button" class="delete-user-btn" data-id="' + u.id + '" data-email="' + escapeHtml(u.email) + '" style="background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;">Delete</button>' +
+            '<button type="button" class="role-toggle-btn" data-id="' + u.id + '" data-role="' + roleToggleTarget + '" style="background:var(--primary-soft);color:var(--primary);border:1px solid var(--primary-soft);padding:4px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:0.78rem;margin-right:6px;">' + roleToggleLabel + '</button>' +
+            '<button type="button" class="delete-user-btn" data-id="' + u.id + '" data-email="' + escapeHtml(u.email) + '" style="background:var(--danger-soft);color:var(--danger);border:1px solid var(--danger-soft);padding:4px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:0.78rem;">Delete</button>' +
             '</td></tr>';
         });
         tbody.innerHTML = html;
@@ -426,11 +456,11 @@
           });
         });
       } else {
-        tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:#fca5a5;">Failed to load users.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--danger);">Failed to load users.</td></tr>';
       }
     };
     xhr.onerror = function () {
-      tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:#fca5a5;">Network error loading users.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" style="padding:24px;text-align:center;color:var(--danger);">Network error loading users.</td></tr>';
     };
     xhr.send();
   }
@@ -571,7 +601,7 @@
   function loadAuditLog() {
     var tbody = document.getElementById('auditTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:#94a3b8;">Loading activity log...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--text-muted);">Loading activity log...</td></tr>';
 
     var params = '?page=' + auditPage + '&limit=20';
     if (auditActionFilter) params += '&action=' + encodeURIComponent(auditActionFilter);
@@ -593,7 +623,7 @@
         if (nextBtn) nextBtn.disabled = auditPage * 20 >= total;
 
         if (entries.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:#94a3b8;">No activity log entries found.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--text-muted);">No activity log entries found.</td></tr>';
           return;
         }
 
@@ -610,19 +640,19 @@
             }
           }
           html += '<tr style="border-bottom:1px solid rgba(122,183,214,0.08);">' +
-            '<td style="padding:8px;color:#94a3b8;font-size:0.8rem;white-space:nowrap;">' + escapeHtml(date) + '</td>' +
+            '<td style="padding:8px;color:var(--text-muted);font-size:0.8rem;white-space:nowrap;">' + escapeHtml(date) + '</td>' +
             '<td style="padding:8px;font-weight:600;">' + escapeHtml(entry.action || '—') + '</td>' +
-            '<td style="padding:8px;color:#94a3b8;">' + escapeHtml(entry.entity_type || '—') + '</td>' +
-            '<td style="padding:8px;color:#94a3b8;font-size:0.82rem;">' + escapeHtml(details) + '</td>' +
+            '<td style="padding:8px;color:var(--text-muted);">' + escapeHtml(entry.entity_type || '—') + '</td>' +
+            '<td style="padding:8px;color:var(--text-muted);font-size:0.82rem;">' + escapeHtml(details) + '</td>' +
             '</tr>';
         });
         tbody.innerHTML = html;
       } else {
-        tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:#fca5a5;">Failed to load activity log.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--danger);">Failed to load activity log.</td></tr>';
       }
     };
     xhr.onerror = function () {
-      tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:#fca5a5;">Network error.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--danger);">Network error.</td></tr>';
     };
     xhr.send();
   }

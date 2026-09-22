@@ -86,32 +86,14 @@
       box-shadow: none;
     }
 
-    .email-settings-modal {
-      position: fixed;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 18px;
-      background: rgba(15, 23, 42, 0.45);
-      z-index: 10000;
-    }
-
-    .email-settings-modal.open {
-      display: flex;
-    }
-
+    /* .email-settings-modal/.email-settings-card layer onto the shared
+       .modal-overlay/.modal-card base (style.css) — only page-specific
+       sizing lives here. */
     .email-settings-card {
-      position: relative;
       width: min(760px, 100%);
       max-height: min(92vh, 920px);
       overflow: auto;
-      border-radius: var(--radius-lg);
-      border: 1px solid var(--border-soft);
-      background: var(--surface);
-      box-shadow: var(--shadow-lift);
       color: var(--text-main);
-      padding: 20px;
     }
 
     .email-settings-title {
@@ -196,16 +178,15 @@
       grid-column: 1 / -1;
     }
 
-    /* Fix: modal inputs must be dark text on white background */
     #companyProfileModal input,
     #companyProfileModal textarea,
     #companyProfileModal select,
     #emailSettingsModal input,
     #emailSettingsModal textarea,
     #emailSettingsModal select {
-      color: #111827 !important;
-      -webkit-text-fill-color: #111827 !important;
-      background: #fff !important;
+      color: var(--text-main);
+      background: var(--surface-muted);
+      border: 1px solid var(--border-strong);
     }
 
     body.dashboard-body {
@@ -279,45 +260,7 @@
       flex: 1; /* Make it take full width on the right */
     }
 
-    /* ===== TOP NAVIGATION BAR ===== */
-    .top-nav {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 24px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border-soft);
-    }
-    .top-nav .nav-brand {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 700;
-      font-size: 1rem;
-      color: var(--text-main);
-    }
-    .top-nav .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .top-nav .nav-links a {
-      text-decoration: none;
-      padding: 8px 16px;
-      border-radius: 8px;
-      color: var(--text-muted);
-      font-size: 0.88rem;
-      font-weight: 600;
-      transition: background 0.2s, color 0.2s;
-    }
-    .top-nav .nav-links a:hover {
-      background: var(--surface-muted);
-      color: var(--text-main);
-    }
-    .top-nav .nav-links a.active {
-      background: var(--primary-soft);
-      color: var(--primary);
-    }
+    /* .top-nav now comes from the shared style.css */
 
     .close-x {
       color: var(--accent);
@@ -383,15 +326,7 @@
     }
     .filter-row select option { background: #ffffff; }
     .filter-actions button { padding: 6px 10px; border-radius: 6px; font-size: 0.82rem; }
-    .btn-secondary {
-      background: var(--surface);
-      border: 1px solid var(--border-strong);
-      color: var(--text-main);
-      cursor: pointer;
-      font-weight: 600;
-      transition: background 0.2s;
-    }
-    .btn-secondary:hover { background: var(--surface-muted); }
+    /* .btn-secondary now comes from the shared style.css */
 
     .client-list {
       margin-top: 10px;
@@ -505,15 +440,15 @@
     .kanban-col .kanban-count { font-size: 1.2rem; font-weight: 800; text-align: center; }
     .recurring-manager { display: flex; flex-direction: column; gap: 6px; }
     .recurring-manager .empty { color: var(--text-muted); font-size: 0.82rem; text-align: center; padding: 16px 0; }
-    .client-type-badge { display: inline-block; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; margin-left: 5px; vertical-align: middle; }
+    .client-type-badge { display: inline-block; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 7px; border-radius: var(--radius-sm); margin-left: 5px; vertical-align: middle; }
     .client-type-badge.one-off { background: var(--primary-soft); color: var(--primary); border: 1px solid var(--primary-soft); }
     .client-type-badge.recurring { background: var(--success-soft); color: var(--success); border: 1px solid var(--success-soft); }
-    .retention-risk-badge { display: inline-block; font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 999px; margin-left: 4px; background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger-soft); }
-    .feature-chip { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin: 2px 3px; }
+    .retention-risk-badge { display: inline-block; font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: var(--radius-sm); margin-left: 4px; background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger-soft); }
+    .feature-chip { display: inline-block; padding: 4px 10px; border-radius: var(--radius-sm); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin: 2px 3px; }
     .feature-chip.active { background: var(--primary-soft); color: var(--primary); border: 1px solid var(--primary-soft); }
     .feature-chip.inactive { background: var(--surface-muted); color: var(--text-muted); border: 1px solid var(--surface-muted); }
     #brandLogoImg { max-height: 32px; max-width: 120px; border-radius: 6px; margin-right: 10px; vertical-align: middle; display: none; }
-    .revenue-split-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; margin-top: 8px; background: var(--surface-muted); }
+    .revenue-split-bar { display: flex; height: 8px; border-radius: var(--radius-sm); overflow: hidden; margin-top: 8px; background: var(--surface-muted); }
     .revenue-split-bar .one-off-bar { background: var(--accent); transition: width 0.5s ease; }
     .revenue-split-bar .recurring-bar { background: var(--success); transition: width 0.5s ease; }
     .revenue-split-labels { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
@@ -522,20 +457,18 @@
     #brandLogoContainer img { max-height: 34px; max-width: 130px; border-radius: 6px; }
     #brandLogoContainer span { font-weight: 700; font-size: 1.05rem; color: var(--text-main); }
 
-    .role-badge { display: inline-block; font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 999px; margin-left: 6px; vertical-align: middle; }
-    .role-badge.admin { background: var(--primary-soft); color: var(--primary); border: 1px solid var(--primary-soft); }
-    .role-badge.user { background: var(--surface-muted); color: var(--text-muted); border: 1px solid var(--surface-muted); }
+    /* .role-badge now comes from the shared style.css */
 
     @media (max-width: 768px) {
       .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
       #dashboardOverview { width: calc(100% - 16px); padding: 0 8px; }
-      .top-nav { flex-wrap: wrap; gap: 8px; padding: 8px 14px; }
-      .top-nav .nav-links a { padding: 6px 12px; font-size: 0.82rem; }
     }
   </style>
 
   <!-- PDF.js library -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.225/pdf.min.js"></script>
+  <!-- Lucide icons (outline, consistent stroke — replaces emoji-as-icon usage) -->
+  <script src="https://cdn.jsdelivr.net/npm/lucide@1.47.0/dist/umd/lucide.min.js"></script>
   <script src="/vendor/supabase.js"></script>
 </head>
 <body class="dashboard-body">
@@ -553,9 +486,9 @@
       <a href="/main" class="active">Dashboard</a>
       <a href="/finance" id="navFinanceLink">Finance</a>
       <a href="/settings" id="userSettingsNavLink">Settings</a>
-      <a href="/settings" id="adminNavLink" style="display:none;">&#9881; Admin Settings</a>
+      <a href="/settings" id="adminNavLink" style="display:none;"><i data-lucide="settings"></i> Admin Settings</a>
       <span id="roleBadge" class="role-badge" style="display:none;"></span>
-      <button type="button" id="themeToggleBtn" class="theme-toggle-btn" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
+      <button type="button" id="themeToggleBtn" class="theme-toggle-btn" title="Toggle dark mode" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
     </div>
   </nav>
 
@@ -587,7 +520,7 @@
 
         <div class="search-bar">
           <input type="text" id="searchClients" placeholder="Search name, phone, or email...">
-          <button type="button" id="filterToggleBtn" class="filter-toggle-btn" title="Advanced Filters" style="display:none;">⚙</button>
+          <button type="button" id="filterToggleBtn" class="filter-toggle-btn" title="Advanced Filters" style="display:none;"><i data-lucide="sliders-horizontal"></i></button>
         </div>
 
         <div id="filterPanel" class="filter-panel" style="display:none;">
@@ -625,15 +558,15 @@
   <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
   <!-- PDF Preview Modal -->
-  <div id="pdfModal">
-    <div id="pdfModalContent">
+  <div id="pdfModal" class="modal-overlay">
+    <div id="pdfModalContent" class="modal-card">
       <span id="pdfModalClose">&times;</span>
       <div id="pdfViewer"></div>
     </div>
   </div>
 
-  <div id="emailSettingsModal" class="email-settings-modal" aria-hidden="true">
-    <div class="email-settings-card">
+  <div id="emailSettingsModal" class="email-settings-modal modal-overlay" aria-hidden="true">
+    <div class="email-settings-card modal-card">
       <button id="closeEmailSettings" class="email-settings-close" type="button">&times;</button>
       <h2 class="email-settings-title">Email Setup</h2>
       <p class="email-settings-subtitle">Connect the sender account this app should use for invoices. Each user can set up their own sender here without editing the server files.</p>
@@ -704,8 +637,8 @@
     </div>
   </div>
 
-  <div id="companyProfileModal" class="email-settings-modal" aria-hidden="true">
-    <div class="email-settings-card">
+  <div id="companyProfileModal" class="email-settings-modal modal-overlay" aria-hidden="true">
+    <div class="email-settings-card modal-card">
       <button id="closeCompanyProfile" class="email-settings-close" type="button">&times;</button>
       <h2 class="email-settings-title">Company Profile</h2>
       <p class="email-settings-subtitle">Set the company details that appear on every invoice.</p>
@@ -833,6 +766,8 @@
         if (url) openPDFModal(url);
       }
     });
+
+    if (window.lucide) window.lucide.createIcons();
   </script>
   <div id="projectOverlay"></div>
 </body>

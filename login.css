@@ -10,26 +10,15 @@
 ========================= */
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(127, 219, 255, 0.16), transparent 28%),
-    radial-gradient(circle at 80% 10%, rgba(108, 92, 231, 0.18), transparent 26%),
-    linear-gradient(135deg, #08111f, #10243e 55%, #1b4a70);
-  background-size: 200% 200%;
+  background: var(--bg-main);
   display: flex;
   justify-content: center;
   align-items: center;
-  color: white;
+  color: var(--text-main);
   padding: 20px;
   overflow: hidden;
 
-  animation: gradientMove 12s ease infinite, pageFade 0.6s ease-out;
-}
-
-/* Animated Gradient Movement */
-@keyframes gradientMove {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  animation: pageFade 0.3s ease-out;
 }
 
 /* Page Fade In */
@@ -39,7 +28,7 @@ body {
 }
 
 /* =========================
-   SHELL + ORBS
+   SHELL
 ========================= */
 .login-shell {
   position: relative;
@@ -50,65 +39,31 @@ body {
   min-height: calc(100vh - 40px);
 }
 
-.login-orb {
-  position: absolute;
-  border-radius: 999px;
-  filter: blur(12px);
-  pointer-events: none;
-  opacity: 0.7;
-}
-
-.orb-one {
-  width: 220px;
-  height: 220px;
-  left: 6%;
-  top: 10%;
-  background: rgba(127, 219, 255, 0.18);
-}
-
-.orb-two {
-  width: 280px;
-  height: 280px;
-  right: 3%;
-  bottom: 6%;
-  background: rgba(108, 92, 231, 0.18);
-}
-
 /* =========================
    MAIN CONTAINER
 ========================= */
 .container {
   position: relative;
   z-index: 1;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.08)),
-    rgba(7, 17, 32, 0.55);
-  backdrop-filter: blur(18px);
+  background: var(--surface);
   padding: 34px 32px;
-  border-radius: 22px;
+  border-radius: var(--radius-lg);
   width: 100%;
   max-width: 460px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.48);
+  box-shadow: var(--shadow-lift);
   text-align: center;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--border-soft);
 
   opacity: 0;
-  transform: translateY(20px) scale(0.98);
-  animation: cardEntrance 0.7s ease forwards;
-  animation-delay: 0.2s;
+  animation: cardEntrance 0.35s ease forwards;
+  animation-delay: 0.1s;
 }
 
 /* Card Entrance Animation */
 @keyframes cardEntrance {
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
   }
-}
-
-.container:hover {
-  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
 }
 
 /* =========================
@@ -119,18 +74,8 @@ body {
   height: 86px;
   object-fit: cover;
   margin-bottom: 0;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.28);
-
-  animation: floatLogo 4s ease-in-out infinite;
-}
-
-/* Floating Logo Animation */
-@keyframes floatLogo {
-  0% { transform: translateY(0px); }
-  50% { transform: translateY(-6px); }
-  100% { transform: translateY(0px); }
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
 }
 
 .brand-block {
@@ -147,10 +92,11 @@ body {
   margin-bottom: 8px;
   font-weight: 800;
   letter-spacing: -0.03em;
+  color: var(--text-main);
 }
 
 .brand-copy p {
-  color: rgba(235, 242, 255, 0.8);
+  color: var(--text-muted);
   font-size: 0.96rem;
   line-height: 1.5;
 }
@@ -159,7 +105,7 @@ body {
   font-size: 0.75rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #7fdbff;
+  color: var(--primary);
   font-weight: 700;
   margin-bottom: 6px;
 }
@@ -170,18 +116,19 @@ body {
 h2 {
   margin-bottom: 20px;
   font-weight: 500;
+  color: var(--text-main);
 }
 
 h3 {
   margin-bottom: 10px;
   font-size: 16px;
   font-weight: 700;
-  color: #f3f7ff;
+  color: var(--text-main);
 }
 
 .section-copy {
   margin-bottom: 14px;
-  color: rgba(235, 242, 255, 0.78);
+  color: var(--text-muted);
   font-size: 0.92rem;
   line-height: 1.45;
 }
@@ -193,24 +140,23 @@ input {
   width: 100%;
   padding: 12px 14px;
   margin-bottom: 15px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
   outline: none;
   font-size: 14px;
-  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease;
-  background: rgba(255, 255, 255, 0.12);
-  color: #f5f7ff;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  background: var(--surface-muted);
+  color: var(--text-main);
 }
 
 input:focus {
-  transform: translateY(-1px);
-  box-shadow: 0 0 0 3px rgba(127, 219, 255, 0.24);
-  border-color: rgba(127, 219, 255, 0.7);
-  background: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+  border-color: var(--primary);
+  background: var(--surface);
 }
 
 input::placeholder {
-  color: rgba(235, 242, 255, 0.68);
+  color: var(--text-muted);
 }
 
 /* =========================
@@ -228,37 +174,33 @@ input::placeholder {
 button {
   flex: 1;
   padding: 11px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   border: none;
   cursor: pointer;
   font-size: 14px;
   font-weight: 700;
-  transition: transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
-}
-
-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+  transition: background 0.2s ease;
 }
 
 /* Login Button */
 #login-btn {
-  background: linear-gradient(135deg, #2f80ed, #4f8dfd);
-  color: white;
+  background: var(--primary);
+  color: #fff;
 }
 
 #login-btn:hover {
-  background: #2569c7;
+  background: var(--primary-hover);
 }
 
 /* Reset Toggle Button */
 #showReset {
-  background: rgba(255, 255, 255, 0.14);
-  color: white;
+  background: var(--surface-muted);
+  color: var(--text-main);
+  border: 1px solid var(--border-strong);
 }
 
 #showReset:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--border-soft);
 }
 
 /* =========================
@@ -267,12 +209,11 @@ button:hover {
 #resetSection {
   margin-top: 20px;
   padding: 18px 16px 6px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
   display: none;
-  animation: fadeIn 0.3s ease-in-out;
-  transition: all 0.35s ease;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  animation: fadeIn 0.2s ease-in-out;
+  border: 1px solid var(--border-soft);
 }
 
 #resetSection input {
@@ -281,12 +222,12 @@ button:hover {
 
 #resetSection button {
   width: 100%;
-  background: linear-gradient(135deg, #16a34a, #22c55e);
-  color: white;
+  background: var(--success);
+  color: #fff;
 }
 
 #resetSection button:hover {
-  background: #15803d;
+  filter: brightness(0.92);
 }
 
 /* Smooth Show Class (optional if toggling via JS) */
@@ -330,11 +271,6 @@ button:hover {
 
   .login-shell {
     min-height: calc(100vh - 28px);
-  }
-
-  .orb-one,
-  .orb-two {
-    display: none;
   }
 
   .brand-copy h1 {
@@ -384,7 +320,7 @@ button:hover {
   align-items: center;
   gap: 12px;
   margin: 14px 0;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-muted);
   font-size: 0.78rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -395,8 +331,10 @@ button:hover {
   content: "";
   flex: 1;
   height: 1px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--border-soft);
 }
+/* Google's brand guidelines call for a light, high-contrast button
+   regardless of app theme — intentionally not tokenized to --surface. */
 .google-btn {
   display: flex;
   align-items: center;
@@ -404,19 +342,18 @@ button:hover {
   gap: 10px;
   width: 100%;
   padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-sm);
+  border: 1px solid #d1d5db;
   background: #ffffff;
   color: #1f2937;
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.15s ease;
   box-sizing: border-box;
 }
 .google-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+  background: #f8f9fa;
 }
 .google-btn:disabled {
   opacity: 0.6;

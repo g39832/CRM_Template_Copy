@@ -1588,8 +1588,8 @@
                   <small>Net profit</small>
                 </div>
               </div>
-              <div style="width:100%; height:12px; border-radius:999px; background:var(--surface-muted); overflow:hidden;">
-                <div style="width:${width}%; height:100%; border-radius:999px; background:${chartPalette[idx % chartPalette.length]};"></div>
+              <div style="width:100%; height:12px; border-radius:var(--radius-sm); background:var(--surface-muted); overflow:hidden;">
+                <div style="width:${width}%; height:100%; border-radius:var(--radius-sm); background:${chartPalette[idx % chartPalette.length]};"></div>
               </div>
             </div>
           `;

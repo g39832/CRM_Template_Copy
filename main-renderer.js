@@ -1738,10 +1738,11 @@ async function refreshList() {
     const clients = await window.api.searchClients("");
     if (!clients || clients.length === 0) {
       clientList.innerHTML = `<li class="empty-state" style="text-align:center; padding:24px 16px;">
-        <div style="font-size:2rem; margin-bottom:8px;">👤</div>
+        <div style="margin-bottom:8px; color:var(--text-muted);"><i data-lucide="user" style="width:28px;height:28px;"></i></div>
         <div style="font-weight:700; color:var(--text-main); margin-bottom:4px;">No clients yet</div>
         <div style="font-size:0.85rem; color:var(--text-muted);">Add your first lead using the form above.</div>
       </li>`;
+      if (window.lucide) window.lucide.createIcons();
       return;
     }
     renderSidebar(clients);
@@ -1818,7 +1819,7 @@ function buildClientCard(c, term = "") {
   // for the upcoming portal link feature.
   var portalBadge = '';
   if (c.client_type === 'recurring' && window._platformFeatures && window._platformFeatures.clientPortal === true) {
-    portalBadge = '<span class="client-type-badge portal" style="background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.25);">Portal</span>';
+    portalBadge = '<span class="client-type-badge portal" style="background:var(--primary-soft);color:var(--primary);border:1px solid var(--primary-soft);">Portal</span>';
   }
 
   var retentionBadge = '';
@@ -1836,10 +1837,10 @@ function buildClientCard(c, term = "") {
       </div>
 
       <div class="client-meta">
-        📞 ${phoneHighlighted}
+        <i data-lucide="phone"></i> ${phoneHighlighted}
       </div>
 
-      ${c.email ? `<div class="client-meta" style="font-size:0.82rem; opacity:0.8;">✉️ ${c.email}</div>` : ''}
+      ${c.email ? `<div class="client-meta" style="font-size:0.82rem; opacity:0.8;"><i data-lucide="mail"></i> ${c.email}</div>` : ''}
 
       <div class="client-status" style="color:${color};" data-filter-status="${escapeHtml(c.status || "Lead")}" title="Click to search this status">
         ${escapeHtml(c.status || "Lead")}
@@ -1860,6 +1861,7 @@ function renderSidebarChunk() {
 
   const html = next.map(c => buildClientCard(c, sidebarSearchTerm)).join("");
   sidebarListContainer.insertAdjacentHTML("beforeend", html);
+  if (window.lucide) window.lucide.createIcons();
 }
 
 // ======================================================
@@ -1900,7 +1902,7 @@ async function openClient(id) {
               ${escapeHtml(fName || "")} ${escapeHtml(lName || "")}
               <span style="
                 font-size:0.7rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase;
-                padding:4px 10px; border-radius:999px; white-space:nowrap;
+                padding:4px 10px; border-radius:var(--radius-sm); white-space:nowrap;
                 background:${STATUS_COLORS[client.status] || '#2563eb'}22;
                 color:${STATUS_COLORS[client.status] || '#2563eb'};
                 border:1px solid ${STATUS_COLORS[client.status] || '#2563eb'}55;
@@ -1909,8 +1911,8 @@ async function openClient(id) {
             <div class="panel-subtitle">Core contact, financial, and document details stay in one place.</div>
           </div>
           <div class="contact-quick-links panel-contact-links">
-            <span>📞 <a href="tel:${encodeURIComponent(client.phone || "")}">${escapeHtml(client.phone || "")}</a></span>
-            <span>✉️ <a href="mailto:${encodeURIComponent(client.email || "")}">${escapeHtml(client.email || "")}</a></span>
+            <span><i data-lucide="phone"></i> <a href="tel:${encodeURIComponent(client.phone || "")}">${escapeHtml(client.phone || "")}</a></span>
+            <span><i data-lucide="mail"></i> <a href="mailto:${encodeURIComponent(client.email || "")}">${escapeHtml(client.email || "")}</a></span>
           </div>
           <span id="saveStatus" class="save-status-chip">Saved</span>
         </header>
@@ -1955,7 +1957,7 @@ async function openClient(id) {
           <div class="field-stack">
             <input type="text" id="p-address" value="${client.address || ""}">
             ${client.address
-              ? `<a href="${mapsLink}" target="_blank" class="maps-link">📍 Open in Google Maps</a>`
+              ? `<a href="${mapsLink}" target="_blank" class="maps-link"><i data-lucide="map-pin"></i> Open in Google Maps</a>`
               : ""}
           </div>
 
@@ -2070,7 +2072,7 @@ async function openClient(id) {
           </div>
 
           <div id="pdf-drop-zone" class="drop-zone"
-            style="grid-column: span 2;">📄 Drop Client PDFs Here</div>
+            style="grid-column: span 2;"><i data-lucide="file-text"></i> Drop Client PDFs Here</div>
 
           <button id="pdf-upload-btn"
             type="button"
@@ -2121,6 +2123,8 @@ async function openClient(id) {
         </div>
       </div>
     `;
+
+    if (window.lucide) window.lucide.createIcons();
 
     requestAnimationFrame(() => {
       const panel = projectPanel.querySelector(".animate-panel");
@@ -2577,7 +2581,7 @@ async function setupJobsSection(clientId) {
             <div style="text-align:right;flex-shrink:0;">
               <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
                 color:${color};background:${color}22;border:1px solid ${color}44;
-                padding:3px 8px;border-radius:999px;display:inline-block;margin-bottom:4px;">
+                padding:3px 8px;border-radius:var(--radius-sm);display:inline-block;margin-bottom:4px;">
                 ${escapeHtml(job.status)}
               </div>
               <div style="font-size:0.9rem;font-weight:700;color:var(--text-main);">
@@ -2872,8 +2876,8 @@ async function setupScopeServices(clientId) {
         var chip = document.createElement('span');
         chip.style.cssText =
           'display:inline-flex;align-items:center;gap:4px;' +
-          'background:rgba(47,128,237,0.15);border:1px solid rgba(47,128,237,0.3);' +
-          'border-radius:999px;padding:4px 10px 4px 12px;' +
+          'background:var(--primary-soft);border:1px solid var(--border-soft);' +
+          'border-radius:var(--radius-sm);padding:4px 10px 4px 12px;' +
           'font-size:0.82rem;color:var(--text-main);';
 
         var label = document.createElement('span');
@@ -3838,7 +3842,7 @@ async function setupJobFilesSection(overlay, jobId, category) {
           `;
         } else {
           row.innerHTML = `
-            <a href="${url}" target="_blank" rel="noopener" class="job-file-name">📄 ${escapeHtml(file.file_name)}</a>
+            <a href="${url}" target="_blank" rel="noopener" class="job-file-name"><i data-lucide="file-text"></i> ${escapeHtml(file.file_name)}</a>
             <span class="job-file-meta">${formatFileSize(file.size_bytes)}</span>
             <button type="button" class="job-file-delete-btn" title="Delete document">&times;</button>
           `;
@@ -3859,6 +3863,7 @@ async function setupJobFilesSection(overlay, jobId, category) {
 
         listEl.appendChild(row);
       });
+      if (window.lucide) window.lucide.createIcons();
     } catch (err) {
       console.error(err);
       listEl.innerHTML = `<div class="field-hint">Failed to load ${isPhoto ? 'photos' : 'documents'}.</div>`;
@@ -4050,7 +4055,7 @@ async function loadPDFs(clientId) {
       });
 
       const name = document.createElement("div");
-      name.textContent = `📄 ${file.name}`;
+      name.innerHTML = `<i data-lucide="file-text"></i> ${escapeHtml(file.name)}`;
       name.style.fontWeight = "600";
       name.style.fontSize = "14px";
 
@@ -4097,6 +4102,7 @@ async function loadPDFs(clientId) {
       container.appendChild(card);
     });
 
+    if (window.lucide) window.lucide.createIcons();
   } catch (err) {
     console.error(err);
   }
@@ -4893,7 +4899,8 @@ function applyBranding(branding) {
   var btn = document.getElementById('themeToggleBtn');
   if (!btn || !window.crmTheme) return;
   function render() {
-    btn.textContent = window.crmTheme.getTheme() === 'dark' ? '☀️' : '🌙';
+    btn.innerHTML = '<i data-lucide="' + (window.crmTheme.getTheme() === 'dark' ? 'sun' : 'moon') + '"></i>';
+    if (window.lucide) window.lucide.createIcons();
   }
   render();
   btn.addEventListener('click', function () {

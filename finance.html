@@ -79,22 +79,6 @@
       box-shadow: var(--shadow-soft);
     }
 
-    #toggleClientsBtn {
-      background: var(--primary);
-      color: #fff;
-      border: 1px solid var(--primary);
-      padding: 10px 16px;
-      font-weight: 600;
-      font-size: 0.92rem;
-      border-radius: var(--radius-md);
-      cursor: pointer;
-      transition: background 0.15s ease;
-    }
-
-    #toggleClientsBtn:hover {
-      background: var(--primary-hover);
-    }
-
     .finance-container {
       padding: 24px;
       display: flex;
@@ -448,7 +432,7 @@
       align-items: center;
       gap: 6px;
       padding: 3px 10px;
-      border-radius: 999px;
+      border-radius: var(--radius-sm);
       font-size: 0.78rem;
       font-weight: 700;
       white-space: nowrap;
@@ -661,7 +645,7 @@
       align-items: center;
       gap: 6px;
       padding: 4px 10px;
-      border-radius: 999px;
+      border-radius: var(--radius-sm);
       font-size: 0.78rem;
       font-weight: 700;
     }
@@ -874,27 +858,17 @@
       color: var(--text-main);
     }
 
+    /* #pdfModal/#pdfModalContent layer onto the shared .modal-overlay/
+       .modal-card base (style.css) — only page-specific sizing here. */
     #pdfModal {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(15, 23, 42, 0.5);
-      justify-content: center;
-      align-items: center;
       z-index: 9999;
     }
 
     #pdfModalContent {
-      position: relative;
       width: 90%;
       max-width: 1000px;
       height: 90%;
-      background: var(--surface);
-      padding: 20px;
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-lift);
       overflow: auto;
-      border: 1px solid var(--border-soft);
     }
 
     #pdfModalClose {
@@ -1088,20 +1062,31 @@
   </style>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.225/pdf.min.js"></script>
+  <!-- Lucide icons (outline, consistent stroke — replaces emoji-as-icon usage) -->
+  <script src="https://cdn.jsdelivr.net/npm/lucide@1.47.0/dist/umd/lucide.min.js"></script>
   <script src="/vendor/supabase.js"></script>
 </head>
 
 <body class="dashboard-body">
+
+  <!-- Top navigation bar -->
+  <nav class="top-nav">
+    <div class="nav-brand">
+      <span style="font-weight:700;font-size:1rem;color:var(--text-main);">CRM Template</span>
+    </div>
+    <div class="nav-links">
+      <a href="/main">Dashboard</a>
+      <a href="/finance" class="active">Finance</a>
+      <a href="/settings">Settings</a>
+      <button type="button" id="themeToggleBtn" class="theme-toggle-btn" title="Toggle dark mode" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+    </div>
+  </nav>
 
   <header id="Main_header" class="page-header">
     <div class="page-header-copy">
       <span class="page-kicker">CRM Template</span>
       <span class="page-title">Finance Dashboard</span>
       <p class="page-subtitle">Review annual totals, payments, and tax files from the same live database.</p>
-    </div>
-    <div class="page-header-actions">
-      <button type="button" id="themeToggleBtn" class="theme-toggle-btn" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
-      <button id="toggleClientsBtn">Back to Clients</button>
     </div>
   </header>
 
@@ -1190,8 +1175,8 @@
   </div>
 
   <!-- ================= MODAL ================= -->
-  <div id="pdfModal">
-    <div id="pdfModalContent">
+  <div id="pdfModal" class="modal-overlay">
+    <div id="pdfModalContent" class="modal-card">
       <span id="pdfModalClose">&times;</span>
       <div id="pdfViewer"></div>
     </div>
@@ -1206,15 +1191,14 @@
         'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.225/pdf.worker.min.js';
     }
 
-    document.getElementById('toggleClientsBtn')
-      .addEventListener('click', () => {
-        window.location.href = 'main.html';
-      });
 
     (function setupThemeToggle() {
       var btn = document.getElementById('themeToggleBtn');
       if (!btn || !window.crmTheme) return;
-      function render() { btn.textContent = window.crmTheme.getTheme() === 'dark' ? '☀️' : '🌙'; }
+      function render() {
+        btn.innerHTML = '<i data-lucide="' + (window.crmTheme.getTheme() === 'dark' ? 'sun' : 'moon') + '"></i>';
+        if (window.lucide) window.lucide.createIcons();
+      }
       render();
       btn.addEventListener('click', function () { window.crmTheme.toggleTheme(); render(); });
       document.addEventListener('crm-theme-change', render);
@@ -1233,6 +1217,8 @@
         }
       } catch (e) { /* silently skip */ }
     })();
+
+    if (window.lucide) window.lucide.createIcons();
   </script>
 
 </body>
