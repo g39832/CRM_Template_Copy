@@ -81,6 +81,10 @@ const STATUS_ORDER = [
   "Closed"
 ];
 
+// Light-mode shades (Tailwind 600/700) read well on the near-white badge
+// tint those colors sit on. Dark mode needs brighter 300/400 shades for
+// the same badges to stay readable on a dark navy tint instead — using
+// the light values in dark mode is what made status text look muddy.
 const STATUS_COLORS = {
   "Lead": "#64748b",
   "Photo report": "#b45309",
@@ -89,6 +93,19 @@ const STATUS_COLORS = {
   "Invoiced": "#2563eb",
   "Closed": "#15803d"
 };
+const STATUS_COLORS_DARK = {
+  "Lead": "#cbd5e1",
+  "Photo report": "#fbbf24",
+  "Prospect": "#c4b5fd",
+  "Approved": "#67e8f9",
+  "Invoiced": "#60a5fa",
+  "Closed": "#4ade80"
+};
+function getStatusColor(status) {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const map = isDark ? STATUS_COLORS_DARK : STATUS_COLORS;
+  return map[status] || (isDark ? "#60a5fa" : "#2563eb");
+}
 
 function buildClientPrintStyle() {
   return `
@@ -1770,7 +1787,7 @@ function renderSidebar(list = [], term = "") {
   const countsHTML = `
     <li class="status-counts" style="list-style:none; padding:0; margin:0 0 8px 0;">
       ${STATUS_ORDER.map(s =>
-        `<div class="status-count-row" data-filter-status="${escapeHtml(s)}" title="Click to search this status" style="background:${STATUS_COLORS[s] || "#2563eb"}2e; color:${STATUS_COLORS[s] || "#2563eb"}; border:1px solid ${STATUS_COLORS[s] || "#2563eb"}70; cursor:pointer;">
+        `<div class="status-count-row" data-filter-status="${escapeHtml(s)}" title="Click to search this status" style="background:${getStatusColor(s)}2e; color:${getStatusColor(s)}; border:1px solid ${getStatusColor(s)}70; cursor:pointer;">
           ${s}: ${counts[s]}
         </div>`
       ).join("")}
@@ -1793,7 +1810,7 @@ function renderSidebar(list = [], term = "") {
 function buildClientCard(c, term = "") {
   const [fName, ...rest] = (c.name || "").split(" ");
   const lName = rest.join(" ");
-  const color = STATUS_COLORS[c.status] || "#2563eb";
+  const color = getStatusColor(c.status);
   const displayName = `${fName || ""} ${lName || ""}`.trim();
   const safeDisplayName = escapeHtml(displayName);
   const displayPhone = c.phone || "";
@@ -1903,9 +1920,9 @@ async function openClient(id) {
               <span style="
                 font-size:0.7rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase;
                 padding:4px 10px; border-radius:var(--radius-sm); white-space:nowrap;
-                background:${STATUS_COLORS[client.status] || '#2563eb'}2e;
-                color:${STATUS_COLORS[client.status] || '#2563eb'};
-                border:1px solid ${STATUS_COLORS[client.status] || '#2563eb'}70;
+                background:${getStatusColor(client.status)}2e;
+                color:${getStatusColor(client.status)};
+                border:1px solid ${getStatusColor(client.status)}70;
               ">${escapeHtml(client.status || 'Lead')}</span>
             </h2>
             <div class="panel-subtitle">Core contact, financial, and document details stay in one place.</div>
@@ -2294,24 +2311,24 @@ function setSaveStatus(state) {
 
   if (state === "saving") {
     el.textContent = "Saving…";
-    el.style.color = "#ffd37a";
+    el.style.color = "var(--warning)";
     return;
   }
 
   if (state === "error") {
     el.textContent = "Save failed";
-    el.style.color = "#ff9aa2";
+    el.style.color = "var(--danger)";
     return;
   }
 
   if (state === "unsaved") {
     el.textContent = "Unsaved changes";
-    el.style.color = "#ffcc66";
+    el.style.color = "var(--warning)";
     return;
   }
 
   el.textContent = "Saved";
-  el.style.color = "#9ad0ff";
+  el.style.color = "var(--success)";
 }
 
 function markDirty() {
@@ -2540,6 +2557,17 @@ async function setupJobsSection(clientId) {
     Prospect: '#7c3aed', Approved: '#0e7490', Completed: '#b45309',
     Invoice: '#2563eb', Closed: '#15803d'
   };
+  // Same brightening as getStatusColor() (above) — dark mode needs the
+  // 300/400 shades, not the light-mode 600/700 ones, to stay readable.
+  const STATUS_COLORS_JOB_DARK = {
+    Prospect: '#c4b5fd', Approved: '#67e8f9', Completed: '#fbbf24',
+    Invoice: '#60a5fa', Closed: '#4ade80'
+  };
+  function getJobStatusColor(status) {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const map = isDark ? STATUS_COLORS_JOB_DARK : STATUS_COLORS_JOB;
+    return map[status] || (isDark ? '#60a5fa' : '#2563eb');
+  }
 
   async function loadJobs() {
     jobsList.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Loading jobs...</div>';
@@ -2554,7 +2582,7 @@ async function setupJobsSection(clientId) {
       }
 
       jobs.forEach(job => {
-        const color = STATUS_COLORS_JOB[job.status] || '#2563eb';
+        const color = getJobStatusColor(job.status);
         const jobCardAdmin = isAdminUser();
         // job_cost is stripped server-side for regular users (see
         // api/access-control.js), so margin can only be shown to admins —
@@ -2609,7 +2637,7 @@ async function setupJobsSection(clientId) {
       });
     } catch (err) {
       console.error(err);
-      jobsList.innerHTML = '<div style="color:#ff9aa2;font-size:13px;">Failed to load jobs.</div>';
+      jobsList.innerHTML = '<div style="color:var(--danger);font-size:13px;">Failed to load jobs.</div>';
     }
   }
 
@@ -2922,7 +2950,7 @@ async function setupScopeServices(clientId) {
       }
     } catch (err) {
       console.error(err);
-      listEl.innerHTML = '<div style="color:#ff9aa2;font-size:0.85rem;width:100%;">Failed to load services.</div>';
+      listEl.innerHTML = '<div style="color:var(--danger);font-size:0.85rem;width:100%;">Failed to load services.</div>';
     }
   }
 
@@ -3054,7 +3082,7 @@ function openServicePicker(clientId, onSave) {
         var cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.value = svc.id;
-        cb.style.cssText = 'width:18px;height:18px;accent-color:#4f8dfd;cursor:pointer;';
+        cb.style.cssText = 'width:18px;height:18px;accent-color:var(--primary);cursor:pointer;';
         cb.addEventListener('change', function () {
           if (cb.checked) {
             checked.push(svc.id);
@@ -3101,7 +3129,7 @@ function openServicePicker(clientId, onSave) {
       };
     } catch (err) {
       console.error(err);
-      listEl.innerHTML = '<div style="color:#ff9aa2;">Failed to load services.</div>';
+      listEl.innerHTML = '<div style="color:var(--danger);">Failed to load services.</div>';
     }
   }
 
@@ -3191,7 +3219,7 @@ function openManageServicesModal(onSave) {
         info.style.cssText = 'flex:1;min-width:0;';
         info.innerHTML =
           '<div style="font-weight:600;font-size:0.9rem;">' + escapeHtml(svc.name) +
-            (svc.isActive ? '' : ' <span style="color:#ff9aa2;font-size:0.75rem;">(inactive)</span>') +
+            (svc.isActive ? '' : ' <span style="color:var(--danger);font-size:0.75rem;">(inactive)</span>') +
           '</div>' +
           (svc.description ? '<div style="font-size:0.78rem;color:var(--text-muted);">' + escapeHtml(svc.description) + '</div>' : '');
 
@@ -3216,7 +3244,7 @@ function openManageServicesModal(onSave) {
         var editBtn = document.createElement('button');
         editBtn.textContent = 'Edit';
         editBtn.style.cssText =
-          'border:none;background:rgba(47,128,237,0.2);color:#4f8dfd;' +
+          'border:none;background:var(--primary-soft);color:var(--primary);' +
           'padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;';
 
         editBtn.onclick = function () {
@@ -3237,7 +3265,7 @@ function openManageServicesModal(onSave) {
         var delBtn = document.createElement('button');
         delBtn.textContent = 'Delete';
         delBtn.style.cssText =
-          'border:none;background:rgba(255,100,100,0.15);color:#ff9aa2;' +
+          'border:none;background:rgba(255,100,100,0.15);color:var(--danger);' +
           'padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;';
         delBtn.onclick = async function () {
           if (!confirm('Delete "' + svc.name + '" permanently?')) return;
@@ -3259,7 +3287,7 @@ function openManageServicesModal(onSave) {
       });
     } catch (err) {
       console.error(err);
-      listEl.innerHTML = '<div style="color:#ff9aa2;">Failed to load services.</div>';
+      listEl.innerHTML = '<div style="color:var(--danger);">Failed to load services.</div>';
     }
   }
 

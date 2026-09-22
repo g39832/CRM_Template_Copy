@@ -1613,7 +1613,7 @@
     }).join(', ');
     return `
       <div style="display:grid; place-items:center; min-height:220px;">
-        <div style="width:190px; height:190px; border-radius:50%; background:conic-gradient(${segments}); position:relative; box-shadow: inset 0 0 0 24px #ffffff;">
+        <div style="width:190px; height:190px; border-radius:50%; background:conic-gradient(${segments}); position:relative; box-shadow: inset 0 0 0 24px var(--surface);">
           <div style="position:absolute; inset:50% auto auto 50%; transform:translate(-50%, -50%); text-align:center;">
             <div style="font-size:0.74rem; letter-spacing:0.1em; text-transform:uppercase; color: var(--text-muted); font-weight:700;">Expenses</div>
             <div style="font-size:1.35rem; font-weight:800; color: var(--text-main);">${escapeHtml(formatMoney(total))}</div>
@@ -1624,12 +1624,19 @@
   }
 
   function forecastPanel(projected) {
+    // Dark mode needs brighter shades than these light-mode 500/600/700
+    // colors, or the value text reads as too dark against the dark card.
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const revenueColor = isDark ? '#60a5fa' : '#2563eb';
+    const expensesColor = isDark ? '#cbd5e1' : '#64748b';
+    const profitColor = isDark ? '#4ade80' : '#15803d';
+    const marginColor = isDark ? '#fbbf24' : '#f59e0b';
     return `
       <div class="mt-grid-2">
-        ${forecastItem('Next revenue', projected.nextRevenue, '#2563eb')}
-        ${forecastItem('Next expenses', projected.nextExpenses, '#64748b')}
-        ${forecastItem('Next profit', projected.nextProfit, '#15803d')}
-        ${forecastItem('Next margin', projected.nextMargin, '#f59e0b', true)}
+        ${forecastItem('Next revenue', projected.nextRevenue, revenueColor)}
+        ${forecastItem('Next expenses', projected.nextExpenses, expensesColor)}
+        ${forecastItem('Next profit', projected.nextProfit, profitColor)}
+        ${forecastItem('Next margin', projected.nextMargin, marginColor, true)}
       </div>
       <div class="mt-chip-row" style="margin-top:14px;">
         <span class="mt-chip"><strong>${escapeHtml(formatDelta(projected.revenueSlope / Math.max(projected.nextRevenue, 1) * 100))}</strong> revenue slope</span>
