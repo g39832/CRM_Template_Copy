@@ -44,36 +44,12 @@ body {
   background: var(--surface);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lift);
-  border: 1px solid var(--primary-soft);
-  border-top: none;
-  padding: 44px 36px 40px;
   overflow: hidden;
 
   opacity: 0;
   transform: translateY(14px);
   animation: cardEntrance 0.5s ease forwards;
   animation-delay: 0.1s;
-}
-
-/* Solid two-tone accent bar — brand color on the card itself, not just
-   the backdrop, without resorting to a gradient. */
-.container::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 5px;
-  background: var(--primary);
-}
-.container::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 40%;
-  height: 5px;
-  background: var(--primary-hover);
 }
 
 /* Card Entrance Animation */
@@ -85,21 +61,33 @@ body {
 }
 
 /* =========================
-   BRAND (form panel)
+   CARD HEADER — solid brand blue, not a gradient. This is where the
+   "pop" actually lives, instead of a plain white card.
 ========================= */
-#logo_login {
-  width: 64px;
-  height: 64px;
-  object-fit: cover;
-  margin-bottom: 0;
-  border-radius: var(--radius-md);
+.login-card-header {
   background: var(--primary);
+  color: #fff;
+  padding: 36px 32px 26px;
+}
+
+.login-card-body {
+  padding: 28px 32px 34px;
+}
+
+#logo_login {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  margin: 0 auto;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 800;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
 
   opacity: 0;
   transform: scale(0.7);
@@ -116,48 +104,57 @@ body {
   }
 }
 
-.brand-block {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 28px;
-}
-
-.brand-copy {
-  opacity: 0;
-  animation: cardEntrance 0.35s ease forwards;
-  animation-delay: 0.4s;
-}
-
 .google-btn {
   opacity: 0;
   animation: cardEntrance 0.35s ease forwards;
   animation-delay: 0.5s;
 }
 
-.brand-copy h1 {
-  font-size: 1.6rem;
+.login-card-header h1 {
+  position: relative;
+  display: inline-block;
+  font-size: 1.55rem;
   line-height: 1.1;
-  margin-bottom: 8px;
+  margin-top: 16px;
+  padding-bottom: 12px;
   font-weight: 800;
   letter-spacing: -0.02em;
-  color: var(--text-main);
+  color: #fff;
 }
 
-.brand-copy p {
+/* Second small animation — a light accent line draws itself in under
+   the heading once the text has settled. */
+.login-card-header h1::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.55);
+  transform: translateX(-50%);
+  animation: underlineDraw 0.4s ease forwards;
+  animation-delay: 0.6s;
+}
+
+@keyframes underlineDraw {
+  to { width: 44px; }
+}
+
+.login-card-sub {
   color: var(--text-muted);
   font-size: 0.96rem;
   line-height: 1.5;
+  margin-bottom: 24px;
 }
 
 .brand-kicker {
   font-size: 0.75rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--primary);
+  color: rgba(255, 255, 255, 0.8);
   font-weight: 700;
-  margin-bottom: 6px;
 }
 
 /* =========================
@@ -308,12 +305,16 @@ button {
     padding: 16px;
   }
 
-  .container {
-    padding: 32px 22px;
+  .login-card-header {
+    padding: 28px 22px 22px;
   }
 
-  .brand-copy h1 {
-    font-size: 1.4rem;
+  .login-card-body {
+    padding: 24px 22px 28px;
+  }
+
+  .login-card-header h1 {
+    font-size: 1.35rem;
   }
 
   .buttons {
@@ -342,12 +343,16 @@ button {
   body,
   .container,
   #logo_login,
-  .brand-copy,
   .google-btn,
+  .login-card-header h1::after,
   #resetSection {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
+  }
+
+  .login-card-header h1::after {
+    width: 44px !important;
   }
 
   button,
