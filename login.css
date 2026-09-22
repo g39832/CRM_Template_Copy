@@ -11,13 +11,7 @@
 body {
   min-height: 100vh;
   background: var(--bg-main);
-  display: flex;
-  justify-content: center;
-  align-items: center;
   color: var(--text-main);
-  padding: 20px;
-  overflow: hidden;
-
   animation: pageFade 0.3s ease-out;
 }
 
@@ -28,31 +22,104 @@ body {
 }
 
 /* =========================
-   SHELL
+   SHELL — split screen: solid brand panel + form panel.
 ========================= */
 .login-shell {
-  position: relative;
-  width: min(100%, 980px);
   display: flex;
-  justify-content: center;
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* =========================
+   BRAND PANEL (left) — personality through color, type and layout,
+   not gradients/glow/glass.
+========================= */
+.login-brand-panel {
+  flex: 1 1 44%;
+  display: flex;
   align-items: center;
-  min-height: calc(100vh - 40px);
+  justify-content: center;
+  background: var(--primary);
+  color: #fff;
+  padding: 56px 48px;
+}
+
+.login-brand-panel-inner {
+  width: 100%;
+  max-width: 420px;
+}
+
+.login-brand-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+  margin-bottom: 32px;
+}
+
+.login-brand-headline {
+  font-size: 2.1rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin-bottom: 14px;
+}
+
+.login-brand-sub {
+  font-size: 1rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 36px;
+}
+
+.login-value-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.login-value-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.login-value-list li i {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+/* =========================
+   FORM PANEL (right)
+========================= */
+.login-form-panel {
+  flex: 1 1 56%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-main);
+  padding: 40px 24px;
 }
 
 /* =========================
    MAIN CONTAINER
 ========================= */
 .container {
-  position: relative;
-  z-index: 1;
-  background: var(--surface);
-  padding: 34px 32px;
-  border-radius: var(--radius-lg);
   width: 100%;
-  max-width: 460px;
-  box-shadow: var(--shadow-lift);
+  max-width: 380px;
   text-align: center;
-  border: 1px solid var(--border-soft);
 
   opacity: 0;
   animation: cardEntrance 0.35s ease forwards;
@@ -67,31 +134,37 @@ body {
 }
 
 /* =========================
-   BRAND
+   BRAND (form panel)
 ========================= */
 #logo_login {
-  width: 86px;
-  height: 86px;
+  width: 64px;
+  height: 64px;
   object-fit: cover;
   margin-bottom: 0;
   border-radius: var(--radius-md);
-  border: 1px solid var(--border-soft);
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.8rem;
 }
 
 .brand-block {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
-  margin-bottom: 22px;
+  gap: 16px;
+  margin-bottom: 28px;
 }
 
 .brand-copy h1 {
-  font-size: 1.7rem;
+  font-size: 1.6rem;
   line-height: 1.1;
   margin-bottom: 8px;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   color: var(--text-main);
 }
 
@@ -253,28 +326,64 @@ button {
 /* =========================
    RESPONSIVE
 ========================= */
-@media (max-width: 400px) {
-  .container {
-    padding: 28px 18px;
+
+/* Below this width the brand panel's value list starts feeling cramped
+   next to the form — stack instead of squeezing both columns. */
+@media (max-width: 860px) {
+  .login-shell {
+    flex-direction: column;
+  }
+
+  .login-brand-panel {
+    flex: 0 0 auto;
+    padding: 36px 28px;
+  }
+
+  .login-brand-panel-inner {
+    max-width: none;
+  }
+
+  .login-brand-headline {
+    font-size: 1.5rem;
+  }
+
+  .login-brand-sub {
+    margin-bottom: 20px;
+  }
+
+  .login-value-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 10px 20px;
+  }
+
+  .login-value-list li span {
+    display: none;
+  }
+
+  .login-brand-mark {
+    margin-bottom: 16px;
+  }
+
+  .login-form-panel {
+    padding: 40px 20px;
   }
 }
 
-/* ======================================================
-   ADDED RESPONSIVE IMPROVEMENTS (Nothing Removed)
-====================================================== */
+@media (max-width: 400px) {
+  .login-brand-panel {
+    padding: 28px 20px;
+  }
+
+  .login-value-list {
+    display: none;
+  }
+}
 
 /* Prevent mobile height cut-off */
 @media (max-width: 480px) {
-  body {
-    padding: 14px;
-  }
-
-  .login-shell {
-    min-height: calc(100vh - 28px);
-  }
-
   .brand-copy h1 {
-    font-size: 1.45rem;
+    font-size: 1.4rem;
   }
 
   .buttons {
