@@ -6,7 +6,10 @@
   <title>Sign In - CRM Template</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
   <script src="/js/theme.js"></script>
-  <link rel="stylesheet" href="/login.css?v=9">
+  <!-- style.css defines the --primary/--surface/etc. design tokens that
+       login.css's var(--...) references depend on — must load first. -->
+  <link rel="stylesheet" href="/style.css?v=5">
+  <link rel="stylesheet" href="/login.css?v=10">
 </head>
 <body>
 
