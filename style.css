@@ -683,6 +683,21 @@ input[type="tel"]:focus {
 
 .panel-section-header h3 {
   margin: 0;
+  color: var(--text-main);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+/* Plain form labels ("Assigned To", "Phone Number", etc.) inside the
+   client/job panels — explicit color+weight instead of relying on
+   inheritance, so they never come out too faint. */
+#projectPanel label,
+.detail-card label {
+  display: block;
+  color: var(--text-main);
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 4px;
 }
 
 .panel-section-note {
