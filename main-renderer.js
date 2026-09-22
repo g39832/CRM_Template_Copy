@@ -1770,7 +1770,7 @@ function renderSidebar(list = [], term = "") {
   const countsHTML = `
     <li class="status-counts" style="list-style:none; padding:0; margin:0 0 8px 0;">
       ${STATUS_ORDER.map(s =>
-        `<div class="status-count-row" data-filter-status="${escapeHtml(s)}" title="Click to search this status" style="color:${STATUS_COLORS[s] || "#2563eb"}; cursor:pointer;">
+        `<div class="status-count-row" data-filter-status="${escapeHtml(s)}" title="Click to search this status" style="background:${STATUS_COLORS[s] || "#2563eb"}2e; color:${STATUS_COLORS[s] || "#2563eb"}; border:1px solid ${STATUS_COLORS[s] || "#2563eb"}70; cursor:pointer;">
           ${s}: ${counts[s]}
         </div>`
       ).join("")}
@@ -1819,7 +1819,7 @@ function buildClientCard(c, term = "") {
   // for the upcoming portal link feature.
   var portalBadge = '';
   if (c.client_type === 'recurring' && window._platformFeatures && window._platformFeatures.clientPortal === true) {
-    portalBadge = '<span class="client-type-badge portal" style="background:var(--primary-soft);color:var(--primary);border:1px solid var(--primary-soft);">Portal</span>';
+    portalBadge = '<span class="client-type-badge portal" style="background:var(--primary-soft);color:var(--primary);border:1px solid var(--primary);">Portal</span>';
   }
 
   var retentionBadge = '';
@@ -1840,9 +1840,9 @@ function buildClientCard(c, term = "") {
         <i data-lucide="phone"></i> ${phoneHighlighted}
       </div>
 
-      ${c.email ? `<div class="client-meta" style="font-size:0.82rem; opacity:0.8;"><i data-lucide="mail"></i> ${c.email}</div>` : ''}
+      ${c.email ? `<div class="client-meta" style="font-size:0.82rem;"><i data-lucide="mail"></i> ${c.email}</div>` : ''}
 
-      <div class="client-status" style="color:${color};" data-filter-status="${escapeHtml(c.status || "Lead")}" title="Click to search this status">
+      <div class="client-status" style="background:${color}2e; color:${color}; border:1px solid ${color}70;" data-filter-status="${escapeHtml(c.status || "Lead")}" title="Click to search this status">
         ${escapeHtml(c.status || "Lead")}
       </div>
     </div>
@@ -1903,9 +1903,9 @@ async function openClient(id) {
               <span style="
                 font-size:0.7rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase;
                 padding:4px 10px; border-radius:var(--radius-sm); white-space:nowrap;
-                background:${STATUS_COLORS[client.status] || '#2563eb'}22;
+                background:${STATUS_COLORS[client.status] || '#2563eb'}2e;
                 color:${STATUS_COLORS[client.status] || '#2563eb'};
-                border:1px solid ${STATUS_COLORS[client.status] || '#2563eb'}55;
+                border:1px solid ${STATUS_COLORS[client.status] || '#2563eb'}70;
               ">${escapeHtml(client.status || 'Lead')}</span>
             </h2>
             <div class="panel-subtitle">Core contact, financial, and document details stay in one place.</div>
@@ -2580,7 +2580,7 @@ async function setupJobsSection(clientId) {
             </div>
             <div style="text-align:right;flex-shrink:0;">
               <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
-                color:${color};background:${color}22;border:1px solid ${color}44;
+                color:${color};background:${color}2e;border:1px solid ${color}70;
                 padding:3px 8px;border-radius:var(--radius-sm);display:inline-block;margin-bottom:4px;">
                 ${escapeHtml(job.status)}
               </div>
@@ -4749,7 +4749,7 @@ function renderWorkflowPanel(data) {
       html += '<div class="empty">No retention risks. All recurring clients are in good standing.</div>';
     } else {
       alerts.slice(0, 5).forEach(function (a) {
-        html += '<div class="recurring-client-row"><span class="client-name">' + escapeHtml(a.name) + '</span><span class="client-status">At Risk</span></div>';
+        html += '<div class="recurring-client-row"><span class="client-name">' + escapeHtml(a.name) + '</span><span class="client-status" style="background:var(--danger-soft); color:var(--danger); border:1px solid var(--danger-soft);">At Risk</span></div>';
       });
     }
     html += '</div>';

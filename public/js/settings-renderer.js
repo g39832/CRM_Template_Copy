@@ -399,8 +399,8 @@
             '<td style="padding:10px 8px;">' + roleBadge + '</td>' +
             '<td style="padding:10px 8px;color:var(--text-muted);font-size:0.82rem;">' + created + '</td>' +
             '<td style="padding:10px 8px;text-align:center;white-space:nowrap;">' +
-            '<button type="button" class="role-toggle-btn" data-id="' + u.id + '" data-role="' + roleToggleTarget + '" style="background:var(--primary-soft);color:var(--primary);border:1px solid var(--primary-soft);padding:4px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:0.78rem;margin-right:6px;">' + roleToggleLabel + '</button>' +
-            '<button type="button" class="delete-user-btn" data-id="' + u.id + '" data-email="' + escapeHtml(u.email) + '" style="background:var(--danger-soft);color:var(--danger);border:1px solid var(--danger-soft);padding:4px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:0.78rem;">Delete</button>' +
+            '<button type="button" class="role-toggle-btn" data-id="' + u.id + '" data-role="' + roleToggleTarget + '" style="background:var(--primary-soft);color:var(--primary);border:1px solid var(--primary);padding:4px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:0.78rem;margin-right:6px;">' + roleToggleLabel + '</button>' +
+            '<button type="button" class="delete-user-btn" data-id="' + u.id + '" data-email="' + escapeHtml(u.email) + '" style="background:var(--danger-soft);color:var(--danger);border:1px solid var(--danger);padding:4px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:0.78rem;">Delete</button>' +
             '</td></tr>';
         });
         tbody.innerHTML = html;
