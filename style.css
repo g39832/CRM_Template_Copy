@@ -66,11 +66,17 @@
   --shadow-lift: 0 10px 28px rgba(0, 0, 0, 0.45);
 }
 
+/* Form controls don't inherit typography by default in browsers — every
+   <input>/<select>/<textarea> was silently using the browser's default
+   near-black text color regardless of theme. This is the fix: make them
+   inherit color like normal text does, so dark mode actually reaches them. */
 input,
 select,
 textarea,
 button {
   min-height: var(--tap-size);
+  color: inherit;
+  font-family: inherit;
 }
 
 /* Lucide icons — one consistent size/stroke, inline with text */
