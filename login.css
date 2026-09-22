@@ -37,17 +37,42 @@ body {
    MAIN CONTAINER
 ========================= */
 .container {
+  position: relative;
   width: 100%;
   max-width: 400px;
   text-align: center;
   background: var(--surface);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lift);
-  padding: 40px 36px;
+  border: 1px solid var(--primary-soft);
+  border-top: none;
+  padding: 44px 36px 40px;
+  overflow: hidden;
 
   opacity: 0;
   animation: cardEntrance 0.35s ease forwards;
   animation-delay: 0.1s;
+}
+
+/* Solid two-tone accent bar — brand color on the card itself, not just
+   the backdrop, without resorting to a gradient. */
+.container::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  background: var(--primary);
+}
+.container::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 5px;
+  background: var(--primary-hover);
 }
 
 /* Card Entrance Animation */
@@ -73,6 +98,20 @@ body {
   justify-content: center;
   font-weight: 800;
   font-size: 0.8rem;
+
+  opacity: 0;
+  transform: scale(0.7);
+  animation: logoPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation-delay: 0.25s;
+}
+
+/* Small, tasteful entrance — a quick pop with a slight overshoot,
+   not a looping/floating animation. */
+@keyframes logoPop {
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .brand-block {
@@ -81,6 +120,18 @@ body {
   align-items: center;
   gap: 16px;
   margin-bottom: 28px;
+}
+
+.brand-copy {
+  opacity: 0;
+  animation: cardEntrance 0.35s ease forwards;
+  animation-delay: 0.4s;
+}
+
+.google-btn {
+  opacity: 0;
+  animation: cardEntrance 0.35s ease forwards;
+  animation-delay: 0.5s;
 }
 
 .brand-copy h1 {
@@ -289,8 +340,12 @@ button {
   body,
   .container,
   #logo_login,
+  .brand-copy,
+  .google-btn,
   #resetSection {
     animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
   }
 
   button,
