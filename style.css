@@ -424,6 +424,9 @@ input[type="tel"]:focus {
 .status-count-chip:hover {
   background: var(--surface-muted);
 }
+.status-count-row:hover {
+  text-decoration: underline;
+}
 .status-count-chip.active {
   background: var(--border-strong);
   border-color: var(--primary);
@@ -444,11 +447,18 @@ input[type="tel"]:focus {
   align-items: center;
 }
 
+.clients-workspace,
 .sidebar h2,
 .sidebar form,
 .search-bar,
 .client-list {
   width: min(680px, 100%);
+}
+
+.clients-workspace {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .sidebar h2 {
@@ -2342,5 +2352,533 @@ input[type="tel"]:focus {
   .panel-inline-row { flex-wrap: wrap; }
   #projectPanel input, #projectPanel select, #projectPanel textarea {
     max-width: 100%;
+  }
+}
+
+/* ======================================================
+   Restored: JOB MODAL, LINE ITEMS, JOB NOTES, JOB FILES,
+   DETAILS GRID — these CRM-only components had no CSS at
+   all after the Devries style.css copy (Devries doesn't
+   have this feature), which broke the job modal's layout
+   entirely. Restored from pre-redesign git history and
+   already used the current token names verbatim.
+   ====================================================== */
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.details-grid input,
+.details-grid select,
+.details-grid textarea {
+  padding: 10px 12px;
+  width: 100%;
+  background: var(--surface);
+}
+
+.details-grid input:focus,
+.details-grid select:focus,
+.details-grid textarea:focus,
+.notes-actions textarea:focus {
+  box-shadow: 0 0 0 3px var(--primary-soft);
+  border-color: var(--primary);
+}
+
+.field-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.client-stage-field select {
+  font-weight: 700;
+}
+
+/* ======================================================
+   + JOB button (top of Client Workspace)
+   ====================================================== */
+.add-job-row {
+  display: flex;
+}
+
+.add-job-btn {
+  width: 100%;
+}
+
+/* ======================================================
+   JOB / NEW-JOB MODALS (Section 5) — shared responsive shell
+   ====================================================== */
+.job-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20000;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.job-modal-card {
+  position: relative;
+  width: min(680px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-lift);
+  color: var(--text-main);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.job-modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: var(--tap-size);
+  height: var(--tap-size);
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.job-modal-kicker {
+  font-size: 0.75rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.job-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.job-modal-field label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.job-modal-field input,
+.job-modal-field select,
+.job-modal-field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
+  background:var(--surface);
+  color: var(--text-main);
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.job-modal-field textarea {
+  resize: vertical;
+}
+
+.job-title-input {
+  font-size: 1.2rem !important;
+  font-weight: 700 !important;
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 1px solid var(--border-soft) !important;
+  border-radius: 0 !important;
+  padding: 4px 0 !important;
+}
+
+.job-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.job-modal-readout {
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+  border:1px solid var(--border-soft);
+  font-weight: 700;
+  min-height: var(--tap-size);
+  display: flex;
+  align-items: center;
+}
+
+.job-modal-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.job-modal-actions .btn-primary {
+  flex: 1 1 160px;
+}
+
+.job-balance-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.job-payment-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.job-payment-row input {
+  flex: 1 1 160px;
+}
+
+.job-payment-row button {
+  flex: 0 0 auto;
+}
+
+/* ======================================================
+   JOB TAGS (Section 2/7) — distinct from client stage & job status
+   ====================================================== */
+.job-tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.job-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  border: 1px solid var(--border-strong);
+  font-size: 0.82rem;
+  color: var(--text-main);
+}
+
+.job-tag-remove {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  min-height: auto;
+  padding: 0 2px;
+}
+
+.job-tag-add-row input {
+  width: 100%;
+}
+
+/* ======================================================
+   JOB LINE ITEMS (Section 1) — estimate/invoice cost breakdown
+   ====================================================== */
+.job-line-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.job-line-item-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  border:1px solid var(--border-soft);
+  font-size: 0.85rem;
+}
+
+.li-category-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary);
+  color: var(--primary-hover);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.li-amount {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.li-remove {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1.1rem;
+  min-height: auto;
+  padding: 0 4px;
+}
+
+.job-line-item-total {
+  text-align: right;
+  font-weight: 700;
+  padding: 6px 10px;
+}
+
+.job-line-item-add-grid {
+  display: grid;
+  grid-template-columns: 2fr 1.2fr 0.7fr 1fr auto;
+  gap: 8px;
+}
+
+/* ======================================================
+   JOB NOTES (job details panel) — same look as the client notes panel,
+   scoped to a single job.
+   ====================================================== */
+.job-notes-field .notes-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.job-note-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border-soft);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+}
+
+.job-note-content {
+  flex: 1;
+  color: var(--text-main);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.9rem;
+}
+
+.job-note-edit-textarea {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  color: var(--text-main);
+  font-family: inherit;
+  resize: vertical;
+}
+
+.job-note-action-btn {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.8rem;
+  min-height: auto;
+  flex: 0 0 auto;
+}
+
+.job-note-delete-btn {
+  background: var(--surface);
+  color: var(--danger);
+  border: 1px solid var(--danger-soft);
+}
+
+/* ======================================================
+   JOB FILES — Documents & Photos (separate categories, same component)
+   ====================================================== */
+.job-files-field .field-hint {
+  margin-top: -4px;
+  margin-bottom: 4px;
+}
+
+.job-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 32px;
+}
+
+.job-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 0.85rem;
+}
+
+.job-file-name {
+  flex: 1;
+  color: var(--primary);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-file-name:hover {
+  text-decoration: underline;
+}
+
+.job-file-meta {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.job-file-delete-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  min-height: auto;
+  padding: 0 4px;
+  flex: 0 0 auto;
+}
+
+.job-photos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.job-photo-thumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-muted);
+}
+
+.job-photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.job-photo-thumb .job-file-delete-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: rgba(15, 23, 42, 0.65);
+  color: #fff;
+  border-radius: 999px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.job-files-upload-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.job-file-progress {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.job-file-progress-track {
+  flex: 1;
+  height: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+}
+
+.job-file-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--primary);
+  transition: width 0.2s ease;
+}
+
+.job-file-progress-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ======================================================
+   RESPONSIVE: tablet / mobile collapse for job modals
+   ====================================================== */
+@media (max-width: 640px) {
+  .job-modal-card {
+    padding: 16px;
+    max-height: 95vh;
+  }
+
+  .job-modal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .job-modal-actions .btn-primary {
+    flex: 1 1 100%;
+  }
+
+  .job-line-item-row {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "desc desc"
+      "cat qty"
+      "amount remove";
+  }
+
+  .job-line-item-row .li-desc { grid-area: desc; }
+  .job-line-item-row .li-category-badge { grid-area: cat; }
+  .job-line-item-row .li-qty { grid-area: qty; }
+  .job-line-item-row .li-amount { grid-area: amount; }
+  .job-line-item-row .li-remove { grid-area: remove; justify-self: end; }
+
+  .job-line-item-add-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .job-files-upload-row {
+    flex-direction: column;
+  }
+
+  .job-files-upload-row .panel-secondary-btn {
+    width: 100%;
+  }
+
+  .job-photos-grid {
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  }
+
+  .job-file-row {
+    flex-wrap: wrap;
   }
 }
