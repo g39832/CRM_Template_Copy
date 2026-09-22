@@ -61,13 +61,48 @@ body {
 }
 
 /* =========================
-   CARD HEADER — solid brand blue, not a gradient. This is where the
-   "pop" actually lives, instead of a plain white card.
+   CARD HEADER — solid brand blue as the base (no gradient), with a
+   restrained dot-grid texture and one solid geometric accent shape
+   for depth. No blur, no glow, no color-blend gradient.
 ========================= */
 .login-card-header {
+  position: relative;
+  overflow: hidden;
   background: var(--primary);
   color: #fff;
   padding: 36px 32px 26px;
+}
+
+/* Tiled dot grid — a flat, repeating texture (each dot is a hard-edged
+   tiny circle, not a soft glow), the same device Stripe/Linear/Figma
+   use on solid-color panels. */
+.login-card-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.16) 1.5px, transparent 1.5px);
+  background-size: 18px 18px;
+  z-index: 0;
+}
+
+/* One solid diagonal block in the darker brand shade — a flat geometric
+   shape (clip-path), not a gradient blend, tucked in the corner. */
+.login-card-header::after {
+  content: "";
+  position: absolute;
+  top: -30%;
+  right: -18%;
+  width: 60%;
+  height: 160%;
+  background: var(--primary-hover);
+  opacity: 0.45;
+  clip-path: polygon(60% 0, 100% 0, 40% 100%, 0% 100%);
+  z-index: 0;
+}
+
+.login-card-header > * {
+  position: relative;
+  z-index: 1;
 }
 
 .login-card-body {
