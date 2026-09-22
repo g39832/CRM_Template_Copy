@@ -35,7 +35,7 @@ body {
    not gradients/glow/glass.
 ========================= */
 .login-brand-panel {
-  flex: 1 1 44%;
+  flex: 1 1 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -105,7 +105,7 @@ body {
    FORM PANEL (right)
 ========================= */
 .login-form-panel {
-  flex: 1 1 56%;
+  flex: 1 1 50%;
   display: flex;
   align-items: center;
   justify-content: center;
