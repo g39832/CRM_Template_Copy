@@ -6,7 +6,7 @@
   <title>CRM Template - Finance</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
   <script src="/js/theme.js"></script>
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 
   <style>
     .page-header {
@@ -802,7 +802,66 @@
       }
     }
 
+    /* Wide margin table + heatmap keep their horizontal scroll on small
+       screens, but pin the identifying column(s) so you always know which
+       row you're reading. The right-edge shadow hints there's more to
+       scroll. Scoped to <=1180px, where these widgets can overflow. */
+    @media (max-width: 1180px) {
+      .mt-table tr:not(.mt-expand-row) > :nth-child(1),
+      .mt-table tr:not(.mt-expand-row) > :nth-child(2) {
+        position: sticky;
+        z-index: 1;
+      }
+      .mt-table tr:not(.mt-expand-row) > :nth-child(1) {
+        left: 0;
+        width: 56px;
+        min-width: 56px;
+        max-width: 56px;
+        padding-left: 6px;
+        padding-right: 6px;
+        text-align: center;
+      }
+      .mt-table tr:not(.mt-expand-row) > :nth-child(2) {
+        left: 56px;
+        box-shadow: 6px 0 8px -6px rgba(15, 23, 42, 0.28);
+      }
+      .mt-table thead th:nth-child(1),
+      .mt-table thead th:nth-child(2) {
+        z-index: 2;
+      }
+      /* Hover tint is translucent — layer it over an opaque surface so
+         scrolled cells don't show through the pinned ones. */
+      .mt-table tbody tr:hover td:nth-child(1),
+      .mt-table tbody tr:hover td:nth-child(2) {
+        background: linear-gradient(var(--primary-soft), var(--primary-soft)) var(--surface);
+      }
+
+      .mt-heatmap-name {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        align-self: stretch;
+        display: flex;
+        align-items: center;
+        background: var(--surface);
+        box-shadow: 6px 0 8px -6px rgba(15, 23, 42, 0.28);
+      }
+    }
+
+    @media (max-width: 768px), (pointer: coarse) {
+      .mt-row-toggle {
+        width: var(--tap-size);
+        height: var(--tap-size);
+      }
+    }
+
     @media (max-width: 768px) {
+
+      .mt-table tr:not(.mt-expand-row) > :nth-child(2) {
+        max-width: 140px;
+        overflow-wrap: anywhere;
+      }
+
       .mt-toolbar,
       .mt-panel-header {
         align-items: stretch;

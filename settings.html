@@ -6,7 +6,7 @@
   <title>Admin Settings</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
   <script src="/js/theme.js"></script>
-  <link rel="stylesheet" href="/style.css?v=5">
+  <link rel="stylesheet" href="/style.css?v=6">
   <!-- Lucide icons (outline, consistent stroke — replaces emoji-as-icon usage) -->
   <script src="https://cdn.jsdelivr.net/npm/lucide@1.47.0/dist/umd/lucide.min.js"></script>
   <style>
@@ -365,6 +365,7 @@
     .logo-preview.visible { display: block; }
 
     @media (max-width: 600px) {
+      body { padding: 12px; }
       .field-row { flex-direction: column; gap: 0; }
       .settings-split { grid-template-columns: 1fr; }
       .tab-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; }

@@ -19,7 +19,9 @@
     "verify:deploy": "node scripts/verify-deploy.js",
     "seed-demo-data": "node scripts/seed-demo-data.js",
     "test:rbac": "node scripts/test-rbac.js",
-    "test:crm-features": "node scripts/test-crm-features.js"
+    "test:crm-features": "node scripts/test-crm-features.js",
+    "test:responsive": "playwright test",
+    "test:responsive:report": "playwright show-report"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
@@ -39,5 +41,8 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
 }

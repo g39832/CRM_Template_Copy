@@ -1669,7 +1669,7 @@
             ${topClients.map((client) => {
               const row = monthSeries[client.id] || [];
               return `
-                <div style="font-weight:800; color: var(--text-main); font-size:0.9rem;">${escapeHtml(client.name)}</div>
+                <div class="mt-heatmap-name" style="font-weight:800; color: var(--text-main); font-size:0.9rem;">${escapeHtml(client.name)}</div>
                 ${row.map((value) => {
                   const intensity = clamp(Math.abs(value) / Math.max(client.netProfit || 1, 1), 0, 1);
                   const background = value >= 0

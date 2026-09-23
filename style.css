@@ -2916,3 +2916,114 @@ input[type="tel"]:focus {
     flex-wrap: wrap;
   }
 }
+
+/* ======================================================
+   RESPONSIVE FIXES (mobile audit)
+   Targeted fixes for issues measured at 320–1024px widths.
+   Placed last so they win over the earlier (partly !important)
+   mobile blocks without editing those blocks.
+   ====================================================== */
+
+/* Workspace was 40px wider than the sidebar's content box, so the sidebar
+   scrolled sideways at every width above 768px. Cap it to its container;
+   the inner 680px column is unchanged, so the layout looks the same. */
+@media (min-width: 769px) {
+  .clients-workspace {
+    max-width: 100% !important;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Top nav: links overflowed the bar on narrow phones, which clipped the
+     role badge and pushed the theme toggle off-screen (unreachable). */
+  .top-nav .nav-links {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    max-width: 100%;
+  }
+  .top-nav .nav-links a {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .theme-toggle-btn {
+    width: var(--tap-size);
+    min-height: var(--tap-size);
+    flex-shrink: 0;
+  }
+  .role-badge {
+    font-size: 0.7rem;
+  }
+
+  /* Search row: the portrait rule that makes every workspace button 100%
+     wide also caught the filter button, squashing the search input to
+     ~22px. Keep the input flexible and the filter button square. */
+  .clients-workspace .search-bar input {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto !important;
+  }
+  .clients-workspace .search-bar .filter-toggle-btn {
+    flex: 0 0 var(--tap-size);
+    width: var(--tap-size) !important;
+    min-height: var(--tap-size);
+  }
+
+  /* Client panel: .details-grid stayed 2 columns while its full-span rows
+     were reset to one column, so labels landed beside the wrong fields and
+     inline `grid-column: span 2` items pushed the card to scroll sideways.
+     !important is needed to beat those inline styles. */
+  #projectPanel .details-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #projectPanel .details-grid > * {
+    grid-column: 1 / -1 !important;
+    min-width: 0;
+  }
+
+  #projectPanel .close-x {
+    width: var(--tap-size);
+    height: var(--tap-size);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+  }
+
+  #projectPanel .panel-contact-links a,
+  #projectPanel .maps-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 40px;
+  }
+}
+
+/* Touch devices wider than the 768px breakpoint (landscape phones,
+   tablets) keep the desktop layout but still need finger-sized targets.
+   Mouse/trackpad users are unaffected. */
+@media (pointer: coarse) {
+  .theme-toggle-btn {
+    width: var(--tap-size);
+    min-height: var(--tap-size);
+    flex-shrink: 0;
+  }
+  .role-badge {
+    font-size: 0.7rem;
+  }
+  #projectPanel .close-x {
+    width: var(--tap-size);
+    height: var(--tap-size);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+  }
+  #projectPanel .panel-contact-links a,
+  #projectPanel .maps-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 40px;
+  }
+}

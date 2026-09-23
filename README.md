@@ -193,6 +193,36 @@ user out once, because their session exists only in Postgres.
   relies on the server-side service role key plus its own `api/access-control.js` checks
   rather than RLS, so RLS is optional defense-in-depth, not currently required for it to work.
 
+## Mobile / Responsive Layout
+
+Styling is plain CSS, with no framework. Shared rules live in `style.css`, and
+page-specific rules sit in each page's `<style>` block. The breakpoints are:
+
+- `max-width: 768px` — main phone/tablet-portrait breakpoint (single column,
+  full-screen client panel, stacked forms)
+- `(orientation: portrait)` / `(orientation: landscape)` variants of the above
+- `max-width: 640px` (job modals), `600px` (settings), `1180px` (finance grids)
+- `(pointer: coarse)` — finger-sized tap targets on touch devices wider than
+  768px (landscape phones, tablets), without changing the desktop layout
+
+The fixes from the mobile audit are in the `RESPONSIVE FIXES` section at the
+end of `style.css`, plus small additions to the media blocks in `main.html`,
+`finance.html` and `settings.html`:
+
+| Issue (before) | Where | Fix |
+|---|---|---|
+| Top nav overflowed on phones up to 390px; theme toggle and role badge were clipped and could not be tapped | all pages | nav links wrap; 40px+ tap targets |
+| Client search input squashed to ~22px on phones and portrait tablets (filter button took the whole row) | dashboard | input flexes, filter button stays 44px square |
+| Client panel kept a 2-column grid on phones: labels sat next to the wrong fields and the right column was cut off | client panel | single column at ≤768px |
+| Client panel close button was 14–16px wide; phone/email links 16px tall | client panel | 44px close button, 40px link targets |
+| Clients sidebar scrolled sideways by 40px at every width above 768px | dashboard | workspace capped to its container (desktop looks the same) |
+| Settings page had 24px page padding on phones, which pushed the nav off-screen | settings | 12px padding at ≤600px |
+| Margin table and heatmap scroll sideways on small screens, but you lost track of which client a row belonged to | finance | client column pinned, with a shadow hinting at more content; 44px expand buttons on touch |
+| Badge text under 10px | dashboard | 0.7rem on phones/touch |
+
+Cross-device tests: see [`tests/README.md`](tests/README.md)
+(`npm run test:responsive`).
+
 ## Notes
 
 - The app starts from `server.js` and listens on `process.env.PORT`.
