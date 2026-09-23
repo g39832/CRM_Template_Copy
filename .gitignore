@@ -10,3 +10,12 @@ backups/
 npm-debug.log*
 test-results/
 playwright-report/
+
+# Local test/debug leftovers (never commit: may hold passwords or cookies)
+temp-*
+tmp-*
+*-cookies*.txt
+*.log
+stdout.txt
+stderr.txt
+test-*.pdf

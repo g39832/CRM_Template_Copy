@@ -213,10 +213,13 @@ test.describe('authenticated', () => {
       const name = (await first.getAttribute('data-name')) || '';
       const term = name.split(' ')[0];
       await search.fill(term);
-      await page.waitForTimeout(600);
-      const names = await page.locator('.client-card').evaluateAll((els) => els.map((e) => e.dataset.name || ''));
-      expect(names.length).toBeGreaterThan(0);
-      for (const nm of names) expect(nm.toLowerCase()).toContain(term.toLowerCase());
+      // Search is debounced and hits the API, so wait for the list to settle
+      // instead of sleeping a fixed time.
+      const cardNames = () => page.locator('.client-card').evaluateAll((els) => els.map((e) => e.dataset.name || ''));
+      await expect.poll(async () => {
+        const names = await cardNames();
+        return names.length > 0 && names.every((nm) => nm.toLowerCase().includes(term.toLowerCase()));
+      }, { timeout: 10_000 }).toBe(true);
       await search.fill('');
     }
   });

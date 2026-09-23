@@ -352,7 +352,19 @@ const blockedStaticPaths = [
   /^\/uploads\//i,
   /^\/scripts\//i,
   /\.(?:key|pem|crt|p12|pfx|csr)$/i,
-  /\.sql$/i
+  /\.sql$/i,
+  // Dev/test leftovers must never be public: saved logins and cookie jars,
+  // logs, stray test PDFs, server-only code, deploy config, and a Chrome
+  // extension manifest (at /manifest.json it looks like the site is
+  // distributing an all-sites content script). Files like these are what
+  // got the domain flagged by Google Safe Browsing.
+  /\.(?:txt|log)$/i,
+  /^\/(?:temp|tmp)-/i,
+  /^\/test-[^/]*\.pdf$/i,
+  /^\/(?:manifest\.json|content_reporter\.js)$/i,
+  /^\/(?:render\.yaml|vercel\.json|playwright\.config\.js)$/i,
+  /\.code-workspace$/i,
+  /^\/(?:services|tests)\//i
 ];
 
 app.use((req, res, next) => {
