@@ -158,12 +158,20 @@ async function handleJobDocumentGeneration(req, res, mode) {
       lineItems = [];
     }
 
+    // Scope shown on the document: the job's own scope text; if that was
+    // cleared, the job's services; only then the client's default scope.
+    const serviceScope = lineItems
+      .map((i) => String(i.description || '').trim())
+      .filter(Boolean)
+      .map((d) => `- ${d}`)
+      .join('\n');
+
     // Build invoice data from the job record (not the client financial fields)
     const { buildInvoiceData, generateInvoicePDF } = require('../services/invoice');
     const invoiceData = buildInvoiceData({
       client: {
         ...client,
-        scope_of_work: job.scope_of_work || client.scope_of_work || '',
+        scope_of_work: job.scope_of_work || serviceScope || client.scope_of_work || '',
         total_due: job.total_due,
         amount_paid: job.amount_paid,
         balance: job.balance,

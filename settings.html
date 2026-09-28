@@ -6,7 +6,7 @@
   <title>Admin Settings</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
   <script src="/js/theme.js"></script>
-  <link rel="stylesheet" href="/style.css?v=6">
+  <link rel="stylesheet" href="/style.css?v=7">
   <!-- Lucide icons (outline, consistent stroke — replaces emoji-as-icon usage) -->
   <script src="https://cdn.jsdelivr.net/npm/lucide@1.47.0/dist/umd/lucide.min.js"></script>
   <style>
@@ -32,7 +32,7 @@
       font-weight: 700;
     }
     .settings-header a {
-      color: var(--primary);
+      color: var(--primary-text);
       text-decoration: none;
       font-size: 0.92rem;
       font-weight: 600;
@@ -42,6 +42,7 @@
     /* ---- Tabs ---- */
     .tab-bar {
       display: flex;
+      flex-wrap: wrap;
       gap: 4px;
       margin-bottom: 24px;
       background: var(--surface);
@@ -50,7 +51,7 @@
       padding: 4px;
     }
     .tab-btn {
-      flex: 1;
+      flex: 1 1 auto;
       padding: 12px 16px;
       border: none;
       border-radius: 8px;
@@ -64,7 +65,7 @@
     .tab-btn:hover { background: var(--surface-muted); color: var(--text-main); }
     .tab-btn.active {
       background: var(--primary-soft);
-      color: var(--primary);
+      color: var(--primary-text);
     }
 
     /* ---- Cards ---- */
@@ -101,7 +102,7 @@
       font-size: 0.78rem;
       font-weight: 700;
       background: var(--primary-soft);
-      color: var(--primary);
+      color: var(--primary-text);
       border: 1px solid var(--primary);
     }
     .settings-split {
@@ -176,6 +177,45 @@
 
     /* ---- Form fields ---- */
     .field-group { margin-bottom: 16px; }
+    /* Expense Categories tab */
+    .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .expense-notice {
+      margin-bottom: 14px; padding: 12px 14px; border-radius: 10px;
+      background: var(--warning-soft); border: 1px solid var(--warning); color: var(--text-main); font-size: 0.88rem;
+    }
+    .expense-add-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .expense-add-row input {
+      flex: 1 1 220px; min-width: 0; padding: 10px 12px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-main); font: inherit;
+    }
+    .expense-cat-table-wrap { overflow-x: auto; }
+    .expense-cat-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; color: var(--text-main); }
+    .expense-cat-table th {
+      padding: 10px 8px; text-align: left; color: var(--text-muted); font-weight: 600;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .expense-cat-table td { padding: 8px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+    .expense-cat-table input {
+      width: 100%; min-width: 140px; padding: 8px 10px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-main); font: inherit;
+    }
+    .expense-cat-table tr.is-inactive input { color: var(--text-muted); }
+    .expense-cat-usage { color: var(--text-muted); white-space: nowrap; }
+    .expense-cat-status { font-weight: 700; font-size: 0.8rem; white-space: nowrap; }
+    .expense-cat-status.active { color: var(--success-text); }
+    .expense-cat-status.inactive { color: var(--text-muted); }
+    .expense-cat-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+    .expense-cat-actions button { padding: 6px 10px; font-size: 0.82rem; }
+    .expense-cat-actions-head { text-align: right !important; }
+    .expense-cat-empty { padding: 20px; text-align: center; color: var(--text-muted); }
+    @media (max-width: 600px) {
+      .expense-cat-table thead { display: none; }
+      .expense-cat-table tr { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; padding: 10px 0; border-bottom: 1px solid var(--border-soft); }
+      .expense-cat-table td { padding: 0; border: none; }
+      .expense-cat-table td:first-child { grid-column: 1 / -1; }
+      .expense-cat-table td.expense-cat-actions-cell { grid-column: 1 / -1; }
+      .expense-cat-actions { justify-content: flex-start; }
+    }
     .field-group label {
       display: block;
       font-size: 0.82rem;
@@ -256,7 +296,7 @@
     }
     .feature-order button:hover:not(:disabled) {
       background: var(--primary-soft);
-      color: var(--primary);
+      color: var(--primary-text);
     }
     .feature-order button:disabled { opacity: 0.25; cursor: not-allowed; }
     .feature-toggle {
@@ -326,13 +366,13 @@
       display: block;
       background: var(--success-soft);
       border: 1px solid var(--success);
-      color: var(--success);
+      color: var(--success-text);
     }
     #formFeedback.error {
       display: block;
       background: var(--danger-soft);
       border: 1px solid var(--danger);
-      color: var(--danger);
+      color: var(--danger-text);
     }
 
     .loading-overlay {
@@ -368,7 +408,7 @@
       body { padding: 12px; }
       .field-row { flex-direction: column; gap: 0; }
       .settings-split { grid-template-columns: 1fr; }
-      .tab-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .tab-bar { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
       .tab-btn { font-size: 0.8rem; padding: 10px 8px; white-space: nowrap; flex: 0 0 auto; }
     }
   </style>
@@ -402,6 +442,7 @@
       <button class="tab-btn" data-tab="features" role="tab" data-admin-only="true">Features Marketplace</button>
       <button class="tab-btn" data-tab="branding" role="tab" data-admin-only="true">Branding &amp; Identity</button>
       <button class="tab-btn" data-tab="users" role="tab" data-admin-only="true">Users &amp; Permissions</button>
+      <button class="tab-btn" data-tab="expenses" role="tab" data-admin-only="true" id="expensesTabBtn">Expense Categories</button>
       <button class="tab-btn" data-tab="audit" role="tab" data-admin-only="true">System Audit</button>
       <button class="tab-btn" data-tab="workflow" role="tab" data-admin-only="true">Platform Preferences</button>
     </div>
@@ -683,6 +724,28 @@
       </div>
       <div class="form-actions">
         <button type="button" class="btn-primary" id="saveWorkflowBtn">Save Preference</button>
+      </div>
+    </div>
+
+    <!-- ===== Expense Categories ===== -->
+    <div class="settings-card" id="tabExpenses" role="tabpanel" data-admin-only="true">
+      <h2>Expense Categories</h2>
+      <p class="subtitle">The categories you pick from when adding a cost to a job. Rename one and every existing cost follows the new name. A category that's in use can be deactivated — it disappears from the picker for new costs, and its existing costs and totals stay exactly as they are.</p>
+      <div id="expenseCategoriesNotice" class="expense-notice" hidden></div>
+      <div class="expense-add-row">
+        <label for="newExpenseCategory" class="visually-hidden">New category name</label>
+        <input type="text" id="newExpenseCategory" placeholder="New category (e.g. Subcontractors)" maxlength="80">
+        <button type="button" class="btn-primary" id="addExpenseCategoryBtn">Add Category</button>
+      </div>
+      <div class="expense-cat-table-wrap">
+        <table class="expense-cat-table">
+          <thead>
+            <tr><th>Category</th><th>Used by</th><th>Status</th><th class="expense-cat-actions-head">Actions</th></tr>
+          </thead>
+          <tbody id="expenseCategoriesBody">
+            <tr><td colspan="4" class="expense-cat-empty">Loading categories...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
 

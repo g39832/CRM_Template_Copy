@@ -84,7 +84,8 @@
     branding: document.getElementById('tabBranding'),
     users: document.getElementById('tabUsers'),
     audit: document.getElementById('tabAudit'),
-    workflow: document.getElementById('tabWorkflow')
+    workflow: document.getElementById('tabWorkflow'),
+    expenses: document.getElementById('tabExpenses')
   };
 
   tabBtns.forEach(function (btn) {
@@ -97,6 +98,7 @@
       });
       if (tab === 'users') loadUsers();
       if (tab === 'audit') { loadAuditLog(); loadAuditActions(); }
+      if (tab === 'expenses') { hideFeedback(); loadExpenseCategories(); }
     });
   });
 
@@ -815,6 +817,158 @@
       }
     };
     xhr.send();
+  })();
+
+
+  // ==================== EXPENSE CATEGORIES (admin) ====================
+  // Categories used for itemized job costs (see api/expenses.js). Rename
+  // keeps every existing cost pointing at the same category; categories in
+  // use are deactivated rather than deleted, so no cost is ever lost.
+  var EXP_API = '/api/v2/expense-categories';
+
+  function expRequest(method, url, body) {
+    return fetch(url, {
+      method: method,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) throw new Error(data.error || data.message || 'Request failed');
+        return data;
+      });
+    });
+  }
+
+  function money(n) {
+    return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function renderExpenseCategories(data) {
+    var body = document.getElementById('expenseCategoriesBody');
+    var notice = document.getElementById('expenseCategoriesNotice');
+    var addBtn = document.getElementById('addExpenseCategoryBtn');
+    var addInput = document.getElementById('newExpenseCategory');
+    if (!body) return;
+    if (!data.supported) {
+      notice.hidden = false;
+      notice.textContent = (data.message || 'Expense categories are not available yet.') +
+        ' Until then, jobs keep a single Job Cost figure.';
+      addBtn.disabled = true;
+      addInput.disabled = true;
+      body.innerHTML = '<tr><td colspan="4" class="expense-cat-empty">No categories yet.</td></tr>';
+      return;
+    }
+    notice.hidden = true;
+    addBtn.disabled = false;
+    addInput.disabled = false;
+    var cats = data.categories || [];
+    if (!cats.length) {
+      body.innerHTML = '<tr><td colspan="4" class="expense-cat-empty">No categories yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = cats.map(function (c) {
+      var used = c.expense_count
+        ? c.expense_count + ' cost' + (c.expense_count === 1 ? '' : 's') + ' · $' + money(c.expense_total)
+        : 'Not used';
+      return '<tr data-id="' + c.id + '" class="' + (c.is_active ? '' : 'is-inactive') + '">' +
+        '<td><input type="text" class="exp-cat-name" value="' + escapeHtml(c.name) + '" data-original="' + escapeHtml(c.name) + '" maxlength="80" aria-label="Category name"></td>' +
+        '<td class="expense-cat-usage">' + used + '</td>' +
+        '<td><span class="expense-cat-status ' + (c.is_active ? 'active' : 'inactive') + '">' + (c.is_active ? 'Active' : 'Deactivated') + '</span></td>' +
+        '<td class="expense-cat-actions-cell"><div class="expense-cat-actions">' +
+          '<button type="button" class="btn-secondary exp-cat-rename" hidden>Save name</button>' +
+          (c.is_active
+            ? '<button type="button" class="btn-secondary exp-cat-toggle" data-active="false">Deactivate</button>'
+            : '<button type="button" class="btn-secondary exp-cat-toggle" data-active="true">Reactivate</button>') +
+          (c.expense_count ? '' : '<button type="button" class="btn-danger exp-cat-delete">Delete</button>') +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function loadExpenseCategories() {
+    expRequest('GET', EXP_API)
+      .then(renderExpenseCategories)
+      .catch(function (err) { showError(err.message || 'Failed to load expense categories'); });
+  }
+
+  (function wireExpenseCategories() {
+    var panel = document.getElementById('tabExpenses');
+    var tabBtn = document.getElementById('expensesTabBtn');
+    var isAdmin = window.__USER__ && window.__USER__.role === 'admin';
+    if (!panel || !tabBtn) return;
+    if (!isAdmin) {
+      tabBtn.style.display = 'none';
+      panel.style.display = 'none';
+      return;
+    }
+    var addBtn = document.getElementById('addExpenseCategoryBtn');
+    var addInput = document.getElementById('newExpenseCategory');
+
+    function addCategory() {
+      var name = addInput.value.trim();
+      if (!name) { showError('Enter a category name'); return; }
+      addBtn.disabled = true;
+      expRequest('POST', EXP_API, { name: name })
+        .then(function () {
+          addInput.value = '';
+          showSuccess('Category "' + name + '" added');
+          loadExpenseCategories();
+        })
+        .catch(function (err) { showError(err.message); })
+        .then(function () { addBtn.disabled = false; });
+    }
+    addBtn.addEventListener('click', addCategory);
+    addInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); addCategory(); }
+    });
+
+    var body = document.getElementById('expenseCategoriesBody');
+    body.addEventListener('input', function (e) {
+      if (!e.target.classList.contains('exp-cat-name')) return;
+      var row = e.target.closest('tr');
+      var value = e.target.value.trim();
+      row.querySelector('.exp-cat-rename').hidden = !value || value === e.target.getAttribute('data-original');
+    });
+    body.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && e.target.classList.contains('exp-cat-name')) {
+        e.preventDefault();
+        var btn = e.target.closest('tr').querySelector('.exp-cat-rename');
+        if (!btn.hidden) btn.click();
+      }
+    });
+    body.addEventListener('click', function (e) {
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      var row = btn.closest('tr');
+      var id = row.getAttribute('data-id');
+      var nameInput = row.querySelector('.exp-cat-name');
+      var name = nameInput.getAttribute('data-original');
+      var request;
+      if (btn.classList.contains('exp-cat-rename')) {
+        var next = nameInput.value.trim();
+        request = expRequest('PUT', EXP_API + '/' + id, { name: next })
+          .then(function () { showSuccess('Renamed "' + name + '" to "' + next + '". Existing costs use the new name.'); });
+      } else if (btn.classList.contains('exp-cat-toggle')) {
+        var activate = btn.getAttribute('data-active') === 'true';
+        if (!activate && !confirm('Deactivate "' + name + '"?\n\nIt will no longer be offered for new costs. Existing costs keep this category and their amounts.')) return;
+        request = expRequest('PUT', EXP_API + '/' + id, { is_active: activate })
+          .then(function () { showSuccess('"' + name + '" ' + (activate ? 'reactivated' : 'deactivated')); });
+      } else if (btn.classList.contains('exp-cat-delete')) {
+        if (!confirm('Delete "' + name + '"? No costs use it.')) return;
+        request = expRequest('DELETE', EXP_API + '/' + id)
+          .then(function () { showSuccess('"' + name + '" deleted'); });
+      } else {
+        return;
+      }
+      btn.disabled = true;
+      request
+        .catch(function (err) { showError(err.message); })
+        .then(loadExpenseCategories);
+    });
+
+    // /settings?tab=expenses (the "Manage categories" link in a job)
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'expenses') tabBtn.click();
   })();
 
   // ==================== INIT ====================

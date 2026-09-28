@@ -17,7 +17,9 @@ const {
   ensureRemoteBucket,
   remoteUploadFile,
   remoteListFiles,
-  remoteDeleteFile
+  remoteDeleteFile,
+  remoteSignedUrl,
+  localFilePathForObject
 } = require('../services/storage');
 
 // ======================================================
@@ -128,7 +130,49 @@ router.get('/list/:key', asyncHandler(async (req, res) => {
   const isClientId = /^\d+$/.test(key);
   const files = (await remoteListFiles(key)).filter((file) => (isClientId ? true : file.ext === '.pdf'));
 
-  res.json({ success: true, files });
+  // Client files get stable, access-checked view/download links (the raw
+  // `url` is a short-lived signed URL remotely, and not servable locally).
+  const withLinks = isClientId
+    ? files.map((file) => {
+        const base = `/api/pdf/file/${key}?name=${encodeURIComponent(file.name)}`;
+        return { ...file, viewUrl: base, downloadUrl: `${base}&download=1` };
+      })
+    : files;
+
+  res.json({ success: true, files: withLinks });
+}));
+
+// ======================================================
+// VIEW / DOWNLOAD ONE CLIENT FILE
+// ======================================================
+router.get('/file/:clientId', asyncHandler(async (req, res) => {
+  const clientId = parseStringField(req.params.clientId, 'clientId', { minLength: 1, maxLength: 32 });
+  if (!/^\d+$/.test(clientId)) throw new AppError(400, 'Invalid client id.');
+  const name = path.basename(parseStringField(req.query.name, 'name', { minLength: 1, maxLength: 512, trim: false }));
+  if (!name || name === '.' || name === '..') throw new AppError(400, 'Invalid file name.');
+  await checkKeyAccess(req, clientId);
+
+  if (!isRemoteStorageEnabled() && !isLocalStorageEnabled()) {
+    throw new AppError(500, 'File storage is not configured.');
+  }
+
+  const wantsDownload = req.query.download === '1';
+  const objectPath = `${clientId}/${name}`;
+
+  if (isLocalStorageEnabled()) {
+    const localPath = localFilePathForObject(objectPath);
+    if (wantsDownload) res.attachment(name.replace(/^\d{10,}-/, ''));
+    return res.sendFile(localPath, (err) => {
+      if (err && !res.headersSent) res.status(404).json({ success: false, error: 'File not found' });
+    });
+  }
+
+  const signed = await remoteSignedUrl(objectPath);
+  if (!signed) throw new AppError(404, 'File not found');
+  const target = wantsDownload
+    ? `${signed}${signed.includes('?') ? '&' : '?'}download=${encodeURIComponent(name.replace(/^\d{10,}-/, ''))}`
+    : signed;
+  return res.redirect(target);
 }));
 
 // ======================================================

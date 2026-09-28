@@ -39,6 +39,7 @@ copy .env.example .env
 ```bash
 node scripts/migrate-v2.js
 node scripts/migrate-v3-crm-improvements.js
+node scripts/migrate-v6-client-overview.js   # optional — see "Client page and jobs" below
 ```
 
    If those can't reach your database directly (no `SUPABASE_DATABASE_URL`/`SUPABASE_ACCESS_TOKEN`
@@ -87,8 +88,8 @@ Create a Supabase project, then create these tables (also captured in full in
 Minimum recommended columns:
 
 - `settings`: `key text primary key`, `value text`
-- `clients`: `id bigint identity primary key`, `name text`, `phone text`, `email text`, `address text`, `status text`, `total_due numeric`, `amount_paid numeric`, `balance numeric`, `scope_of_work text`, `job_cost numeric`, `assigned_user_id uuid references users(id)`, `company_id uuid references companies(id)`, `created_at timestamptz`
-- `payments`: `id bigint identity primary key`, `client_id bigint`, `amount numeric`, `payment_date timestamptz`
+- `clients`: `id bigint identity primary key`, `name text`, `phone text`, `email text`, `address text`, `status text`, `total_due numeric`, `amount_paid numeric`, `balance numeric`, `scope_of_work text`, `job_cost numeric`, `assigned_user_id uuid references users(id)`, `company_id uuid references companies(id)`, `technician text` (v6, optional), `created_at timestamptz`
+- `payments`: `id bigint identity primary key`, `client_id bigint`, `amount numeric`, `payment_date timestamptz`, `job_id bigint null` (v6, optional)
 - `notes`: `id bigint identity primary key`, `client_id bigint`, `content text`, `created_at timestamptz`
 - `finance_overrides`: `year int unique`, `total_expected numeric`, `total_received numeric`, `total_remaining numeric`, `total_clients int`, `notes text`, `updated_at timestamptz`
 - `finance_margin_entries`: `id bigint identity primary key`, `client_id bigint null`, `client_name text`, `category text`, `project text`, `invoice_status text`, `amount numeric`, `expense_type text`, `recurring boolean`, `expense_date timestamptz`, `notes text`, `attachment_url text`, `created_at timestamptz`, `updated_at timestamptz`
@@ -116,6 +117,77 @@ separate concept from `jobs.status` (a job's own workflow state) and `jobs.tags`
   stripped server-side before the response ever reaches a regular user — see
   `api/access-control.js`. This is enforced on every relevant endpoint, not just hidden
   in the UI, so it can't be bypassed via direct API calls.
+- On a job, a regular user sees the job total, money received and balance (never the job
+  cost, profit or margin) and the job's services list — the same prices already printed
+  on the estimate/invoice PDFs they can download. Adding, editing or removing priced
+  services, recording payments and setting cost stay admin-only; a regular user's
+  "+ Service" adds the service to the job's scope of work instead. They can edit the
+  client's info (including Technician), job text, notes, files, photos and tags as before.
+
+### Client page and jobs
+
+The client page is a condensed **overview**; the detailed work happens inside each job.
+
+- **Client page** — name, stage, Salesperson (`assigned_user_id`), Technician, address,
+  phone and email; read-only totals (**Total Amount Due**, **Money Received**, **Balance**
+  and, for admins, **Cost** with margin); the list of jobs with **+ Job** at the end; and
+  collapsed client notes. Totals are never typed in here — they add up the client's jobs
+  (plus any client-level amounts, below).
+- **+ Job** — creates a job that can start blank, from the client's saved services and
+  scope, from the company default scope, or as a copy of an earlier job. Copying is how
+  recurring work is handled: copy "September Maintenance" and the new job is suggested as
+  "October Maintenance" with the same services and cost. **Duplicate** inside a job does
+  the same in one click.
+- **Job workspace** (click a job) — status, tags, money (Job Total, Received, Balance,
+  Cost, Profit, Margin), payments with history and undo, **Services & Scope of Work**
+  (**+ Service** from the preset list, custom line items, inline edit/remove; the job
+  total is the sum of its services, and the scope text prints on the estimate/invoice —
+  if it's blank, the services are listed instead), documents & PDFs, photos, notes, and
+  estimate/invoice downloads. Closing it with **X**, Escape or a click outside saves
+  everything first, including a typed-but-unsubmitted payment or note; if a save fails
+  the job stays open so nothing is lost.
+- **Client account** — shown in the jobs list only when a client has money, services or
+  PDFs recorded on the client record itself (how the CRM worked before jobs). It keeps all
+  of that editable exactly as before — Total Due, payments and undo, cost and margin,
+  client estimate/invoice, the client's saved services, and the client PDF drop box — and
+  its amounts are included in the client totals. Those PDFs are also listed inside every
+  job's Documents section.
+- **Homepage** — sort by Stage, Salesperson, Technician, Year or Name; filter by
+  Salesperson, Technician, Year, Stage and date added. (The min/max revenue and
+  one-off/recurring filters are no longer shown; `client_type`, the recurring cron and
+  `/api/search/filtered` are unchanged.)
+- **Finance** — year totals now include job amounts as well as client-level amounts, and
+  job payments are written to the `payments` ledger (so money received on jobs shows up
+  in Finance and the margin tracker). Payment corrections are recorded as negative
+  entries; payment records are never deleted.
+
+### Job costs and expense categories
+
+Inside a job (admins — job cost is admin-only), **Job Costs** lists each cost with a
+description, amount and category, shows a total per category plus the Total Cost, and
+the job's cost *is* that total — so profit, margin, the client's Cost tile and Finance
+all use it with no separate calculation. The first itemized cost on a job that already
+had a typed-in cost keeps that figure as an **Uncategorized** line, so nothing drops.
+
+Categories belong to the business and are managed in **Settings → Expense Categories**
+(admins). New businesses start with Labor, Materials, Commissions and Miscellaneous
+Expenses. Costs reference categories by id, so **renaming** a category renames it on
+every existing cost. **Deactivating** hides it from the picker for new costs while every
+existing cost, total and report keeps it. A category can only be **deleted** while no
+cost uses it (the database enforces this too).
+
+This needs the **v7 migration** (`npm run migrate:v7`, or the "TEMPLATE UPGRADE v7"
+section of `supabase-schema.sql` in the SQL editor): two new tables, `expense_categories`
+and `job_expenses`, plus the default categories. Until it is run, jobs keep their single
+Job Cost field and the new screens show a notice.
+
+**Optional migration (v6)** — `node scripts/migrate-v6-client-overview.js`, or run the
+"TEMPLATE UPGRADE v6" section at the end of `supabase-schema.sql` in the SQL editor.
+It only adds `clients.technician` and `payments.job_id` (plus an index). Everything
+works without it: technician names are kept in the `settings` table until the column
+exists (the migration copies them over), and per-job payment history appears once
+`payments.job_id` exists. Payments recorded on jobs before this change aren't in the
+ledger, so they show as "Recorded before payment history" inside the job.
 
 ## Render Deployment
 
@@ -228,3 +300,22 @@ Cross-device tests: see [`tests/README.md`](tests/README.md)
 - The app starts from `server.js` and listens on `process.env.PORT`.
 - Backup support is optional and disabled by default in the template.
 - Some areas include TODO comments where the original project relied on local database assumptions.
+
+## Local test harness (no real data touched)
+
+**Try it in a browser:** `npm run dev:local` starts the fake database with sample data plus the app, and prints
+links that sign you straight in as an admin or a regular user. Ctrl+C stops it; the next run starts fresh.
+
+`tests/mock-supabase/` is a small in-memory stand-in for the Supabase REST API, seeded
+with realistic sample data (client-level money with and without jobs, services, notes,
+files, a recurring client, a previous-year client). It lets every workflow be tested
+end-to-end without reading or writing the project in `.env`:
+
+```bash
+npm run test:local:api   # API tests: permissions, totals, payments ledger, migration states
+npm run test:local       # browser tests on 7 device sizes (incl. light/dark contrast checks)
+```
+
+Both override every database/storage variable (see `tests/local-env.js`) and refuse to run
+if `SUPABASE_URL` isn't local. `tests/redesign.spec.js` creates and deletes records, so the
+regular `npm run test:responsive` (which uses the real project) ignores it.

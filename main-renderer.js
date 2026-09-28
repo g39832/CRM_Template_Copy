@@ -70,7 +70,7 @@ function customPrompt(message, defaultValue) {
 // This is the CLIENT-LEVEL pipeline stage shown on the main client
 // page. It is intentionally separate from job.status (per-job
 // workflow) and job.tags (per-job free-form labels) — see
-// STATUS_ORDER_JOB / job tag handling further down in this file.
+// JOB_STATUSES / job tag handling further down in this file.
 // ======================================================
 const STATUS_ORDER = [
   "Lead",
@@ -81,24 +81,24 @@ const STATUS_ORDER = [
   "Closed"
 ];
 
-// Light-mode shades (Tailwind 600/700) read well on the near-white badge
-// tint those colors sit on. Dark mode needs brighter 300/400 shades for
-// the same badges to stay readable on a dark navy tint instead — using
-// the light values in dark mode is what made status text look muddy.
+// Light-mode shades (Tailwind 700/800) keep small badge text at 4.5:1 or
+// better on the tinted badge background. Dark mode needs brighter 300/400
+// shades for the same badges to stay readable on a dark navy tint instead —
+// using the light values in dark mode is what made status text look muddy.
 const STATUS_COLORS = {
-  "Lead": "#64748b",
-  "Photo report": "#b45309",
-  "Prospect": "#7c3aed",
-  "Approved": "#0e7490",
-  "Invoiced": "#2563eb",
-  "Closed": "#15803d"
+  "Lead": "#475569",
+  "Photo report": "#92400e",
+  "Prospect": "#6d28d9",
+  "Approved": "#155e75",
+  "Invoiced": "#1d4ed8",
+  "Closed": "#166534"
 };
 const STATUS_COLORS_DARK = {
   "Lead": "#cbd5e1",
   "Photo report": "#fbbf24",
   "Prospect": "#c4b5fd",
   "Approved": "#67e8f9",
-  "Invoiced": "#60a5fa",
+  "Invoiced": "#93c5fd",
   "Closed": "#4ade80"
 };
 function getStatusColor(status) {
@@ -656,23 +656,38 @@ window.api = {
     }
   },
 
+  // Sidebar filters (salesperson, technician, year, stage, dates) and sort
+  // are applied in the browser by renderSidebar, on top of this search.
   async searchClients(term = '', options = {}) {
     const { signal } = options;
-    if (_filterActive) {
-      var params = 'q=' + encodeURIComponent(term);
-      if (_filterState.type) params += '&type=' + encodeURIComponent(_filterState.type);
-      if (_filterState.status) params += '&status=' + encodeURIComponent(_filterState.status);
-      if (_filterState.dateFrom) params += '&dateFrom=' + encodeURIComponent(_filterState.dateFrom);
-      if (_filterState.dateTo) params += '&dateTo=' + encodeURIComponent(_filterState.dateTo);
-      if (_filterState.revenueMin) params += '&revenueMin=' + encodeURIComponent(_filterState.revenueMin);
-      if (_filterState.revenueMax) params += '&revenueMax=' + encodeURIComponent(_filterState.revenueMax);
-      const res = await fetch('/api/search/filtered?' + params, { signal });
-      if (!res.ok) throw new Error("Filtered search failed");
-      return res.json();
-    }
     const res = await fetch(`/api/search?q=${encodeURIComponent(term)}`, { signal });
     if (!res.ok) throw new Error("Search failed");
     return res.json();
+  },
+
+  async getClient(id) {
+    const clients = await this.searchClients('');
+    return clients.find(c => Number(c.id) === Number(id)) || null;
+  },
+
+  // Saves only the given client fields (the server leaves the rest as-is).
+  async updateClientFields(id, fields) {
+    const res = await fetch('/api/update-project', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ...fields })
+    });
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Save failed'));
+    return res.json();
+  },
+
+  async listAssignableUsers() {
+    if (this._assignableUsers) return this._assignableUsers;
+    const res = await fetch('/api/v2/admin/users');
+    if (!res.ok) throw new Error('Failed to load users');
+    const data = await res.json();
+    this._assignableUsers = data.data || [];
+    return this._assignableUsers;
   },
 
   async saveClient(client) {
@@ -920,7 +935,7 @@ window.api = {
   // ==========================
   async listJobs(clientId) {
     const res = await fetch(`/api/jobs/client/${clientId}`);
-    if (!res.ok) throw new Error('Failed to list jobs');
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to list jobs'));
     return res.json();
   },
 
@@ -930,7 +945,7 @@ window.api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (!res.ok) throw new Error('Failed to create job');
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to create job'));
     return res.json();
   },
 
@@ -940,7 +955,7 @@ window.api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (!res.ok) throw new Error('Failed to update job');
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to update job'));
     return res.json();
   },
 
@@ -950,13 +965,72 @@ window.api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount })
     });
-    if (!res.ok) throw new Error('Failed to add job payment');
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to add job payment'));
+    return res.json();
+  },
+
+  async reverseJobPayment(jobId, amount) {
+    const res = await fetch(`/api/jobs/${jobId}/payment/reverse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount })
+    });
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to undo payment'));
+    return res.json();
+  },
+
+  async listJobPayments(jobId) {
+    const res = await fetch(`/api/jobs/${jobId}/payments`);
+    if (!res.ok) return { supported: false, payments: [] };
+    return res.json();
+  },
+
+  // Itemized job costs + expense categories (admin only; see api/expenses.js)
+  async listJobExpenses(jobId) {
+    const res = await fetch(`/api/jobs/${jobId}/expenses`);
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to load job costs'));
+    return res.json();
+  },
+
+  async addJobExpense(jobId, payload) {
+    const res = await fetch(`/api/jobs/${jobId}/expenses`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to add cost'));
+    return res.json();
+  },
+
+  async updateJobExpense(jobId, expenseId, payload) {
+    const res = await fetch(`/api/jobs/${jobId}/expenses/${expenseId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to update cost'));
+    return res.json();
+  },
+
+  async deleteJobExpense(jobId, expenseId) {
+    const res = await fetch(`/api/jobs/${jobId}/expenses/${expenseId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to remove cost'));
+    return res.json();
+  },
+
+  async addJobLineItemsBulk(jobId, lineItems) {
+    const res = await fetch(`/api/jobs/${jobId}/line-items/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ line_items: lineItems })
+    });
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to add services'));
     return res.json();
   },
 
   async deleteJob(jobId) {
     const res = await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Failed to delete job');
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to delete job'));
     return res.json();
   },
 
@@ -966,13 +1040,13 @@ window.api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tags })
     });
-    if (!res.ok) throw new Error('Failed to update job tags');
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to update job tags'));
     return res.json();
   },
 
   async listJobLineItems(jobId) {
     const res = await fetch(`/api/jobs/${jobId}/line-items`);
-    if (!res.ok) throw new Error('Failed to list line items');
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to list line items'));
     return res.json();
   },
 
@@ -982,7 +1056,7 @@ window.api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (!res.ok) throw new Error('Failed to add line item');
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to add line item'));
     return res.json();
   },
 
@@ -992,13 +1066,13 @@ window.api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (!res.ok) throw new Error('Failed to update line item');
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to update line item'));
     return res.json();
   },
 
   async deleteJobLineItem(jobId, itemId) {
     const res = await fetch(`/api/jobs/${jobId}/line-items/${itemId}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Failed to delete line item');
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to delete line item'));
     return res.json();
   },
 
@@ -1302,8 +1376,12 @@ let currentCompanyProfile = null;
 let mainDashboardRefreshTimer = null;
 let mainDashboardRefreshInFlight = false;
 let _platformFeatures = null;
-let _filterActive = false;
-let _filterState = { type: '', status: '', dateFrom: '', dateTo: '', revenueMin: '', revenueMax: '' };
+// Homepage sort + filters, applied in the browser on top of the search
+// results (see applySidebarFilters / sortSidebarClients).
+const EMPTY_FILTERS = { salesperson: '', technician: '', year: '', status: '', dateFrom: '', dateTo: '' };
+let _filterState = { ...EMPTY_FILTERS };
+let _sortMode = 'stage';
+const NONE_VALUE = '__none__';
 
 function isClientPanelOpen() {
   return projectPanel?.style.display === "block";
@@ -1320,13 +1398,10 @@ async function refreshMainDashboard({ refreshOpenClient = true } = {}) {
   try {
     await refreshList();
 
-    if (
-      refreshOpenClient &&
-      activeId &&
-      isClientPanelOpen() &&
-      !hasUnsavedClientPanelChanges()
-    ) {
-      await openClient(activeId);
+    // Only the jobs list and totals are refreshed — never the form fields,
+    // so anything typed but not yet saved stays put.
+    if (refreshOpenClient && activeId && isClientPanelOpen()) {
+      await refreshClientJobs(activeId, { reloadClient: true });
     }
   } finally {
     mainDashboardRefreshInFlight = false;
@@ -1642,61 +1717,164 @@ if (searchInput) {
 }
 
 // ======================================================
-// ADVANCED FILTERING
+// SORT & FILTER (homepage) — Salesperson, Technician, Year, Stage and
+// date added. Everything runs on the already-loaded client list, so changing
+// a control re-renders instantly without another request.
 // ======================================================
 var filterToggleBtn = document.getElementById('filterToggleBtn');
 var filterPanel = document.getElementById('filterPanel');
-var filterType = document.getElementById('filterType');
+var sortSelect = document.getElementById('sortClients');
+var filterSalesperson = document.getElementById('filterSalesperson');
+var filterTechnician = document.getElementById('filterTechnician');
+var filterYear = document.getElementById('filterYear');
 var filterStatus = document.getElementById('filterStatus');
 var filterDateFrom = document.getElementById('filterDateFrom');
 var filterDateTo = document.getElementById('filterDateTo');
-var filterRevenueMin = document.getElementById('filterRevenueMin');
-var filterRevenueMax = document.getElementById('filterRevenueMax');
-var applyFilterBtn = document.getElementById('applyFilterBtn');
 var clearFilterBtn = document.getElementById('clearFilterBtn');
+var _lastSidebarList = [];
+var _lastSidebarTerm = '';
 
-function initAdvancedFiltering() {
-  if (!_platformFeatures || !_platformFeatures.advancedFiltering) {
-    if (filterToggleBtn) filterToggleBtn.style.display = 'none';
-    if (filterPanel) filterPanel.style.display = 'none';
-    return;
+function clientYear(c) {
+  const d = new Date(c.created_at);
+  return Number.isFinite(d.getTime()) ? d.getFullYear() : null;
+}
+
+function salespersonLabel(c) {
+  return (c.assigned_user_name || '').trim();
+}
+
+function technicianLabel(c) {
+  return (c.technician || '').trim();
+}
+
+// Rebuilds the Salesperson/Technician/Year dropdowns from the loaded
+// clients, keeping the current selection.
+function populateFilterOptions(clients) {
+  const fill = (select, allLabel, values, noneLabel, includeNone) => {
+    if (!select) return;
+    const current = select.value;
+    const options = [`<option value="">${allLabel}</option>`]
+      .concat(values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`));
+    if (includeNone) options.push(`<option value="${NONE_VALUE}">${noneLabel}</option>`);
+    select.innerHTML = options.join('');
+    select.value = [...select.options].some(o => o.value === current) ? current : '';
+  };
+  const unique = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const salespeople = unique(clients.map(salespersonLabel));
+  const technicians = unique(clients.map(technicianLabel));
+  const years = [...new Set(clients.map(clientYear).filter(Boolean))].sort((a, b) => b - a).map(String);
+  fill(filterSalesperson, 'All salespeople', salespeople, 'Unassigned', clients.some(c => !salespersonLabel(c)));
+  fill(filterTechnician, 'All technicians', technicians, 'No technician', clients.some(c => !technicianLabel(c)));
+  fill(filterYear, 'All years', years, '', false);
+  if (filterStatus && filterStatus.options.length <= 1) {
+    filterStatus.innerHTML = '<option value="">All stages</option>' +
+      STATUS_ORDER.map(s => `<option value="${s}">${s}</option>`).join('');
   }
-  if (filterToggleBtn) filterToggleBtn.style.display = '';
+}
+
+function applySidebarFilters(list) {
+  const f = _filterState;
+  const from = f.dateFrom ? new Date(f.dateFrom + 'T00:00:00') : null;
+  const to = f.dateTo ? new Date(f.dateTo + 'T23:59:59.999') : null;
+  return list.filter(c => {
+    if (f.salesperson === NONE_VALUE ? salespersonLabel(c) : (f.salesperson && salespersonLabel(c) !== f.salesperson)) return false;
+    if (f.technician === NONE_VALUE ? technicianLabel(c) : (f.technician && technicianLabel(c) !== f.technician)) return false;
+    if (f.year && String(clientYear(c)) !== f.year) return false;
+    if (f.status && (c.status || 'Lead') !== f.status) return false;
+    if (from || to) {
+      const created = new Date(c.created_at);
+      if (from && created < from) return false;
+      if (to && created > to) return false;
+    }
+    return true;
+  });
+}
+
+// Returns the group heading a client falls under for the current sort, or
+// null when the sort doesn't group (stage and name use the status counts
+// row / plain alphabetical order instead).
+function sidebarGroupFor(c) {
+  if (_sortMode === 'salesperson') return salespersonLabel(c) || 'Unassigned';
+  if (_sortMode === 'technician') return technicianLabel(c) || 'No technician';
+  if (_sortMode === 'year') return String(clientYear(c) || 'No date');
+  return null;
+}
+
+function sortSidebarClients(list) {
+  const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
+  const byNewest = (a, b) => new Date(b.created_at) - new Date(a.created_at);
+  const byStage = (a, b) => STATUS_ORDER.indexOf(a.status || 'Lead') - STATUS_ORDER.indexOf(b.status || 'Lead');
+  // Unassigned / no technician sort after named groups.
+  const byLabel = (getLabel) => (a, b) => {
+    const la = getLabel(a), lb = getLabel(b);
+    if (!la !== !lb) return la ? -1 : 1;
+    return la.localeCompare(lb) || byStage(a, b) || byName(a, b);
+  };
+  const sorters = {
+    stage: (a, b) => byStage(a, b) || byNewest(a, b),
+    salesperson: byLabel(salespersonLabel),
+    technician: byLabel(technicianLabel),
+    year: (a, b) => (clientYear(b) || 0) - (clientYear(a) || 0) || byNewest(a, b),
+    name: byName
+  };
+  return list.slice().sort(sorters[_sortMode] || sorters.stage);
+}
+
+function readFilterControls() {
+  _filterState = {
+    salesperson: filterSalesperson ? filterSalesperson.value : '',
+    technician: filterTechnician ? filterTechnician.value : '',
+    year: filterYear ? filterYear.value : '',
+    status: filterStatus ? filterStatus.value : '',
+    dateFrom: filterDateFrom ? filterDateFrom.value : '',
+    dateTo: filterDateTo ? filterDateTo.value : ''
+  };
+  updateFilterIndicator();
+  renderSidebar(_lastSidebarList, _lastSidebarTerm);
+}
+
+function activeFilterCount() {
+  return Object.values(_filterState).filter(Boolean).length;
+}
+
+function updateFilterIndicator() {
+  if (!filterToggleBtn) return;
+  const count = activeFilterCount();
+  filterToggleBtn.classList.toggle('has-active-filters', count > 0);
+  filterToggleBtn.title = count ? `Filter clients (${count} active)` : 'Filter clients';
 }
 
 if (filterToggleBtn) {
   filterToggleBtn.addEventListener('click', function () {
     var isVisible = filterPanel && filterPanel.style.display !== 'none';
     if (filterPanel) filterPanel.style.display = isVisible ? 'none' : '';
+    filterToggleBtn.setAttribute('aria-expanded', String(!isVisible));
   });
 }
 
-if (applyFilterBtn) {
-  applyFilterBtn.addEventListener('click', function () {
-    _filterState = {
-      type: filterType ? filterType.value : '',
-      status: filterStatus ? filterStatus.value : '',
-      dateFrom: filterDateFrom ? filterDateFrom.value : '',
-      dateTo: filterDateTo ? filterDateTo.value : '',
-      revenueMin: filterRevenueMin ? filterRevenueMin.value : '',
-      revenueMax: filterRevenueMax ? filterRevenueMax.value : ''
-    };
-    _filterActive = true;
-    refreshList();
+[filterSalesperson, filterTechnician, filterYear, filterStatus, filterDateFrom, filterDateTo].forEach(function (el) {
+  if (el) el.addEventListener('change', readFilterControls);
+});
+
+if (sortSelect) {
+  try {
+    const saved = localStorage.getItem('crm-client-sort');
+    if (saved && [...sortSelect.options].some(o => o.value === saved)) sortSelect.value = saved;
+  } catch (e) { /* storage unavailable */ }
+  _sortMode = sortSelect.value || 'stage';
+  sortSelect.addEventListener('change', function () {
+    _sortMode = sortSelect.value || 'stage';
+    try { localStorage.setItem('crm-client-sort', _sortMode); } catch (e) { /* ignore */ }
+    renderSidebar(_lastSidebarList, _lastSidebarTerm);
   });
 }
 
 if (clearFilterBtn) {
   clearFilterBtn.addEventListener('click', function () {
-    if (filterType) filterType.value = '';
-    if (filterStatus) filterStatus.value = '';
-    if (filterDateFrom) filterDateFrom.value = '';
-    if (filterDateTo) filterDateTo.value = '';
-    if (filterRevenueMin) filterRevenueMin.value = '';
-    if (filterRevenueMax) filterRevenueMax.value = '';
-    _filterState = { type: '', status: '', dateFrom: '', dateTo: '', revenueMin: '', revenueMax: '' };
-    _filterActive = false;
-    refreshList();
+    [filterSalesperson, filterTechnician, filterYear, filterStatus, filterDateFrom, filterDateTo].forEach(function (el) {
+      if (el) el.value = '';
+    });
+    readFilterControls();
   });
 }
 
@@ -1753,13 +1931,21 @@ async function refreshList() {
       clientList.innerHTML = `<li class="loading-state">Loading clients...</li>`;
     }
     const clients = await window.api.searchClients("");
+    populateFilterOptions(clients || []);
     if (!clients || clients.length === 0) {
+      _lastSidebarList = [];
       clientList.innerHTML = `<li class="empty-state" style="text-align:center; padding:24px 16px;">
         <div style="margin-bottom:8px; color:var(--text-muted);"><i data-lucide="user" style="width:28px;height:28px;"></i></div>
         <div style="font-weight:700; color:var(--text-main); margin-bottom:4px;">No clients yet</div>
         <div style="font-size:0.85rem; color:var(--text-muted);">Add your first lead using the form above.</div>
       </li>`;
       if (window.lucide) window.lucide.createIcons();
+      return;
+    }
+    // Keep an active search term applied across refreshes.
+    const term = (searchInput && searchInput.value.trim().toLowerCase()) || "";
+    if (term) {
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
       return;
     }
     renderSidebar(clients);
@@ -1775,14 +1961,13 @@ async function refreshList() {
 function renderSidebar(list = [], term = "") {
   if (!clientList) return;
 
-  list.sort((a, b) =>
-    STATUS_ORDER.indexOf(a.status || "Lead") -
-    STATUS_ORDER.indexOf(b.status || "Lead")
-  );
+  _lastSidebarList = list;
+  _lastSidebarTerm = term;
+  const visible = sortSidebarClients(applySidebarFilters(list));
 
   const counts = {};
   STATUS_ORDER.forEach(s => counts[s] = 0);
-  list.forEach(c => counts[c.status || "Lead"]++);
+  visible.forEach(c => { counts[c.status || "Lead"] = (counts[c.status || "Lead"] || 0) + 1; });
 
   const countsHTML = `
     <li class="status-counts" style="list-style:none; padding:0; margin:0 0 8px 0;">
@@ -1794,12 +1979,17 @@ function renderSidebar(list = [], term = "") {
     </li>
   `;
 
-  sidebarAllClients = list;
+  sidebarAllClients = visible;
   sidebarSearchTerm = term;
   sidebarRenderCount = 0;
+  sidebarLastGroup = null;
+
+  const emptyHTML = !visible.length && list.length
+    ? `<li class="empty-state" style="list-style:none;">No clients match these filters.</li>`
+    : "";
 
   clientList.innerHTML =
-    countsHTML +
+    countsHTML + emptyHTML +
     `<li id="clientListItems" style="list-style:none; padding:0; margin:0;"></li>`;
   sidebarListContainer = document.getElementById("clientListItems");
   renderSidebarChunk();
@@ -1807,37 +1997,20 @@ function renderSidebar(list = [], term = "") {
   selectedIndex = -1;
 }
 
+var sidebarLastGroup = null;
+
+function highlightTerm(text, term) {
+  const safe = escapeHtml(text || "");
+  if (!term) return safe;
+  const pattern = escapeHtml(term).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return safe.replace(new RegExp(pattern, "ig"), (m) => `<mark>${m}</mark>`);
+}
+
 function buildClientCard(c, term = "") {
-  const [fName, ...rest] = (c.name || "").split(" ");
-  const lName = rest.join(" ");
   const color = getStatusColor(c.status);
-  const displayName = `${fName || ""} ${lName || ""}`.trim();
-  const safeDisplayName = escapeHtml(displayName);
-  const displayPhone = c.phone || "";
-  const safeTerm = term ? term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : "";
-  const nameHighlighted = safeTerm
-    ? safeDisplayName.replace(new RegExp(safeTerm, "ig"), (m) => `<mark>${m}</mark>`)
-    : safeDisplayName;
-  const phoneHighlighted = safeTerm
-    ? escapeHtml(displayPhone).replace(new RegExp(safeTerm, "ig"), (m) => `<mark>${m}</mark>`)
-    : escapeHtml(displayPhone);
-
-  var clientTypeBadge = '';
-  if (c.client_type === 'recurring') {
-    clientTypeBadge = '<span class="client-type-badge recurring" data-filter-type="recurring" title="Click to search Recurring clients">Recurring</span>';
-  } else if (c.client_type === 'one-off') {
-    clientTypeBadge = '<span class="client-type-badge one-off" data-filter-type="one-off" title="Click to search One-Off clients">One-Off</span>';
-  }
-
-  // Portal link badge — only shown for recurring clients when
-  // the client portal platform feature is active.
-  // FUTURE: Replace with actual portal link once the client portal
-  // feature sprint is complete.  The badge serves as a visual anchor
-  // for the upcoming portal link feature.
-  var portalBadge = '';
-  if (c.client_type === 'recurring' && window._platformFeatures && window._platformFeatures.clientPortal === true) {
-    portalBadge = '<span class="client-type-badge portal" style="background:var(--primary-soft);color:var(--primary);border:1px solid var(--primary);">Portal</span>';
-  }
+  const displayName = String(c.name || "").trim();
+  const salesperson = salespersonLabel(c);
+  const technician = technicianLabel(c);
 
   var retentionBadge = '';
   if (c.client_type === 'recurring' && window._retentionRiskIds && window._retentionRiskIds.indexOf(c.id) !== -1) {
@@ -1845,22 +2018,16 @@ function buildClientCard(c, term = "") {
   }
 
   return `
-    <div class="client-card" data-id="${c.id}" data-name="${displayName}" style="border-left:4px solid ${color};">
-      <div class="client-name">
-        ${nameHighlighted}
-        ${clientTypeBadge}
-        ${portalBadge}
-        ${retentionBadge}
+    <div class="client-card" data-id="${c.id}" data-name="${escapeHtml(displayName)}" style="border-left:4px solid ${color};">
+      <div class="client-card-top">
+        <div class="client-name">${highlightTerm(displayName, term)}${retentionBadge}</div>
+        <div class="client-status" style="background:${color}2e; color:${color}; border:1px solid ${color}70;" data-filter-status="${escapeHtml(c.status || "Lead")}" title="Click to search this status">${escapeHtml(c.status || "Lead")}</div>
       </div>
-
-      <div class="client-meta">
-        <i data-lucide="phone"></i> ${phoneHighlighted}
-      </div>
-
-      ${c.email ? `<div class="client-meta" style="font-size:0.82rem;"><i data-lucide="mail"></i> ${c.email}</div>` : ''}
-
-      <div class="client-status" style="background:${color}2e; color:${color}; border:1px solid ${color}70;" data-filter-status="${escapeHtml(c.status || "Lead")}" title="Click to search this status">
-        ${escapeHtml(c.status || "Lead")}
+      ${c.phone ? `<div class="client-meta"><i data-lucide="phone"></i> ${highlightTerm(c.phone, term)}</div>` : ''}
+      ${c.email ? `<div class="client-meta client-meta-email"><i data-lucide="mail"></i> ${highlightTerm(c.email, term)}</div>` : ''}
+      <div class="client-people">
+        <span><span class="client-people-label">Sales</span> ${escapeHtml(salesperson || 'Unassigned')}</span>
+        <span><span class="client-people-label">Tech</span> ${escapeHtml(technician || '—')}</span>
       </div>
     </div>
   `;
@@ -1876,267 +2043,301 @@ function renderSidebarChunk() {
   );
   sidebarRenderCount += next.length;
 
-  const html = next.map(c => buildClientCard(c, sidebarSearchTerm)).join("");
+  let html = "";
+  next.forEach(c => {
+    const group = sidebarGroupFor(c);
+    if (group !== null && group !== sidebarLastGroup) {
+      const groupCount = sidebarAllClients.filter(x => sidebarGroupFor(x) === group).length;
+      html += `<div class="client-group-header">${escapeHtml(group)} <span>${groupCount}</span></div>`;
+      sidebarLastGroup = group;
+    }
+    html += buildClientCard(c, sidebarSearchTerm);
+  });
   sidebarListContainer.insertAdjacentHTML("beforeend", html);
   if (window.lucide) window.lucide.createIcons();
 }
 
 // ======================================================
-// OPEN CLIENT PANEL
+// CLIENT OVERVIEW (main client page)
+//
+// A condensed summary: who the client is, who is handling them, their jobs,
+// and the money rolled up from those jobs. The detailed work — services,
+// payments, cost, files, photos and notes — happens inside each job (see
+// openJobPanel). Money that was recorded on the client record itself before
+// jobs were used lives in the "Client account" workspace
+// (openClientAccountPanel) and is included in the totals, so nothing that
+// already exists disappears.
 // ======================================================
+let activeClientJobs = [];
+let activeClientFiles = [];     // client-level files (the older PDF drop box)
+let activeClientServices = [];  // client-level services (the older scope list)
+
+const JOB_STATUS_COLORS = {
+  Prospect: '#6d28d9', Approved: '#155e75', Completed: '#92400e',
+  Invoice: '#1d4ed8', Closed: '#166534'
+};
+// Same brightening as getStatusColor() — dark mode needs the 300/400
+// shades, not the light-mode 600/700 ones, to stay readable.
+const JOB_STATUS_COLORS_DARK = {
+  Prospect: '#c4b5fd', Approved: '#67e8f9', Completed: '#fbbf24',
+  Invoice: '#93c5fd', Closed: '#4ade80'
+};
+function getJobStatusColor(status) {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const map = isDark ? JOB_STATUS_COLORS_DARK : JOB_STATUS_COLORS;
+  return map[status] || (isDark ? '#60a5fa' : '#2563eb');
+}
+
+function formatShortDate(value) {
+  const d = new Date(value);
+  return Number.isFinite(d.getTime()) ? d.toLocaleDateString() : '';
+}
+
+function hasClientLevelMoney(client) {
+  return ['total_due', 'amount_paid', 'balance', 'job_cost'].some(k => Math.abs(Number((client && client[k]) || 0)) > 0.005);
+}
+
+function hasClientAccountData(client) {
+  return hasClientLevelMoney(client) || activeClientFiles.length > 0 || activeClientServices.length > 0;
+}
+
+// Client totals = the client's jobs + anything recorded on the client record
+// itself. Regular users never receive client-level money or job costs from
+// the API (api/access-control.js), so for them this sums the job amounts
+// they can already see on each job.
+function computeClientTotals(client, jobs) {
+  const sum = (key) => (jobs || []).reduce((s, j) => s + Number(j[key] || 0), 0);
+  const totalDue = sum('total_due') + Number((client && client.total_due) || 0);
+  const received = sum('amount_paid') + Number((client && client.amount_paid) || 0);
+  const cost = sum('job_cost') + Number((client && client.job_cost) || 0);
+  return {
+    totalDue,
+    received,
+    balance: totalDue - received,
+    cost,
+    marginPct: totalDue > 0 ? Math.round(((totalDue - cost) / totalDue) * 100) : null
+  };
+}
+
+function renderClientTotals(client, jobs) {
+  const el = document.getElementById('clientTotals');
+  if (!el) return;
+  const t = computeClientTotals(client, jobs);
+  const admin = isAdminUser();
+  const tile = (id, label, value, sub = '', extra = '') => `
+    <div class="total-tile ${extra}" id="${id}">
+      <span class="total-tile-label">${label}</span>
+      <strong class="total-tile-value">${value}</strong>
+      ${sub ? `<span class="total-tile-sub">${sub}</span>` : ''}
+    </div>`;
+  el.innerHTML =
+    tile('totalDueTile', 'Total Amount Due', '$' + formatMoney(t.totalDue)) +
+    tile('receivedTile', 'Money Received', '$' + formatMoney(t.received)) +
+    tile('balanceTile', 'Balance', '$' + formatMoney(t.balance), '', t.balance > 0.005 ? 'is-due' : '') +
+    (admin ? tile('costTile', 'Cost', '$' + formatMoney(t.cost), t.marginPct === null ? '' : `Margin ${t.marginPct}%`) : '');
+}
+
+function clientAccountRowHtml(client) {
+  const admin = isAdminUser();
+  const bits = [];
+  if (activeClientServices.length) bits.push(`${activeClientServices.length} service${activeClientServices.length === 1 ? '' : 's'}`);
+  if (activeClientFiles.length) bits.push(`${activeClientFiles.length} file${activeClientFiles.length === 1 ? '' : 's'}`);
+  const money = admin && hasClientLevelMoney(client) ? `
+    <span class="job-row-money">
+      <span><span class="job-row-money-label">Due</span> $${formatMoney(client.total_due)}</span>
+      <span><span class="job-row-money-label">Received</span> $${formatMoney(client.amount_paid)}</span>
+      <span class="${Number(client.balance) > 0.005 ? 'is-due' : ''}"><span class="job-row-money-label">Balance</span> $${formatMoney(client.balance)}</span>
+    </span>` : '<span class="job-row-money"></span>';
+  return `
+    <button type="button" class="job-row job-row-account" data-client-account="1">
+      <span class="job-row-main">
+        <span class="job-row-title">Client account</span>
+        <span class="job-row-sub">Recorded on the client before jobs${bits.length ? ' · ' + bits.join(' · ') : ''}</span>
+      </span>
+      <span class="job-row-status job-row-status-neutral">Client-level</span>
+      ${money}
+    </button>`;
+}
+
+function renderClientJobs(client) {
+  const list = document.getElementById('jobs-list');
+  if (!list) return;
+  const admin = isAdminUser();
+  const rows = activeClientJobs.map(job => {
+    const color = getJobStatusColor(job.status);
+    const margin = admin && Number(job.total_due) > 0
+      ? Math.round(((Number(job.total_due) - Number(job.job_cost || 0)) / Number(job.total_due)) * 100)
+      : null;
+    return `
+      <button type="button" class="job-row" data-job-id="${job.id}" style="border-left-color:${color};">
+        <span class="job-row-main">
+          <span class="job-row-title">${escapeHtml(job.title || 'Untitled job')}</span>
+          <span class="job-row-sub">${formatShortDate(job.created_at)}${margin !== null ? ` · Margin ${margin}%` : ''}</span>
+        </span>
+        <span class="job-row-status" style="color:${color}; background:${color}1f; border-color:${color}66;">${escapeHtml(job.status || '')}</span>
+        <span class="job-row-money">
+          <span><span class="job-row-money-label">Due</span> $${formatMoney(job.total_due)}</span>
+          <span><span class="job-row-money-label">Received</span> $${formatMoney(job.amount_paid)}</span>
+          <span class="${Number(job.balance) > 0.005 ? 'is-due' : ''}"><span class="job-row-money-label">Balance</span> $${formatMoney(job.balance)}</span>
+        </span>
+      </button>`;
+  });
+  if (client && hasClientAccountData(client)) rows.push(clientAccountRowHtml(client));
+  list.innerHTML =
+    (rows.length ? rows.join('') : '<div class="jobs-empty">No jobs yet — add the first one.</div>') +
+    '<button type="button" id="quick-add-job-btn" class="add-job-btn">+ Job</button>';
+}
+
+// Reloads the jobs list and totals for the open client without touching the
+// form fields above them (so typed-but-unsaved edits are never lost).
+async function refreshClientJobs(clientId, { reloadClient = false } = {}) {
+  if (!clientId || Number(clientId) !== Number(activeId)) return;
+  const [jobsData, files, services, fresh] = await Promise.all([
+    window.api.listJobs(clientId).catch((err) => { console.error(err); return null; }),
+    window.api.listPDFs(clientId).then(d => d.files || []).catch(() => []),
+    window.api.listClientServices(clientId).then(d => d.assignments || []).catch(() => []),
+    reloadClient ? window.api.getClient(clientId).catch(() => null) : Promise.resolve(null)
+  ]);
+  if (Number(clientId) !== Number(activeId)) return; // switched clients meanwhile
+  if (fresh && activeClient) activeClient = { ...activeClient, ...fresh };
+  if (jobsData) activeClientJobs = jobsData.jobs || [];
+  activeClientFiles = files;
+  activeClientServices = services;
+  if (!jobsData) {
+    const list = document.getElementById('jobs-list');
+    if (list) list.innerHTML = '<div class="jobs-empty" style="color:var(--danger);">Failed to load jobs.</div><button type="button" id="quick-add-job-btn" class="add-job-btn">+ Job</button>';
+    return;
+  }
+  renderClientJobs(activeClient);
+  renderClientTotals(activeClient, activeClientJobs);
+}
+
+function refreshOpenClientJobs() {
+  return refreshClientJobs(activeId, { reloadClient: true }).catch(err => console.error(err));
+}
+
+function setupTechnicianField(client) {
+  const list = document.getElementById('technicianOptions');
+  if (!list) return;
+  const names = new Set();
+  (_lastSidebarList || []).forEach(c => { if (c.technician) names.add(c.technician.trim()); });
+  if (isAdminUser()) {
+    window.api.listAssignableUsers()
+      .then(users => {
+        users.forEach(u => { if (u.display_name) names.add(u.display_name.trim()); });
+        list.innerHTML = [...names].sort().map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+      })
+      .catch(() => {});
+  }
+  list.innerHTML = [...names].sort().map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+}
+
 async function openClient(id) {
   if (!id) return;
   activeId = id;
+  activeClientJobs = [];
+  activeClientFiles = [];
+  activeClientServices = [];
   try {
     const clients = await window.api.searchClients("");
     const client = clients.find(c => c.id == id);
     if (!client) return;
     activeClient = client;
     projectPanel.dataset.clientName = client.name || "";
-
-    const [fName, ...rest] = (client.name || "").split(" ");
-    const lName = rest.join(" ");
+    const admin = isAdminUser();
+    const stageColor = getStatusColor(client.status);
     const mapsLink = client.address
       ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(client.address)}`
       : "";
 
-    // Pre-fill scope from company default if client has none saved yet
-    let initialScope = client.scope_of_work || "";
-    if (!initialScope) {
-      try {
-        const profile = await window.api.getCompanyProfile();
-        initialScope = profile?.settings?.defaultScopeOfWork || "";
-      } catch (e) { /* silently skip */ }
-    }
-
     projectPanel.innerHTML = `
-      <div class="detail-card animate-panel panel-shell" style="opacity:0; transform:translateY(-20px); transition:0.25s ease;">
-        <button id="closeBtn" class="close-x">&times;</button>
+      <div class="detail-card animate-panel panel-shell client-overview" style="opacity:0; transform:translateY(-20px); transition:0.25s ease;">
+        <button id="closeBtn" class="close-x" aria-label="Save and close">&times;</button>
         <header class="detail-header panel-header">
           <div class="panel-title-block">
-            <div class="panel-kicker">Client Workspace</div>
-            <h2 style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-              ${escapeHtml(fName || "")} ${escapeHtml(lName || "")}
-              <span style="
-                font-size:0.7rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase;
-                padding:4px 10px; border-radius:var(--radius-sm); white-space:nowrap;
-                background:${getStatusColor(client.status)}2e;
-                color:${getStatusColor(client.status)};
-                border:1px solid ${getStatusColor(client.status)}70;
-              ">${escapeHtml(client.status || 'Lead')}</span>
+            <div class="panel-kicker">Client</div>
+            <h2 class="client-overview-name">
+              <span id="clientHeaderName">${escapeHtml(client.name || "")}</span>
+              <span class="stage-badge" style="background:${stageColor}2e; color:${stageColor}; border:1px solid ${stageColor}70;">${escapeHtml(client.status || 'Lead')}</span>
             </h2>
-            <div class="panel-subtitle">Core contact, financial, and document details stay in one place.</div>
           </div>
           <div class="contact-quick-links panel-contact-links">
-            <span><i data-lucide="phone"></i> <a href="tel:${encodeURIComponent(client.phone || "")}">${escapeHtml(client.phone || "")}</a></span>
-            <span><i data-lucide="mail"></i> <a href="mailto:${encodeURIComponent(client.email || "")}">${escapeHtml(client.email || "")}</a></span>
+            ${client.phone ? `<span><i data-lucide="phone"></i> <a href="tel:${encodeURIComponent(client.phone)}">${escapeHtml(client.phone)}</a></span>` : ''}
+            ${client.email ? `<span><i data-lucide="mail"></i> <a href="mailto:${encodeURIComponent(client.email)}">${escapeHtml(client.email)}</a></span>` : ''}
           </div>
           <span id="saveStatus" class="save-status-chip">Saved</span>
         </header>
 
+        <div id="clientTotals" class="client-totals" aria-live="polite">
+          <div class="total-tile"><span class="total-tile-label">Totals</span><strong class="total-tile-value">…</strong></div>
+        </div>
+        <p class="client-totals-note">Totals add up this client's jobs${admin ? ' (and any client-level amounts)' : ''}. Open a job to change them.</p>
+
         <div class="details-grid panel-grid">
+          <label for="p-name">Name</label>
+          <input type="text" id="p-name" value="${escapeHtml(client.name || '')}" maxlength="260">
 
-          <!-- ===== ADD JOB ===== -->
-          <div class="panel-full-span add-job-row" style="margin-bottom:2px;">
-            <button id="quick-add-job-btn" class="btn-primary add-job-btn"
-              style="font-weight:700;">
-              + Job
-            </button>
-          </div>
+          <label for="p-status">Stage</label>
+          <select id="p-status">
+            ${STATUS_ORDER.map(s =>
+              `<option value="${s}" ${client.status === s ? "selected" : ""}>${s}</option>`
+            ).join("")}
+          </select>
 
-          <!-- ===== CASH AGGREGATE TRACKER (admin only — Section 8) ===== -->
-          ${isAdminUser() ? `
-          <div class="panel-section panel-full-span" style="padding-top:0; padding-bottom:0; margin-bottom:6px;">
-            <div class="panel-balance-row" style="background:var(--surface-muted); border:1px solid var(--border-soft); border-radius:12px; padding:10px 16px;">
-              <div class="panel-metric">
-                <span>Total Cash Collected</span>
-                <strong id="cashAggregateDisplay" style="font-family:'Courier New',monospace; font-size:1.3rem; font-weight:800;">$0.00</strong>
-              </div>
-              <div class="panel-metric">
-                <span>Jobs</span>
-                <strong id="cashJobCountDisplay" style="font-size:1.3rem;">0</strong>
-              </div>
-            </div>
-          </div>
-          ` : ''}
+          <label for="p-assigned-user">Salesperson</label>
+          ${admin
+            ? `<select id="p-assigned-user"><option value="">Loading users...</option></select>`
+            : `<div class="job-modal-readout" id="p-assigned-user-readout">${escapeHtml(client.assigned_user_name || (window.__USER__ && (window.__USER__.displayName || window.__USER__.email)) || 'You')}</div>`}
 
-          <div class="panel-full-span client-stage-field">
-            <label>Client Stage</label>
-            <select id="p-status">
-              ${STATUS_ORDER.map(s =>
-                `<option value="${s}" ${client.status === s ? "selected" : ""}>${s}</option>`
-              ).join("")}
-            </select>
-            <span class="field-hint">The client's overall pipeline stage. Individual jobs have their own separate tags below.</span>
-          </div>
-
-          <label>Job Address</label>
+          <label for="p-technician">Technician</label>
           <div class="field-stack">
-            <input type="text" id="p-address" value="${client.address || ""}">
+            <input type="text" id="p-technician" list="technicianOptions" maxlength="120" placeholder="Who does the work" value="${escapeHtml(client.technician || '')}">
+            <datalist id="technicianOptions"></datalist>
+          </div>
+
+          <label for="p-address">Job Address</label>
+          <div class="field-stack">
+            <input type="text" id="p-address" value="${escapeHtml(client.address || "")}">
             ${client.address
-              ? `<a href="${mapsLink}" target="_blank" class="maps-link"><i data-lucide="map-pin"></i> Open in Google Maps</a>`
+              ? `<a href="${mapsLink}" target="_blank" rel="noopener" class="maps-link"><i data-lucide="map-pin"></i> Open in Google Maps</a>`
               : ""}
           </div>
 
-          <label>Phone Number</label>
-          <input type="tel" id="p-phone" value="${client.phone || ""}">
+          <label for="p-phone">Phone Number</label>
+          <input type="tel" id="p-phone" value="${escapeHtml(client.phone || "")}">
 
-          <label>Email Address</label>
-          <input type="email" id="p-email" value="${client.email || ""}">
+          <label for="p-email">Email Address</label>
+          <input type="email" id="p-email" value="${escapeHtml(client.email || "")}">
 
-          <!-- ===== ASSIGNED SALESPERSON ===== -->
-          <div class="panel-full-span" id="assigned-user-field">
-            <label>Assigned To</label>
-            ${isAdminUser()
-              ? `<select id="p-assigned-user"><option value="">Loading users...</option></select>`
-              : `<div class="job-modal-readout">${escapeHtml((window.__USER__ && window.__USER__.displayName) || (window.__USER__ && window.__USER__.email) || 'You')}</div>`}
-          </div>
-
-          <!-- ===== FINANCIAL OVERVIEW + JOB COST & MARGIN (admin only — Section 8) ===== -->
-          <!-- Regular users never receive total_due/amount_paid/balance/job_cost
-               from the API (see api/access-control.js sanitizeClient), so this
-               markup is also skipped entirely for them rather than merely hidden. -->
-          ${isAdminUser() ? `
-          <div class="panel-section panel-full-span">
-            <div class="panel-section-header">
-              <h3>Financial Overview</h3>
-              <span class="panel-section-note">Track totals, payments, and remaining balance.</span>
-            </div>
-
-            <div class="panel-inline-row">
-              <input type="text" id="totalDueInput" placeholder="Total Due"
-                inputmode="decimal" class="panel-money-input" ${client.total_due ? `value="${formatMoney(client.total_due)}"` : ''}>
-              <button id="saveTotalBtn" class="btn-primary" style="background:var(--primary);">Save</button>
-            </div>
-
-            <div class="panel-balance-row">
-              <div class="panel-metric">
-                <span>Amount Paid</span>
-                <strong id="amountPaidDisplay">$${formatMoney(client.amount_paid || 0)}</strong>
-              </div>
-              <div class="panel-metric">
-                <span>Balance</span>
-                <strong id="balanceDisplay">$${formatMoney(client.balance || 0)}</strong>
-              </div>
-            </div>
-
-            <div class="panel-inline-row">
-              <input type="text" id="paymentInput" placeholder="Add Payment"
-                inputmode="decimal" class="panel-money-input">
-              <button id="addPaymentBtn" class="btn-primary" style="background:var(--primary);">Add Payment</button>
-              <button id="undoFinanceBtn" class="btn-primary" style="background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft);">Undo Payment</button>
-            </div>
-          </div>
-
-          <!-- ===== JOB COST & MARGIN ===== -->
-          <div class="panel-section panel-full-span">
-            <div class="panel-section-header">
-              <h3>Job Cost &amp; Margin</h3>
-              <span class="panel-section-note">Total price minus job cost equals your margin.</span>
-            </div>
-            <div class="panel-inline-row">
-              <input type="text" id="jobCostInput" placeholder="Job Cost"
-                inputmode="decimal" class="panel-money-input"
-              value="${client.job_cost ? formatMoney(client.job_cost) : ''}">
-            </div>
-            <div class="panel-balance-row">
-              <div class="panel-metric">
-                <span>Job Cost</span>
-                <strong id="jobCostDisplay">$${formatMoney(client.job_cost || 0)}</strong>
-              </div>
-              <div class="panel-metric">
-                <span>Margin $</span>
-                <strong id="marginDollarDisplay">${(function() {
-                  const t = Number(client.total_due || 0);
-                  const c2 = Number(client.job_cost || 0);
-                  return '$' + formatMoney(t - c2);
-                })()}</strong>
-              </div>
-              <div class="panel-metric">
-                <span>Margin %</span>
-                <strong id="marginPctDisplay">${(function() {
-                  const t = Number(client.total_due || 0);
-                  const c2 = Number(client.job_cost || 0);
-                  if (t <= 0) return '—';
-                  return Math.round(((t - c2) / t) * 100) + '%';
-                })()}</strong>
-              </div>
-            </div>
-          </div>
-          ` : ''}
-
-          <!-- ===== SCOPE OF WORK ===== -->
-          <div class="panel-section panel-full-span">
-            <div class="panel-section-header">
-              <h3>Scope of Work</h3>
-              <span class="panel-section-note">Services assigned to this client. Pulled onto invoices.</span>
-            </div>
-            <div id="scope-services-list" style="display:flex; flex-wrap:wrap; gap:6px; min-height:32px; margin-bottom:8px;">
-              <div style="color:var(--text-muted); font-size:0.85rem; width:100%;">Loading scope items...</div>
-            </div>
-            <div style="display:flex; gap:6px;">
-              <button id="add-scope-service-btn" class="btn-primary"
-                style="background:var(--primary); flex:1; padding:8px;">
-                + Add Service
-              </button>
-              <button id="manage-services-btn" class="btn-primary"
-                style="background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft); flex:1; padding:8px; display:none;">
-                Manage Presets
-              </button>
-            </div>
-            <!-- Hidden textarea for backward compatibility with save/invoice -->
-            <textarea id="p-scope" style="display:none;">${escapeHtml(initialScope)}</textarea>
-          </div>
-
-          <div id="pdf-drop-zone" class="drop-zone"
-            style="grid-column: span 2;"><i data-lucide="file-text"></i> Drop Client PDFs Here</div>
-
-          <button id="pdf-upload-btn"
-            type="button"
-            class="panel-secondary-btn"
-            style="grid-column: span 2; margin-top:8px; background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft); border:none; padding:8px; border-radius:6px; cursor:pointer;">
-            Upload PDF</button>
-
-          <input type="file"
-            id="pdf-file-input"
-            accept=".pdf,application/pdf"
-            multiple
-            hidden />
-
-          <div id="pdf-list"
-            class="panel-full-span panel-list"></div>
-
-          <div id="notes-section" class="notes-section panel-full-span">
-            <div class="panel-section-header">
-              <h3>Client Notes</h3>
-              <span class="panel-section-note">Use notes for site visits, follow-ups, and reminders.</span>
-            </div>
-            <div id="notes-list" class="notes-list"></div>
-            <div class="notes-actions">
-              <textarea id="new-note-input" placeholder="Add a note..." rows="6"></textarea>
-              <button id="add-note-btn" class="btn-primary add-note-btn" style="background:var(--primary);">Add Note</button>
-            </div>
-          </div>
-
-          <!-- ===== JOBS SECTION ===== -->
-          <div class="panel-section panel-full-span" id="jobs-section">
+          <!-- ===== JOBS — each job is where its detailed work lives ===== -->
+          <section class="panel-section panel-full-span" id="jobs-section">
             <div class="panel-section-header">
               <h3>Jobs</h3>
-              <span class="panel-section-note">Each job has its own scope, financials, and documents.</span>
+              <span class="panel-section-note">Open a job for its services, payments, cost, files, photos and notes.</span>
             </div>
-            <div id="jobs-list" style="display:flex; flex-direction:column; gap:10px;"></div>
-          </div>
+            <div id="jobs-list" class="jobs-list">
+              <div class="jobs-empty">Loading jobs...</div>
+            </div>
+          </section>
+
+          <details id="client-notes-details" class="panel-collapse panel-full-span">
+            <summary>Client Notes <span id="clientNotesCount" class="summary-count"></span></summary>
+            <div id="notes-section" class="notes-section">
+              <span class="panel-section-note">Notes about the client. Job-specific notes live inside each job.</span>
+              <div id="notes-list" class="notes-list"></div>
+              <div class="notes-actions">
+                <textarea id="new-note-input" placeholder="Add a note..." rows="4"></textarea>
+                <button id="add-note-btn" class="btn-primary add-note-btn" style="background:var(--primary);">Add Note</button>
+              </div>
+            </div>
+          </details>
 
           <div class="panel-actions panel-full-span">
-            ${isAdminUser() ? `
-            <button id="estimateBtn" class="btn-primary" style="flex:2;">Download Estimate</button>
-            <button id="invoiceBtn" class="btn-primary" style="background:var(--primary); flex:2;">Download Invoice</button>` : ''}
-            <button id="reviewBtn" class="btn-primary" style="background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft); flex:2;">Send Google Review</button>
             <button id="saveBtn" class="btn-primary" style="background:var(--primary); flex:2;">Save Changes</button>
-            <button id="delBtn" class="btn-primary" style="background:var(--danger-soft); color:var(--danger); border:1px solid var(--danger-soft); flex:1;">Delete</button>
-            <button id="printBtn" class="btn-primary" style="background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft); flex:1;">Print</button>
+            <button id="reviewBtn" class="btn-primary btn-quiet" style="flex:2;">Send Google Review</button>
+            <button id="printBtn" class="btn-primary btn-quiet" style="flex:1;">Print</button>
+            <button id="delBtn" class="btn-primary btn-danger-soft" style="flex:1;">Delete</button>
           </div>
-
         </div>
       </div>
     `;
@@ -2151,17 +2352,23 @@ async function openClient(id) {
       }
     });
 
+    const jobsSection = document.getElementById('jobs-section');
+    if (jobsSection) {
+      jobsSection.addEventListener('click', (e) => {
+        const addBtn = e.target.closest('#quick-add-job-btn');
+        if (addBtn) { openNewJobModal(id); return; }
+        const accountRow = e.target.closest('[data-client-account]');
+        if (accountRow) { openClientAccountPanel(); return; }
+        const row = e.target.closest('[data-job-id]');
+        if (!row) return;
+        const job = activeClientJobs.find(j => Number(j.id) === Number(row.dataset.jobId));
+        if (job) openJobPanel(job, id, refreshOpenClientJobs);
+      });
+    }
 
-    setupDropZone();
-    setupPDFUploadButton();
-    loadPDFs(id);
-    setupFinancialSection(client);
     setupNotesSection(id);
-    setupJobsSection(id);
-    setupQuickAddJob(id);
-    loadCashAggregate(id);
-    setupScopeServices(id);
     setupAssignedUserField(id, client.assigned_user_id);
+    setupTechnicianField(client);
     setupDirtyTracking();
     setSaveStatus("saved");
     // SHOW MODAL
@@ -2176,57 +2383,189 @@ async function openClient(id) {
     if (shouldUseMobileSidebarSwitch()) {
       const sidebar = document.querySelector(".sidebar");
       const mainContent = document.querySelector(".main-content");
+      if (sidebar) sidebar.classList.add("mobile-hidden");
+      if (mainContent) mainContent.classList.add("mobile-full");
+    }
 
-  if (sidebar) sidebar.classList.add("mobile-hidden");
-  if (mainContent) mainContent.classList.add("mobile-full");
-}
-
+    await refreshClientJobs(id);
   } catch (err) {
     console.error(err);
+    showToast("Failed to open client", "error");
   }
 }
 
-
 // ======================================================
-// FINANCIAL SECTION
+// CLIENT ACCOUNT — money, services and files recorded on the client record
+// itself (how the CRM worked before jobs). Everything that used to sit on
+// the main client page lives here now, unchanged in behavior: Total Due,
+// payments + undo, job cost & margin, client estimate/invoice PDFs, the
+// client's service list, and the client PDF drop box. Its amounts are part
+// of the client's totals.
 // ======================================================
-function setupFinancialSection(client) {
-  const saveTotalBtn = document.getElementById("saveTotalBtn");
-  const addPaymentBtn = document.getElementById("addPaymentBtn");
-  const totalDueInput = document.getElementById("totalDueInput");
-  const paymentInput = document.getElementById("paymentInput");
+async function openClientAccountPanel() {
+  const clientId = activeId;
+  if (!clientId) return;
+  const existing = document.getElementById('clientAccountOverlay');
+  if (existing) existing.remove();
 
-  // Financial Overview isn't rendered for regular users (Section 8) —
-  // nothing to wire up.
+  const fresh = await window.api.getClient(clientId).catch(() => null);
+  if (fresh) activeClient = { ...activeClient, ...fresh };
+  const client = activeClient || {};
+  const admin = isAdminUser();
+
+  const accountOverlay = document.createElement('div');
+  accountOverlay.id = 'clientAccountOverlay';
+  accountOverlay.className = 'job-modal-overlay';
+  accountOverlay.innerHTML = `
+    <div class="job-modal-card job-workspace" role="dialog" aria-modal="true" aria-labelledby="clientAccountTitle">
+      <button id="closeClientAccount" class="job-modal-close" aria-label="Save and close">&times;</button>
+      <div class="job-modal-kicker">Client account · ${escapeHtml(client.name || '')}</div>
+      <h3 id="clientAccountTitle" class="job-workspace-heading">Client-level amounts, services &amp; files</h3>
+      <p class="field-hint">What was recorded on the client itself before jobs were used. It stays here and is included in the client's totals. New work should go in a job.</p>
+
+      ${admin ? `
+      <section class="job-section">
+        <h4 class="job-section-title">Money</h4>
+        <div class="job-money-tiles">
+          <div class="total-tile"><span class="total-tile-label">Total Due</span><strong class="total-tile-value" id="acct-total-display">$${formatMoney(client.total_due)}</strong></div>
+          <div class="total-tile"><span class="total-tile-label">Received</span><strong class="total-tile-value" id="amountPaidDisplay">$${formatMoney(client.amount_paid)}</strong></div>
+          <div class="total-tile"><span class="total-tile-label">Balance</span><strong class="total-tile-value" id="balanceDisplay">$${formatMoney(client.balance)}</strong></div>
+          <div class="total-tile"><span class="total-tile-label">Cost</span><strong class="total-tile-value" id="jobCostDisplay">$${formatMoney(client.job_cost)}</strong><span class="total-tile-sub" id="marginPctDisplay">${Number(client.total_due) > 0 ? 'Margin ' + Math.round(((Number(client.total_due) - Number(client.job_cost || 0)) / Number(client.total_due)) * 100) + '%' : ''}</span></div>
+        </div>
+        <div class="job-money-inputs">
+          <div class="job-modal-field">
+            <label for="totalDueInput">Total Due</label>
+            <div class="job-payment-row">
+              <input type="text" id="totalDueInput" inputmode="decimal" value="${Number(client.total_due) ? formatMoney(client.total_due) : ''}" placeholder="0.00">
+              <button id="saveTotalBtn" type="button" class="btn-primary">Save</button>
+            </div>
+          </div>
+          <div class="job-modal-field">
+            <label for="jobCostInput">Cost</label>
+            <input type="text" id="jobCostInput" inputmode="decimal" value="${Number(client.job_cost) ? formatMoney(client.job_cost) : ''}" placeholder="0.00">
+          </div>
+        </div>
+        <div class="job-modal-field">
+          <label for="paymentInput">Payments</label>
+          <div class="job-payment-row">
+            <input type="text" id="paymentInput" inputmode="decimal" placeholder="Payment amount">
+            <button id="addPaymentBtn" type="button" class="btn-primary">Add Payment</button>
+            <button id="undoFinanceBtn" type="button" class="btn-primary btn-quiet">Undo</button>
+          </div>
+        </div>
+        <div class="job-services-actions">
+          <button id="estimateBtn" type="button" class="btn-primary btn-quiet">Download Estimate</button>
+          <button id="invoiceBtn" type="button" class="btn-primary btn-quiet">Download Invoice</button>
+        </div>
+      </section>` : ''}
+
+      <section class="job-section">
+        <h4 class="job-section-title">Client services</h4>
+        <p class="field-hint">The client's saved services. New jobs can start from this list.</p>
+        <div id="scope-services-list" class="scope-services-chips"></div>
+        <div class="job-services-actions">
+          <button id="add-scope-service-btn" type="button" class="btn-primary">+ Service</button>
+          <button id="manage-services-btn" type="button" class="btn-primary btn-quiet" style="display:none;">Manage Presets</button>
+        </div>
+        <textarea id="p-scope" style="display:none;">${escapeHtml(client.scope_of_work || '')}</textarea>
+      </section>
+
+      <section class="job-section">
+        <h4 class="job-section-title">Client files</h4>
+        <div id="pdf-drop-zone" class="drop-zone"><i data-lucide="file-text"></i> Drop PDFs here</div>
+        <div class="job-services-actions">
+          <button id="pdf-upload-btn" type="button" class="panel-secondary-btn">Upload PDF</button>
+          <input type="file" id="pdf-file-input" accept=".pdf,application/pdf" multiple hidden />
+        </div>
+        <div id="pdf-list" class="panel-list"></div>
+      </section>
+    </div>
+  `;
+  document.body.appendChild(accountOverlay);
+  if (window.lucide) window.lucide.createIcons();
+
+  let closing = false;
+  async function saveAndClose() {
+    if (closing) return;
+    closing = true;
+    try {
+      await autoSaveClientAccountFields(client);
+    } catch (err) {
+      closing = false;
+      showToast(`Couldn't save: ${err.message}. Nothing was closed.`, 'error');
+      return;
+    }
+    accountOverlay.remove();
+    await refreshOpenClientJobs();
+  }
+  accountOverlay._requestClose = saveAndClose;
+  accountOverlay.querySelector('#closeClientAccount').onclick = saveAndClose;
+  accountOverlay.addEventListener('click', (e) => { if (e.target === accountOverlay) saveAndClose(); });
+
+  if (admin) setupClientAccountFinance(accountOverlay, client);
+  setupScopeServices(clientId, {
+    onChange: async () => {
+      const scope = document.getElementById('p-scope');
+      if (!scope) return;
+      try {
+        await window.api.updateClientFields(clientId, { scope_of_work: scope.value });
+        if (activeClient) activeClient.scope_of_work = scope.value;
+      } catch (err) {
+        console.error(err);
+        showToast('Services changed, but the client scope text could not be saved', 'error');
+      }
+    }
+  });
+  setupDropZone();
+  setupPDFUploadButton();
+  loadPDFs(clientId);
+}
+
+// Re-reads the client row and redraws the client-account money tiles.
+async function refreshClientAccountMoney(overlayEl) {
+  const fresh = await window.api.getClient(activeId);
+  if (!fresh) return;
+  activeClient = { ...activeClient, ...fresh };
+  const set = (id, value) => { const el = overlayEl.querySelector('#' + id); if (el) el.textContent = value; };
+  set('acct-total-display', '$' + formatMoney(fresh.total_due));
+  set('amountPaidDisplay', '$' + formatMoney(fresh.amount_paid));
+  set('balanceDisplay', '$' + formatMoney(fresh.balance));
+  set('jobCostDisplay', '$' + formatMoney(fresh.job_cost));
+  set('marginPctDisplay', Number(fresh.total_due) > 0
+    ? 'Margin ' + Math.round(((Number(fresh.total_due) - Number(fresh.job_cost || 0)) / Number(fresh.total_due)) * 100) + '%'
+    : '');
+  triggerFinanceUpdate();
+}
+
+function setupClientAccountFinance(overlayEl, client) {
+  const saveTotalBtn = overlayEl.querySelector("#saveTotalBtn");
+  const addPaymentBtn = overlayEl.querySelector("#addPaymentBtn");
+  const undoBtn = overlayEl.querySelector("#undoFinanceBtn");
+  const totalDueInput = overlayEl.querySelector("#totalDueInput");
+  const paymentInput = overlayEl.querySelector("#paymentInput");
+  const costInput = overlayEl.querySelector("#jobCostInput");
+  const estimateBtn = overlayEl.querySelector("#estimateBtn");
+  const invoiceBtn = overlayEl.querySelector("#invoiceBtn");
   if (!saveTotalBtn || !addPaymentBtn) return;
 
   applyMoneyInputBehavior(totalDueInput);
   applyMoneyInputBehavior(paymentInput);
+  applyMoneyInputBehavior(costInput);
 
-  // ==============================
-  // SAVE TOTAL
-  // ==============================
+  const pushUndo = () => financeUndoStack.push({
+    clientId: activeId,
+    total_due: activeClient?.total_due,
+    amount_paid: activeClient?.amount_paid,
+    balance: activeClient?.balance
+  });
+
   saveTotalBtn.onclick = async () => {
     if (saveTotalBtn.disabled) return;
     try {
       saveTotalBtn.disabled = true;
-      const newTotal = parseMoney(totalDueInput?.value) || 0;
-
-      // 🧠 Save PREVIOUS state to undo stack
-      financeUndoStack.push({
-        clientId: activeId,
-        total_due: client.total_due,
-        amount_paid: client.amount_paid,
-        balance: client.balance
-      });
-
-      await window.api.updateTotal(activeId, newTotal);
-
-      await refreshList();
-      await openClient(activeId);
-
-      triggerFinanceUpdate();
-
+      pushUndo();
+      await window.api.updateTotal(activeId, parseMoney(totalDueInput?.value) || 0);
+      await refreshClientAccountMoney(overlayEl);
       showToast("Total updated", "success");
     } catch (err) {
       console.error(err);
@@ -2236,34 +2575,19 @@ function setupFinancialSection(client) {
     }
   };
 
-  // ==============================
-  // ADD PAYMENT
-  // ==============================
   addPaymentBtn.onclick = async () => {
     if (addPaymentBtn.disabled) return;
+    const payment = parseMoney(paymentInput?.value) || 0;
+    if (payment <= 0) {
+      showToast("Enter a valid payment", "error");
+      return;
+    }
     try {
       addPaymentBtn.disabled = true;
-      const payment = parseMoney(paymentInput?.value) || 0;
-      if (payment <= 0) {
-        showToast("Enter a valid payment", "error");
-        return;
-      }
-
-      // 🧠 Save PREVIOUS state to undo stack
-      financeUndoStack.push({
-        clientId: activeId,
-        total_due: client.total_due,
-        amount_paid: client.amount_paid,
-        balance: client.balance
-      });
-
+      pushUndo();
       await window.api.addPayment(activeId, payment);
-
-      await refreshList();
-      await openClient(activeId);
-
-      triggerFinanceUpdate();
-
+      paymentInput.value = '';
+      await refreshClientAccountMoney(overlayEl);
       showToast("Payment added", "success");
     } catch (err) {
       console.error(err);
@@ -2272,34 +2596,83 @@ function setupFinancialSection(client) {
       addPaymentBtn.disabled = false;
     }
   };
+
+  if (undoBtn) {
+    undoBtn.onclick = async () => {
+      const last = financeUndoStack.length ? financeUndoStack[financeUndoStack.length - 1] : null;
+      if (!last || Number(last.clientId) !== Number(activeId)) {
+        showToast("Nothing to undo", "info");
+        return;
+      }
+      if (!confirm("Undo the last payment/total change?")) return;
+      financeUndoStack.pop();
+      try {
+        await window.api.restoreFinanceState(last.clientId, {
+          total_due: last.total_due,
+          amount_paid: last.amount_paid,
+          balance: last.balance
+        });
+        await refreshClientAccountMoney(overlayEl);
+        if (totalDueInput) totalDueInput.value = Number(activeClient.total_due) ? formatMoney(activeClient.total_due) : '';
+        showToast("Undo complete", "success");
+      } catch (err) {
+        console.error(err);
+        showToast("Undo failed", "error");
+      }
+    };
+  }
+
+  const downloadDoc = (btn, mode) => async () => {
+    try {
+      btn.disabled = true;
+      btn.textContent = "Downloading...";
+      if (mode === 'estimate') await window.api.sendEstimate(activeId);
+      else await window.api.sendInvoice(activeId);
+      showToast(mode === 'estimate' ? "Estimate downloaded" : "Invoice downloaded", "success");
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || `Failed to generate ${mode}`, "error");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = mode === 'estimate' ? "Download Estimate" : "Download Invoice";
+    }
+  };
+  if (estimateBtn) estimateBtn.onclick = downloadDoc(estimateBtn, 'estimate');
+  if (invoiceBtn) invoiceBtn.onclick = downloadDoc(invoiceBtn, 'invoice');
 }
 
-// If the client panel is closed with a valid, unsubmitted amount still sitting
-// in the Payment input (i.e. the user typed one but never clicked "Add
-// Payment"), save it before closing instead of silently discarding it. A
-// blank/invalid input is left alone — no record is created.
-async function autoSavePendingClientPayment() {
-  const paymentInput = document.getElementById("paymentInput");
-  if (!paymentInput || !activeId) return;
-  const raw = paymentInput.value.trim();
-  if (!raw) return;
-  const amount = parseMoney(raw);
-  if (!Number.isFinite(amount) || amount <= 0) return;
+// Closing the client account saves what was typed but not submitted: a
+// changed Total Due or Cost, and an amount sitting in the Payment box. A
+// blank or unchanged field is left alone, so nothing is written twice.
+async function autoSaveClientAccountFields() {
+  if (!isAdminUser() || !activeId) return;
+  const current = activeClient || {};
+  const totalEl = document.getElementById('totalDueInput');
+  const costEl = document.getElementById('jobCostInput');
+  const paymentEl = document.getElementById('paymentInput');
 
-  try {
-    financeUndoStack.push({
-      clientId: activeId,
-      total_due: activeClient?.total_due,
-      amount_paid: activeClient?.amount_paid,
-      balance: activeClient?.balance
-    });
-    await window.api.addPayment(activeId, amount);
-    await refreshList();
-    triggerFinanceUpdate();
-  } catch (err) {
-    console.error(err);
-    showToast("Failed to save payment", "error");
+  if (totalEl && totalEl.value.trim() !== '') {
+    const total = parseMoney(totalEl.value);
+    if (Number.isFinite(total) && Math.abs(total - Number(current.total_due || 0)) > 0.005) {
+      financeUndoStack.push({ clientId: activeId, total_due: current.total_due, amount_paid: current.amount_paid, balance: current.balance });
+      await window.api.updateTotal(activeId, total);
+    }
   }
+  if (costEl) {
+    const cost = costEl.value.trim() === '' ? 0 : parseMoney(costEl.value);
+    if (Number.isFinite(cost) && cost >= 0 && Math.abs(cost - Number(current.job_cost || 0)) > 0.005) {
+      await window.api.updateClientFields(activeId, { job_cost: cost });
+    }
+  }
+  if (paymentEl && paymentEl.value.trim()) {
+    const amount = parseMoney(paymentEl.value);
+    if (Number.isFinite(amount) && amount > 0) {
+      financeUndoStack.push({ clientId: activeId, total_due: current.total_due, amount_paid: current.amount_paid, balance: current.balance });
+      await window.api.addPayment(activeId, amount);
+      paymentEl.value = '';
+    }
+  }
+  triggerFinanceUpdate();
 }
 
 // ======================================================
@@ -2311,24 +2684,24 @@ function setSaveStatus(state) {
 
   if (state === "saving") {
     el.textContent = "Saving…";
-    el.style.color = "var(--warning)";
+    el.style.color = "var(--warning-text)";
     return;
   }
 
   if (state === "error") {
     el.textContent = "Save failed";
-    el.style.color = "var(--danger)";
+    el.style.color = "var(--danger-text)";
     return;
   }
 
   if (state === "unsaved") {
     el.textContent = "Unsaved changes";
-    el.style.color = "var(--warning)";
+    el.style.color = "var(--warning-text)";
     return;
   }
 
   el.textContent = "Saved";
-  el.style.color = "var(--success)";
+  el.style.color = "var(--success-text)";
 }
 
 function markDirty() {
@@ -2336,45 +2709,12 @@ function markDirty() {
 }
 
 function setupDirtyTracking() {
-  const statusEl = document.getElementById("p-status");
-  const addrEl = document.getElementById("p-address");
-  const phoneEl = document.getElementById("p-phone");
-  const emailEl = document.getElementById("p-email");
-  const totalDueEl = document.getElementById("totalDueInput");
-  const newNoteInput = document.getElementById("new-note-input");
-  const scopeEl = document.getElementById("p-scope");
-  const jobCostEl = document.getElementById("jobCostInput");
-
-  [statusEl, addrEl, phoneEl, emailEl, totalDueEl, newNoteInput, scopeEl, jobCostEl].forEach(el => {
+  ["p-name", "p-status", "p-address", "p-phone", "p-email", "p-technician", "new-note-input"].forEach(id => {
+    const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener("input", markDirty);
     el.addEventListener("change", markDirty);
   });
-
-  // Live margin calculation when job cost changes
-  if (jobCostEl) {
-    const updateMargin = () => {
-      const totalInput = document.getElementById("totalDueInput");
-      const total = parseMoney(totalInput?.value) || Number(activeClient?.total_due || 0);
-      const cost = parseMoney(jobCostEl.value) || 0;
-      const marginDollar = total - cost;
-      const marginPct = total > 0 ? Math.round((marginDollar / total) * 100) : null;
-
-      const dollarEl = document.getElementById("marginDollarDisplay");
-      const pctEl = document.getElementById("marginPctDisplay");
-      const costDisplay = document.getElementById("jobCostDisplay");
-
-      if (dollarEl) dollarEl.textContent = "$" + formatMoney(marginDollar);
-      if (pctEl) pctEl.textContent = marginPct !== null ? marginPct + "%" : "—";
-      if (costDisplay) costDisplay.textContent = "$" + formatMoney(cost);
-    };
-
-    jobCostEl.addEventListener("input", updateMargin);
-
-    // Also update margin when total due changes
-    const totalDueEl2 = document.getElementById("totalDueInput");
-    if (totalDueEl2) totalDueEl2.addEventListener("input", updateMargin);
-  }
 }
 
 // ======================================================
@@ -2393,6 +2733,8 @@ async function setupNotesSection(clientId) {
 
     try {
       const data = await window.api.listNotes(clientId);
+      const countEl = document.getElementById("clientNotesCount");
+      if (countEl) countEl.textContent = data.notes && data.notes.length ? `(${data.notes.length})` : "";
       if (!data.notes || data.notes.length === 0) {
         notesList.innerHTML = `<div style="color:var(--text-muted); font-size:13px;">No notes yet.</div>`;
         return;
@@ -2547,241 +2889,227 @@ async function setupNotesSection(clientId) {
 }
 
 // ======================================================
-// JOBS SECTION
+// + JOB — creates a job for this client. A job can start blank, from the
+// client's saved services and scope, from the company default scope, or as
+// a copy of an earlier job. Copying is how recurring work is handled: copy
+// "September Maintenance" and the new job is suggested as "October
+// Maintenance" with the same services and scope.
 // ======================================================
-async function setupJobsSection(clientId) {
-  const jobsList = document.getElementById('jobs-list');
-  if (!jobsList) return;
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
 
-  const STATUS_COLORS_JOB = {
-    Prospect: '#7c3aed', Approved: '#0e7490', Completed: '#b45309',
-    Invoice: '#2563eb', Closed: '#15803d'
-  };
-  // Same brightening as getStatusColor() (above) — dark mode needs the
-  // 300/400 shades, not the light-mode 600/700 ones, to stay readable.
-  const STATUS_COLORS_JOB_DARK = {
-    Prospect: '#c4b5fd', Approved: '#67e8f9', Completed: '#fbbf24',
-    Invoice: '#60a5fa', Closed: '#4ade80'
-  };
-  function getJobStatusColor(status) {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-    const map = isDark ? STATUS_COLORS_JOB_DARK : STATUS_COLORS_JOB;
-    return map[status] || (isDark ? '#60a5fa' : '#2563eb');
-  }
-
-  async function loadJobs() {
-    jobsList.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Loading jobs...</div>';
-    try {
-      const data = await window.api.listJobs(clientId);
-      const jobs = data.jobs || [];
-      jobsList.innerHTML = '';
-
-      if (jobs.length === 0) {
-        jobsList.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">No jobs yet. Create one above.</div>';
-        return;
-      }
-
-      jobs.forEach(job => {
-        const color = getJobStatusColor(job.status);
-        const jobCardAdmin = isAdminUser();
-        // job_cost is stripped server-side for regular users (see
-        // api/access-control.js), so margin can only be shown to admins —
-        // total_due/balance are visible to everyone.
-        const margin = jobCardAdmin && job.total_due > 0
-          ? Math.round(((job.total_due - job.job_cost) / job.total_due) * 100)
-          : null;
-
-        const card = document.createElement('div');
-        card.style.cssText = `
-          background:var(--surface-muted); border:1px solid var(--border-soft);
-          border-left:4px solid ${color}; border-radius:12px; padding:14px 16px;
-          cursor:pointer; transition:all 0.2s ease;
-        `;
-        card.innerHTML = `
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
-            <div style="flex:1;min-width:0;">
-              <div style="font-weight:700;color:var(--text-main);font-size:0.95rem;">${escapeHtml(job.title || 'Untitled Job')}</div>
-              <div style="font-size:0.82rem;color:var(--text-muted);margin-top:3px;">
-                Created ${new Date(job.created_at).toLocaleDateString()}
-                ${margin !== null ? ` &nbsp;·&nbsp; Margin: ${margin}%` : ''}
-              </div>
-            </div>
-            <div style="text-align:right;flex-shrink:0;">
-              <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
-                color:${color};background:${color}2e;border:1px solid ${color}70;
-                padding:3px 8px;border-radius:var(--radius-sm);display:inline-block;margin-bottom:4px;">
-                ${escapeHtml(job.status)}
-              </div>
-              <div style="font-size:0.9rem;font-weight:700;color:var(--text-main);">
-                $${formatMoney(job.total_due)}
-              </div>
-              <div style="font-size:0.78rem;color:var(--text-muted);">
-                Bal: $${formatMoney(job.balance)}
-              </div>
-            </div>
-          </div>
-        `;
-
-        card.addEventListener('mouseenter', () => {
-          card.style.borderColor = `rgba(71,167,245,0.55)`;
-          card.style.transform = 'translateY(-1px)';
-        });
-        card.addEventListener('mouseleave', () => {
-          card.style.borderColor = `var(--border-soft)`;
-          card.style.borderLeftColor = color;
-          card.style.transform = '';
-        });
-
-        card.addEventListener('click', () => openJobPanel(job, clientId, loadJobs));
-        jobsList.appendChild(card);
-      });
-    } catch (err) {
-      console.error(err);
-      jobsList.innerHTML = '<div style="color:var(--danger);font-size:13px;">Failed to load jobs.</div>';
-    }
-  }
-
-  loadJobs();
+// "September Maintenance" -> "October Maintenance"; "December 2025 Service"
+// -> "January 2026 Service"; anything without a month -> "<title> (copy)".
+function nextRecurringTitle(title) {
+  const t = String(title || '').trim();
+  const re = new RegExp('\\b(' + MONTH_NAMES.join('|') + ')\\b', 'i');
+  const m = t.match(re);
+  if (!m) return t ? `${t} (copy)` : 'New Job';
+  const idx = MONTH_NAMES.findIndex(n => n.toLowerCase() === m[1].toLowerCase());
+  let result = t.replace(re, MONTH_NAMES[(idx + 1) % 12]);
+  if (idx === 11) result = result.replace(/\b(20\d{2})\b/, (y) => String(Number(y) + 1));
+  return result;
 }
 
-// ======================================================
-// + JOB (Section 4/5) — opens a dedicated creation modal instead of
-// a bare title field, so the new job's Scope of Work can be reviewed
-// (and, per Section 4, defaults to THIS CLIENT's own saved scope —
-// not the company-wide default) before the job is created.
-// ======================================================
-function setupQuickAddJob(clientId) {
-  const btn = document.getElementById('quick-add-job-btn');
-  if (!btn) return;
-  btn.onclick = function () {
-    openNewJobModal(clientId);
-  };
+function serviceRate(assignment) {
+  const custom = assignment.customRate;
+  return custom !== null && custom !== undefined ? Number(custom) : Number(assignment.defaultRate || 0);
+}
+
+function lineItemsFromClientServices(assignments) {
+  return (assignments || []).map(a => ({
+    description: a.serviceName || 'Service',
+    quantity: 1,
+    unit_price: serviceRate(a),
+    category: 'Labor'
+  }));
+}
+
+function copyLineItems(items) {
+  return (items || []).map(i => ({
+    description: i.description,
+    quantity: i.quantity,
+    unit_price: i.unit_price,
+    category: i.category
+  }));
+}
+
+function copyExpenses(expenses) {
+  return (expenses || []).map(e => ({
+    description: e.description,
+    amount: e.amount,
+    category_id: e.category_id
+  }));
+}
+
+function scopeFromLineItems(items) {
+  return (items || []).map(i => String(i.description || '').trim()).filter(Boolean).map(d => `- ${d}`).join('\n');
 }
 
 async function openNewJobModal(clientId) {
   const existing = document.getElementById('newJobModalOverlay');
   if (existing) existing.remove();
 
-  // Gather copy-from candidates: this client's own default scope,
-  // the company-wide fallback default, and this client's existing jobs.
-  let clientDefaultScope = '';
-  let companyDefaultScope = '';
-  let existingJobs = [];
-  try {
-    clientDefaultScope = (activeClient && activeClient.scope_of_work) || '';
-  } catch (e) { /* skip */ }
+  const admin = isAdminUser();
+  const clientScope = (activeClient && activeClient.scope_of_work) || '';
+  const clientServices = activeClientServices.slice();
+  let companyScope = '';
   try {
     const profile = await window.api.getCompanyProfile();
-    companyDefaultScope = profile?.settings?.defaultScopeOfWork || '';
-  } catch (e) { /* skip */ }
-  try {
-    const data = await window.api.listJobs(clientId);
-    existingJobs = data.jobs || [];
-  } catch (e) { /* skip */ }
+    companyScope = profile?.settings?.defaultScopeOfWork || '';
+  } catch (e) { /* no company default */ }
+  const existingJobs = activeClientJobs.slice();
+  const hasClientDefaults = Boolean(clientScope || clientServices.length);
 
-  // Section 4: the new job's scope should default to the CLIENT's own
-  // saved scope of work. Only fall back to the company default when the
-  // client has none saved yet.
-  const initialScope = clientDefaultScope || companyDefaultScope || '';
-  const initialSource = clientDefaultScope ? 'client' : (companyDefaultScope ? 'company' : 'blank');
-
-  const overlay = document.createElement('div');
-  overlay.id = 'newJobModalOverlay';
-  overlay.className = 'job-modal-overlay';
-
-  const copyOptions = [
-    `<option value="blank" ${initialSource === 'blank' ? 'selected' : ''}>Start blank</option>`,
-    `<option value="client" ${initialSource === 'client' ? 'selected' : ''} ${clientDefaultScope ? '' : 'disabled'}>Client's default scope</option>`,
-    `<option value="company" ${initialSource === 'company' ? 'selected' : ''} ${companyDefaultScope ? '' : 'disabled'}>Company default scope</option>`,
-    ...existingJobs.map((j) => `<option value="job-${j.id}">Copy from: ${escapeHtml(j.title || 'Untitled job')}</option>`)
+  const initialSource = hasClientDefaults ? 'client' : (companyScope ? 'company' : 'blank');
+  const sourceOptions = [
+    `<option value="blank">Blank job</option>`,
+    hasClientDefaults ? `<option value="client">Client's saved services &amp; scope</option>` : '',
+    companyScope ? `<option value="company">Company default scope</option>` : '',
+    ...existingJobs.map(j => `<option value="job-${j.id}">Copy of: ${escapeHtml(j.title || 'Untitled job')}</option>`)
   ].join('');
 
-  overlay.innerHTML = `
-    <div class="job-modal-card">
-      <button id="closeNewJobModal" class="job-modal-close">&times;</button>
-      <div class="job-modal-kicker">New Job</div>
+  const modal = document.createElement('div');
+  modal.id = 'newJobModalOverlay';
+  modal.className = 'job-modal-overlay';
+  modal.innerHTML = `
+    <div class="job-modal-card" role="dialog" aria-modal="true" aria-labelledby="newJobHeading">
+      <button id="closeNewJobModal" class="job-modal-close" aria-label="Cancel">&times;</button>
+      <div class="job-modal-kicker" id="newJobHeading">New Job · ${escapeHtml((activeClient && activeClient.name) || '')}</div>
 
       <div class="job-modal-field">
         <label for="new-job-title">Job name</label>
-        <input id="new-job-title" type="text" placeholder="e.g. Roof Replacement" maxlength="200">
+        <input id="new-job-title" type="text" placeholder="e.g. Roof Replacement, October Maintenance" maxlength="200">
       </div>
 
       <div class="job-modal-grid">
         <div class="job-modal-field">
-          <label for="new-job-status">Job status</label>
+          <label for="new-job-status">Status</label>
           <select id="new-job-status">
-            ${['Prospect', 'Approved', 'Completed', 'Invoice', 'Closed'].map((s) => `<option value="${s}" ${s === 'Prospect' ? 'selected' : ''}>${s}</option>`).join('')}
+            ${JOB_STATUSES.map((s) => `<option value="${s}" ${s === 'Prospect' ? 'selected' : ''}>${s}</option>`).join('')}
           </select>
         </div>
         <div class="job-modal-field">
-          <label for="new-job-copy-from">Copy scope/pricing from&hellip;</label>
-          <select id="new-job-copy-from">${copyOptions}</select>
+          <label for="new-job-copy-from">Start from</label>
+          <select id="new-job-copy-from">${sourceOptions}</select>
         </div>
       </div>
+      <div id="new-job-source-summary" class="field-hint"></div>
 
       <div class="job-modal-field">
         <label for="new-job-scope">Scope of Work</label>
-        <textarea id="new-job-scope" rows="5" placeholder="Describe the work for this job...">${escapeHtml(initialScope)}</textarea>
-        <span class="field-hint">Pre-filled from this client's default scope. Edit freely — it's saved as this job's own copy.</span>
+        <textarea id="new-job-scope" rows="4" placeholder="Describe the work for this job..."></textarea>
+        <span class="field-hint">This job keeps its own copy — edit freely. Services can be added or removed inside the job.</span>
       </div>
 
       <div class="job-modal-field">
         <label for="new-job-notes">Notes</label>
-        <textarea id="new-job-notes" rows="4" placeholder="Anything worth noting about this job — site details, customer preferences, follow-ups..."></textarea>
-        <span class="field-hint">Optional. Shows up on this job's Notes section right away.</span>
+        <textarea id="new-job-notes" rows="3" placeholder="Site details, customer preferences, follow-ups..."></textarea>
       </div>
 
       <div class="job-modal-actions">
-        <button id="createJobBtn" class="btn-primary">Add Job</button>
-        <button id="cancelNewJobBtn" class="btn-primary" style="background:var(--surface-muted); color:var(--text-main); border:1px solid var(--border-soft);">Cancel</button>
+        <button id="createJobBtn" class="btn-primary">Create Job</button>
+        <button id="cancelNewJobBtn" class="btn-primary btn-quiet">Cancel</button>
       </div>
     </div>
   `;
+  document.body.appendChild(modal);
 
-  document.body.appendChild(overlay);
+  const titleEl = modal.querySelector('#new-job-title');
+  const scopeEl = modal.querySelector('#new-job-scope');
+  const sourceEl = modal.querySelector('#new-job-copy-from');
+  const summaryEl = modal.querySelector('#new-job-source-summary');
+  const notesEl = modal.querySelector('#new-job-notes');
+  let suggestedTitle = '';
+  let sourceItems = [];      // line items the new job will start with
+  let sourceExpenses = [];   // itemized costs copied from a previous job (admin)
+  let sourceJob = null;
+  let sourceToken = 0;
 
-  const scopeEl = overlay.querySelector('#new-job-scope');
-  const copyFromEl = overlay.querySelector('#new-job-copy-from');
-  const titleEl = overlay.querySelector('#new-job-title');
-
-  copyFromEl.addEventListener('change', () => {
-    const value = copyFromEl.value;
-    if (value === 'blank') {
-      scopeEl.value = '';
-    } else if (value === 'client') {
-      scopeEl.value = clientDefaultScope;
+  async function applySource() {
+    const value = sourceEl.value;
+    const token = ++sourceToken;
+    sourceItems = [];
+    sourceExpenses = [];
+    sourceJob = null;
+    if (value === 'client') {
+      scopeEl.value = clientScope;
+      sourceItems = lineItemsFromClientServices(clientServices);
     } else if (value === 'company') {
-      scopeEl.value = companyDefaultScope;
+      scopeEl.value = companyScope;
     } else if (value.startsWith('job-')) {
-      const jobId = value.slice(4);
-      const job = existingJobs.find((j) => String(j.id) === jobId);
-      if (job) scopeEl.value = job.scope_of_work || '';
+      sourceJob = existingJobs.find(j => `job-${j.id}` === value) || null;
+      scopeEl.value = sourceJob ? (sourceJob.scope_of_work || '') : '';
+      if (sourceJob) {
+        try {
+          const data = await window.api.listJobLineItems(sourceJob.id);
+          if (token !== sourceToken) return;
+          sourceItems = copyLineItems(data.lineItems || []);
+          if (admin) {
+            const costs = await window.api.listJobExpenses(sourceJob.id);
+            if (token !== sourceToken) return;
+            sourceExpenses = costs.supported ? copyExpenses(costs.expenses) : [];
+          }
+        } catch (err) {
+          console.error(err);
+        }
+        if (!titleEl.value.trim() || titleEl.value === suggestedTitle) {
+          suggestedTitle = nextRecurringTitle(sourceJob.title);
+          titleEl.value = suggestedTitle;
+        }
+      }
+    } else {
+      scopeEl.value = '';
     }
-  });
+    if (token !== sourceToken) return;
+    const names = sourceItems.map(i => i.description).filter(Boolean);
+    summaryEl.textContent = names.length
+      ? `Starts with ${names.length} service${names.length === 1 ? '' : 's'}: ${names.slice(0, 4).join(', ')}${names.length > 4 ? '…' : ''}.`
+      : '';
+  }
 
-  overlay.querySelector('#closeNewJobModal').onclick = () => overlay.remove();
-  overlay.querySelector('#cancelNewJobBtn').onclick = () => overlay.remove();
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  sourceEl.value = initialSource;
+  sourceEl.addEventListener('change', applySource);
+  applySource();
 
-  overlay.querySelector('#createJobBtn').onclick = async () => {
-    const createBtn = overlay.querySelector('#createJobBtn');
+  function discard() {
+    const typed = titleEl.value.trim() && titleEl.value !== suggestedTitle || notesEl.value.trim();
+    if (typed && !confirm('Discard this new job? It has not been created yet.')) return;
+    modal.remove();
+  }
+  modal._requestClose = discard;
+  modal.querySelector('#closeNewJobModal').onclick = discard;
+  modal.querySelector('#cancelNewJobBtn').onclick = discard;
+  modal.addEventListener('click', (e) => { if (e.target === modal) discard(); });
+
+  const createBtn = modal.querySelector('#createJobBtn');
+  createBtn.onclick = async () => {
+    if (createBtn.disabled) return;
     try {
       createBtn.disabled = true;
       createBtn.textContent = 'Creating...';
 
-      const result = await window.api.createJob({
+      const payload = {
         client_id: clientId,
         title: titleEl.value.trim() || 'New Job',
-        status: overlay.querySelector('#new-job-status').value,
-        // This job gets its OWN saved copy of the scope text right now.
-        // Later edits to the client's default scope will never rewrite
-        // this job's scope after the fact.
-        scope_of_work: scopeEl.value,
-        total_due: 0,
-        job_cost: 0
-      });
+        status: modal.querySelector('#new-job-status').value,
+        scope_of_work: scopeEl.value
+      };
+      if (admin) {
+        if (sourceItems.length) payload.line_items = sourceItems;
+        if (sourceExpenses.length) payload.expenses = sourceExpenses;
+        if (sourceJob) {
+          if (!sourceExpenses.length) payload.job_cost = Number(sourceJob.job_cost || 0);
+          if (!sourceItems.length) payload.total_due = Number(sourceJob.total_due || 0);
+        }
+      } else if (sourceItems.length && !payload.scope_of_work.trim()) {
+        // Regular users can't set prices, so a copied job's services come
+        // across as scope lines instead of priced line items.
+        payload.scope_of_work = scopeFromLineItems(sourceItems);
+      }
 
-      const notesText = overlay.querySelector('#new-job-notes').value.trim();
+      const result = await window.api.createJob(payload);
+      const notesText = notesEl.value.trim();
       if (notesText && result.job) {
         try {
           await window.api.addJobNote(result.job.id, notesText);
@@ -2792,44 +3120,19 @@ async function openNewJobModal(clientId) {
       }
 
       showToast('Job created', 'success');
-      overlay.remove();
-      await setupJobsSection(clientId);
-
-      if (result.job) {
-        openJobPanel(result.job, clientId, function () {
-          setupJobsSection(clientId);
-        });
-      }
+      modal.remove();
+      triggerFinanceUpdate();
+      await refreshClientJobs(clientId);
+      if (result.job) openJobPanel(result.job, clientId, refreshOpenClientJobs);
     } catch (err) {
       console.error(err);
-      showToast('Failed to create job', 'error');
-    } finally {
+      showToast(err.message || 'Failed to create job', 'error');
       createBtn.disabled = false;
-      createBtn.textContent = 'Add Job';
+      createBtn.textContent = 'Create Job';
     }
   };
 
   setTimeout(() => titleEl.focus(), 50);
-}
-
-// ======================================================
-// CASH AGGREGATE TRACKER
-// ======================================================
-async function loadCashAggregate(clientId) {
-  const displayEl = document.getElementById('cashAggregateDisplay');
-  const countEl = document.getElementById('cashJobCountDisplay');
-  if (!displayEl) return;
-
-  try {
-    const data = await window.api.getClientCashAggregate(clientId);
-    if (data && data.success) {
-      displayEl.textContent = '$' + formatMoney(data.totalCashCollected);
-      if (countEl) countEl.textContent = data.jobCount || 0;
-    }
-  } catch (err) {
-    console.error(err);
-    displayEl.textContent = '$0.00';
-  }
 }
 
 // ======================================================
@@ -2845,26 +3148,28 @@ async function setupAssignedUserField(clientId, currentAssignedUserId) {
   if (!select) return;
 
   try {
-    const res = await fetch('/api/v2/admin/users');
-    if (!res.ok) throw new Error('Failed to load users');
-    const data = await res.json();
-    const users = data.data || [];
+    const users = await window.api.listAssignableUsers();
 
     select.innerHTML = '<option value="">Unassigned</option>' +
       users.map((u) => `<option value="${u.id}" ${String(u.id) === String(currentAssignedUserId) ? 'selected' : ''}>${escapeHtml(u.display_name || u.email)}</option>`).join('');
 
     select.onchange = async () => {
       try {
-        await fetch(`/api/clients/${clientId}/assign`, {
+        const res = await fetch(`/api/clients/${clientId}/assign`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ assigned_user_id: select.value || null })
         });
-        showToast('Client reassigned', 'success');
+        if (!res.ok) throw new Error(await window.api._readResponseError(res, 'Failed to reassign client'));
+        if (activeClient && Number(activeClient.id) === Number(clientId)) {
+          activeClient.assigned_user_id = select.value || null;
+          activeClient.assigned_user_name = select.value ? select.options[select.selectedIndex].textContent : '';
+        }
+        showToast('Salesperson updated', 'success');
         await refreshList();
       } catch (err) {
         console.error(err);
-        showToast('Failed to reassign client', 'error');
+        showToast(err.message || 'Failed to reassign client', 'error');
       }
     };
   } catch (err) {
@@ -2873,7 +3178,9 @@ async function setupAssignedUserField(clientId, currentAssignedUserId) {
   }
 }
 
-async function setupScopeServices(clientId) {
+// onChange runs after a service is added or removed (the client account
+// saves the client's scope text right away).
+async function setupScopeServices(clientId, { onChange } = {}) {
   const listEl = document.getElementById('scope-services-list');
   const addBtn = document.getElementById('add-scope-service-btn');
   const manageBtn = document.getElementById('manage-services-btn');
@@ -2893,7 +3200,7 @@ async function setupScopeServices(clientId) {
       listEl.innerHTML = '';
 
       if (assignments.length === 0) {
-        listEl.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;width:100%;">No services assigned. Click "+ Add Service".</div>';
+        listEl.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;width:100%;">No saved services. Use "+ Service" to add one.</div>';
         return;
       }
 
@@ -2923,16 +3230,17 @@ async function setupScopeServices(clientId) {
         var removeBtn = document.createElement('button');
         removeBtn.innerHTML = '&times;';
         removeBtn.style.cssText =
-          'border:none;background:transparent;color:rgba(255,150,150,0.8);' +
+          'border:none;background:transparent;color:var(--danger);' +
           'cursor:pointer;font-size:1.1rem;line-height:1;padding:0 2px;margin-left:2px;';
         removeBtn.title = 'Remove ' + cs.serviceName;
+        removeBtn.setAttribute('aria-label', 'Remove ' + cs.serviceName);
         removeBtn.onclick = async function () {
           try {
             await window.api.removeClientService(clientId, cs.id);
             showToast(cs.serviceName + ' removed', 'success');
             await loadScopeServices();
             await updateScopeHiddenField();
-            markDirty();
+            if (onChange) await onChange();
           } catch (err) {
             showToast('Failed to remove service', 'error');
           }
@@ -2955,9 +3263,10 @@ async function setupScopeServices(clientId) {
   }
 
   addBtn.onclick = function () {
-    openServicePicker(clientId, function () {
-      loadScopeServices();
-      updateScopeHiddenField();
+    openServicePicker(clientId, async function () {
+      await loadScopeServices();
+      await updateScopeHiddenField();
+      if (onChange) await onChange();
     });
   };
 
@@ -3027,7 +3336,7 @@ function openServicePicker(clientId, onSave) {
       '</div>' +
       '<div style="display:flex;gap:8px;">' +
         '<button id="servicePickerSaveBtn" class="btn-primary" style="background:var(--primary);flex:1;padding:10px;">Add Selected</button>' +
-        '<button id="servicePickerCancelBtn" class="btn-primary" style="background:var(--surface-muted);color:white;flex:1;padding:10px;">Cancel</button>' +
+        '<button id="servicePickerCancelBtn" class="btn-primary btn-quiet" style="flex:1;padding:10px;">Cancel</button>' +
       '</div>' +
     '</div>';
 
@@ -3139,7 +3448,7 @@ function openServicePicker(clientId, onSave) {
 // ======================================================
 // ADMIN: MANAGE SERVICE PRESETS MODAL
 // ======================================================
-function openManageServicesModal(onSave) {
+function openManageServicesModal(onSave, { onClose } = {}) {
   var existing = document.getElementById('manageServicesOverlay');
   if (existing) existing.remove();
 
@@ -3178,15 +3487,20 @@ function openManageServicesModal(onSave) {
       '</div>' +
 
       '<div style="display:flex;gap:8px;margin-top:16px;">' +
-        '<button id="manageServicesDoneBtn" class="btn-primary" style="background:var(--surface-muted);color:white;flex:1;padding:10px;">Done</button>' +
+        '<button id="manageServicesDoneBtn" class="btn-primary btn-quiet" style="flex:1;padding:10px;">Done</button>' +
       '</div>' +
     '</div>';
 
   document.body.appendChild(overlay);
 
-  overlay.querySelector('#closeManageServices').onclick = function () { overlay.remove(); };
-  overlay.querySelector('#manageServicesDoneBtn').onclick = function () { overlay.remove(); };
-  overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+  function closeManage() {
+    overlay.remove();
+    if (onClose) onClose();
+  }
+  overlay._requestClose = closeManage;
+  overlay.querySelector('#closeManageServices').onclick = closeManage;
+  overlay.querySelector('#manageServicesDoneBtn').onclick = closeManage;
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) closeManage(); });
 
   var listEl = overlay.querySelector('#manageServicesList');
   var nameInput = overlay.querySelector('#newSvcName');
@@ -3319,149 +3633,270 @@ function openManageServicesModal(onSave) {
 }
 
 // ======================================================
-// JOB PANEL (modal overlay)
+// JOB WORKSPACE (+ Job) — where the detailed work for one job happens:
+// status, money (total, cost, profit, margin, payments), services & scope of
+// work, documents/PDFs, photos, notes and tags.
+//
+// Closing it — the X, Escape, or clicking outside — saves everything first
+// (fields, a typed-but-unsubmitted payment, an unsent note, a half-filled
+// line item, an open note edit). If a save fails the workspace stays open,
+// so nothing typed is ever lost.
 // ======================================================
+const JOB_STATUSES = ['Prospect', 'Approved', 'Completed', 'Invoice', 'Closed'];
 const JOB_LINE_ITEM_CATEGORIES = ['Labor', 'Materials', 'Commissions', 'Meals/Drinks', 'Miscellaneous', 'Permits'];
+const DEFAULT_SERVICE_CATEGORY = 'Labor';
+
+// "1690000000000-signed-estimate.pdf" -> "signed-estimate.pdf"
+function clientFileDisplayName(name) {
+  return String(name || '').replace(/^\d{10,}-/, '');
+}
+
+// Renders client-level files (the older per-client PDF drop box) as rows
+// with View / Download / Delete. Used by the client account and inside every
+// job's Documents section, so those files stay reachable after the redesign.
+function renderClientFileRows(container, clientId, files, onChanged) {
+  container.innerHTML = '';
+  (files || []).forEach(file => {
+    const viewUrl = file.viewUrl || file.url;
+    const downloadUrl = file.downloadUrl || file.url;
+    const row = document.createElement('div');
+    row.className = 'job-file-row';
+    row.innerHTML = `
+      <a href="${escapeHtml(viewUrl)}" target="_blank" rel="noopener" class="job-file-name"><i data-lucide="file-text"></i> ${escapeHtml(clientFileDisplayName(file.name))}</a>
+      <a href="${escapeHtml(downloadUrl)}" class="job-file-action" download>Download</a>
+      <button type="button" class="job-file-delete-btn" title="Delete file" aria-label="Delete ${escapeHtml(clientFileDisplayName(file.name))}">&times;</button>
+    `;
+    row.querySelector('.job-file-delete-btn').addEventListener('click', async () => {
+      if (!confirm(`Delete "${clientFileDisplayName(file.name)}" permanently?`)) return;
+      try {
+        await window.api.deletePDF(clientId, file.name);
+        if (onChanged) await onChanged();
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to delete file', 'error');
+      }
+    });
+    container.appendChild(row);
+  });
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// Picker for the company's service presets. Resolves the chosen presets via
+// onConfirm(services); the picker closes once onConfirm succeeds.
+function openServicePresetPicker({ heading = 'Add services', confirmLabel = 'Add Selected', onConfirm }) {
+  const existing = document.getElementById('servicePresetPickerOverlay');
+  if (existing) existing.remove();
+  const admin = isAdminUser();
+
+  const picker = document.createElement('div');
+  picker.id = 'servicePresetPickerOverlay';
+  picker.className = 'picker-overlay';
+  picker.innerHTML = `
+    <div class="picker-card" role="dialog" aria-modal="true" aria-labelledby="presetPickerHeading">
+      <button type="button" class="job-modal-close" data-picker-close aria-label="Close">&times;</button>
+      <div class="job-modal-kicker">Services</div>
+      <h3 id="presetPickerHeading" class="picker-heading">${escapeHtml(heading)}</h3>
+      <div class="picker-list" id="presetPickerList"><div class="field-hint">Loading services...</div></div>
+      <div class="picker-actions">
+        <button type="button" class="btn-primary" id="presetPickerConfirm">${escapeHtml(confirmLabel)}</button>
+        ${admin ? '<button type="button" class="btn-primary btn-quiet" id="presetPickerManage">Manage Presets</button>' : ''}
+        <button type="button" class="btn-primary btn-quiet" data-picker-close>Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(picker);
+
+  const listEl = picker.querySelector('#presetPickerList');
+  const confirmBtn = picker.querySelector('#presetPickerConfirm');
+  let services = [];
+
+  const close = () => picker.remove();
+  picker._requestClose = close;
+  picker.querySelectorAll('[data-picker-close]').forEach(b => { b.onclick = close; });
+  picker.addEventListener('click', (e) => { if (e.target === picker) close(); });
+
+  async function load() {
+    listEl.innerHTML = '<div class="field-hint">Loading services...</div>';
+    try {
+      const data = await window.api.listServices();
+      services = data.services || [];
+    } catch (err) {
+      console.error(err);
+      listEl.innerHTML = '<div class="field-hint" style="color:var(--danger);">Failed to load services.</div>';
+      return;
+    }
+    if (!services.length) {
+      listEl.innerHTML = `<div class="field-hint">No services set up yet.${admin ? ' Use “Manage Presets” to add your services and rates.' : ' Ask an admin to add service presets.'}</div>`;
+      return;
+    }
+    listEl.innerHTML = services.map(svc => `
+      <label class="picker-row">
+        <input type="checkbox" value="${svc.id}">
+        <span class="picker-row-text">
+          <span class="picker-row-name">${escapeHtml(svc.name)}</span>
+          ${svc.description ? `<span class="picker-row-desc">${escapeHtml(svc.description)}</span>` : ''}
+        </span>
+        ${svc.defaultRate > 0 ? `<span class="picker-row-rate">$${formatMoney(svc.defaultRate)}</span>` : ''}
+      </label>`).join('');
+  }
+
+  confirmBtn.onclick = async () => {
+    const ids = [...listEl.querySelectorAll('input[type="checkbox"]:checked')].map(cb => Number(cb.value));
+    const chosen = services.filter(s => ids.includes(Number(s.id)));
+    if (!chosen.length) {
+      showToast('Select at least one service', 'info');
+      return;
+    }
+    confirmBtn.disabled = true;
+    try {
+      await onConfirm(chosen);
+      close();
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Failed to add services', 'error');
+      confirmBtn.disabled = false;
+    }
+  };
+
+  const manageBtn = picker.querySelector('#presetPickerManage');
+  if (manageBtn) manageBtn.onclick = () => openManageServicesModal(load, { onClose: load });
+
+  load();
+}
 
 function openJobPanel(job, clientId, onSave) {
-  // Remove any existing job panel
   const existing = document.getElementById('jobPanelOverlay');
   if (existing) existing.remove();
 
-  const STATUS_ORDER_JOB = ['Prospect', 'Approved', 'Completed', 'Invoice', 'Closed'];
   const admin = isAdminUser();
   const tags = Array.isArray(job.tags) ? job.tags : [];
+  const clientName = (activeClient && Number(activeClient.id) === Number(clientId) && activeClient.name) || '';
+  let current = { ...job };
+  let lineItems = [];
+  let lineItemsLoaded = false;
+  let paymentHistory = { supported: false, payments: [] };
+  const sessionPayments = [];   // payments added while open — undo fallback before payments.job_id exists
+  const pending = new Set();    // in-flight saves (line item edits, payments)
+  let closing = false;
+  let userEdited = false;
+  let notesApi = null;
+  let expenseState = { supported: false, loaded: false, message: '', expenses: [], breakdown: [], categories: [] };
 
-  const overlay = document.createElement('div');
-  overlay.id = 'jobPanelOverlay';
-  overlay.className = 'job-modal-overlay';
-
-  overlay.innerHTML = `
-    <div id="jobPanelCard" class="job-modal-card">
-      <button id="closeJobPanel" class="job-modal-close">&times;</button>
-      <div class="job-modal-kicker">Job Details</div>
-
-      <div class="job-modal-field">
-        <input id="job-title" type="text" class="job-title-input" value="${escapeHtml(job.title || 'New Job')}">
+  const panel = document.createElement('div');
+  panel.id = 'jobPanelOverlay';
+  panel.className = 'job-modal-overlay';
+  panel.innerHTML = `
+    <div id="jobPanelCard" class="job-modal-card job-workspace" role="dialog" aria-modal="true" aria-label="Job details">
+      <button id="closeJobPanel" class="job-modal-close" aria-label="Save and close" title="Save and close">&times;</button>
+      <div class="job-workspace-top">
+        <div class="job-modal-kicker">Job${clientName ? ' · ' + escapeHtml(clientName) : ''}</div>
+        <span id="jobSaveStatus" class="save-status-chip">Saved</span>
       </div>
 
-      <div class="job-modal-grid">
+      <div class="job-modal-field">
+        <input id="job-title" type="text" class="job-title-input" aria-label="Job name" maxlength="200" value="${escapeHtml(job.title || 'New Job')}">
+      </div>
+
+      <div class="job-head-grid">
         <div class="job-modal-field">
-          <label>Status</label>
+          <label for="job-status">Status</label>
           <select id="job-status">
-            ${STATUS_ORDER_JOB.map(s => `<option value="${s}" ${job.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+            ${JOB_STATUSES.map(s => `<option value="${s}" ${job.status === s ? 'selected' : ''}>${s}</option>`).join('')}
           </select>
         </div>
         <div class="job-modal-field">
-          <label>Job Total</label>
-          ${admin
-            ? `<input id="job-total" type="text" inputmode="decimal" value="${formatMoney(job.total_due)}">`
-            : `<div class="job-modal-readout">$${formatMoney(job.total_due)}</div>`}
+          <label>Created</label>
+          <div class="job-modal-readout">${formatShortDate(job.created_at) || '—'}</div>
+        </div>
+        <div class="job-modal-field job-tags-field">
+          <label for="job-tag-input">Tags</label>
+          <div id="job-tags-list" class="job-tags-list"></div>
+          <input id="job-tag-input" type="text" placeholder="Add a tag, press Enter" maxlength="40">
+        </div>
+      </div>
+
+      <section class="job-section" aria-labelledby="jobMoneyHeading">
+        <h4 class="job-section-title" id="jobMoneyHeading">Money</h4>
+        <div class="job-money-tiles">
+          <div class="total-tile"><span class="total-tile-label">Job Total</span><strong class="total-tile-value" id="job-total-display">$0.00</strong></div>
+          <div class="total-tile"><span class="total-tile-label">Received</span><strong class="total-tile-value" id="job-paid-display">$0.00</strong></div>
+          <div class="total-tile" id="job-balance-tile"><span class="total-tile-label">Balance</span><strong class="total-tile-value" id="job-balance-display">$0.00</strong></div>
+          ${admin ? `
+          <div class="total-tile"><span class="total-tile-label">Cost</span><strong class="total-tile-value" id="job-cost-display">$0.00</strong></div>
+          <div class="total-tile"><span class="total-tile-label">Profit</span><strong class="total-tile-value" id="job-profit-display">$0.00</strong><span class="total-tile-sub" id="job-margin-display"></span></div>` : ''}
         </div>
         ${admin ? `
-        <div class="job-modal-field">
-          <label>Job Cost</label>
-          <input id="job-cost" type="text" inputmode="decimal" value="${formatMoney(job.job_cost)}">
-        </div>
-        <div class="job-modal-field">
-          <label>Profit</label>
-          <div id="job-profit-display" class="job-modal-readout">
-            $${formatMoney(Number(job.total_due || 0) - Number(job.job_cost || 0))}
+        <div class="job-money-inputs">
+          <div class="job-modal-field">
+            <label for="job-total">Job Total (revenue)</label>
+            <input id="job-total" type="text" inputmode="decimal" value="${formatMoney(job.total_due)}">
+            <span class="field-hint" id="job-total-hint"></span>
+          </div>
+          <div class="job-modal-field">
+            <label for="job-cost">Job Cost</label>
+            <input id="job-cost" type="text" inputmode="decimal" value="${formatMoney(job.job_cost)}">
+            <span class="field-hint" id="job-cost-hint">What the job costs you — used for profit and margin.</span>
           </div>
         </div>
         <div class="job-modal-field">
-          <label>Margin</label>
-          <div id="job-margin-display" class="job-modal-readout">
-            ${job.total_due > 0 ? Math.round(((job.total_due - job.job_cost) / job.total_due) * 100) + '%' : '—'}
+          <label for="job-payment-input">Record a payment</label>
+          <div class="job-payment-row">
+            <input id="job-payment-input" type="text" inputmode="decimal" placeholder="Amount received">
+            <button type="button" id="job-add-payment-btn" class="btn-primary">Add Payment</button>
+            <button type="button" id="job-undo-payment-btn" class="btn-primary btn-quiet">Undo last payment</button>
           </div>
-        </div>` : ''}
-      </div>
-
-      <!-- ===== JOB TAGS (Section 2/7) — per-job labels, separate from
-           both job status above and the client's pipeline stage. ===== -->
-      <div class="job-modal-field">
-        <label>Tags</label>
-        <div id="job-tags-list" class="job-tags-list">
-          ${tags.map((t) => `<span class="job-tag-chip">${escapeHtml(t)}<button type="button" class="job-tag-remove" data-tag="${escapeHtml(t)}">&times;</button></span>`).join('')}
-        </div>
-        <div class="job-tag-add-row">
-          <input id="job-tag-input" type="text" placeholder="Add a tag and press Enter" maxlength="40">
-        </div>
-        <span class="field-hint">Tags track this specific job only. They never change the client's stage.</span>
-      </div>
-
-      <!-- ===== PAYMENTS — amount paid/balance are visible to any user
-           with access to this job (they need it to tell a customer their
-           balance); only admins can add a payment. ===== -->
-      <div class="job-modal-field">
-        <div class="job-balance-row">
-          <label>Payments Received</label>
-          <strong>$${formatMoney(job.amount_paid)}</strong>
-        </div>
-        <div class="job-balance-row">
-          <label>Remaining Balance</label>
-          <strong>$${formatMoney(job.balance)}</strong>
-        </div>
-        ${admin ? `
-        <div class="job-payment-row">
-          <input id="job-payment-input" type="text" inputmode="decimal" placeholder="Add Payment">
-          <button id="job-add-payment-btn" class="btn-primary" style="background:var(--primary);">Add Payment</button>
-        </div>` : ''}
-      </div>
+          <div id="job-payments-list" class="job-payments-list"></div>
+        </div>` : '<p class="field-hint">Only admins can change the total or record payments.</p>'}
+      </section>
 
       ${admin ? `
-      <!-- ===== COST LINE ITEMS (Section 1) — description/qty/unit price
-           with a required Cost Type category. Admin only. ===== -->
-      <div class="job-modal-field">
-        <label>Estimate / Invoice Line Items</label>
-        <div id="job-line-items-list" class="job-line-items-list">
-          <div class="field-hint">Loading line items...</div>
+      <section class="job-section" id="job-costs-section" aria-labelledby="jobCostsHeading">
+        <div class="job-section-head">
+          <h4 class="job-section-title" id="jobCostsHeading">Job Costs</h4>
+          <a href="/settings?tab=expenses" class="job-section-link" target="_blank" rel="noopener">Manage categories</a>
         </div>
-        <div class="job-line-item-add-grid">
-          <input id="li-description" type="text" placeholder="Description">
-          <select id="li-category">
-            ${JOB_LINE_ITEM_CATEGORIES.map((c) => `<option value="${c}">${c}</option>`).join('')}
+        <div id="job-expenses-body"><div class="field-hint">Loading costs...</div></div>
+      </section>` : ''}
+
+      <section class="job-section" aria-labelledby="jobServicesHeading">
+        <h4 class="job-section-title" id="jobServicesHeading">Services &amp; Scope of Work</h4>
+        <div id="job-line-items-list" class="job-services-list"><div class="field-hint">Loading services...</div></div>
+        <div class="job-services-actions">
+          <button type="button" id="job-add-service-btn" class="btn-primary">+ Service</button>
+          ${admin ? '<button type="button" id="job-add-line-btn" class="btn-primary btn-quiet">+ Custom line item</button>' : ''}
+        </div>
+        ${admin ? `
+        <div id="job-line-item-form" class="job-line-item-add-grid" hidden>
+          <input id="li-description" type="text" placeholder="Description" aria-label="Line item description">
+          <select id="li-category" aria-label="Line item category">
+            ${JOB_LINE_ITEM_CATEGORIES.map(c => `<option value="${c}" ${c === DEFAULT_SERVICE_CATEGORY ? 'selected' : ''}>${c}</option>`).join('')}
           </select>
-          <input id="li-quantity" type="text" inputmode="decimal" placeholder="Qty" value="1">
-          <input id="li-unit-price" type="text" inputmode="decimal" placeholder="Unit Price">
-          <button id="li-add-btn" class="btn-primary" style="background:var(--primary);">Add Item</button>
+          <input id="li-quantity" type="text" inputmode="decimal" placeholder="Qty" value="1" aria-label="Quantity">
+          <input id="li-unit-price" type="text" inputmode="decimal" placeholder="Price" aria-label="Unit price">
+          <button type="button" id="li-add-btn" class="btn-primary">Add</button>
+        </div>` : ''}
+        <div class="job-modal-field">
+          <label for="job-scope">Scope of work</label>
+          <textarea id="job-scope" rows="4" placeholder="Describe the work for this job...">${escapeHtml(job.scope_of_work || '')}</textarea>
+          <span class="field-hint">Printed on the estimate and invoice. If left blank, the services above are listed instead.</span>
         </div>
-      </div>` : ''}
+      </section>
 
-      <div class="job-modal-field">
-        <label>Scope of Work</label>
-        <textarea id="job-scope" rows="5" placeholder="Describe the work for this job...">${escapeHtml(job.scope_of_work || '')}</textarea>
-      </div>
-
-      <!-- ===== JOB NOTES — separate from the client-level notes panel ===== -->
-      <div class="job-modal-field job-notes-field">
-        <label>Job Notes</label>
-        <div id="job-notes-list" class="notes-list"></div>
-        <div class="notes-actions">
-          <textarea id="job-new-note-input" placeholder="Add a note..." rows="4"></textarea>
-          <button type="button" id="job-add-note-btn" class="btn-primary add-note-btn" style="background:var(--primary);">Add Note</button>
-        </div>
-      </div>
-
-      <!-- ===== DOCUMENTS — contracts, estimates, invoices, reports ===== -->
-      <div class="job-modal-field job-files-field">
-        <label>Documents</label>
-        <span class="field-hint">Contracts, estimates, invoices, reports, and other business PDFs.</span>
+      <section class="job-section job-files-field" aria-labelledby="jobDocsHeading">
+        <h4 class="job-section-title" id="jobDocsHeading">Documents &amp; PDFs</h4>
         <div id="job-documents-list" class="job-files-list"></div>
         <div class="job-files-upload-row">
           <input type="file" id="job-documents-input" multiple hidden accept=".pdf,.doc,.docx,.xls,.xlsx,application/pdf">
-          <button type="button" id="job-documents-upload-btn" class="panel-secondary-btn">Upload Document</button>
+          <button type="button" id="job-documents-upload-btn" class="panel-secondary-btn">Upload Document / PDF</button>
         </div>
         <div id="job-documents-progress" class="job-file-progress" hidden>
           <div class="job-file-progress-track"><div class="job-file-progress-bar"></div></div>
           <span class="job-file-progress-label"></span>
         </div>
-      </div>
+        <div id="job-client-files" class="job-client-files" hidden></div>
+      </section>
 
-      <!-- ===== PHOTOS — job/progress/site photo documentation ===== -->
-      <div class="job-modal-field job-files-field">
-        <label>Photos</label>
-        <span class="field-hint">Job photos, progress photos, and photo documentation.</span>
+      <section class="job-section job-files-field" aria-labelledby="jobPhotosHeading">
+        <h4 class="job-section-title" id="jobPhotosHeading">Photos</h4>
         <div id="job-photos-list" class="job-files-list job-photos-grid"></div>
         <div class="job-files-upload-row">
           <input type="file" id="job-photos-input" multiple hidden accept="image/*">
@@ -3471,107 +3906,489 @@ function openJobPanel(job, clientId, onSave) {
           <div class="job-file-progress-track"><div class="job-file-progress-bar"></div></div>
           <span class="job-file-progress-label"></span>
         </div>
-      </div>
+      </section>
+
+      <section class="job-section job-notes-field" aria-labelledby="jobNotesHeading">
+        <h4 class="job-section-title" id="jobNotesHeading">Notes</h4>
+        <div id="job-notes-list" class="notes-list"></div>
+        <div class="notes-actions">
+          <textarea id="job-new-note-input" placeholder="Add a note..." rows="3" aria-label="New job note"></textarea>
+          <button type="button" id="job-add-note-btn" class="btn-primary add-note-btn">Add Note</button>
+        </div>
+      </section>
 
       <div class="job-modal-actions">
-        <button id="job-save-btn" class="btn-primary" style="background:var(--primary);">Save Job</button>
-        <button id="job-estimate-btn" class="btn-primary">Download Estimate</button>
-        <button id="job-invoice-btn" class="btn-primary" style="background:var(--primary);">Download Invoice</button>
-        <button id="job-delete-btn" class="btn-primary" style="background:#4a5568;">Delete</button>
+        <button type="button" id="job-save-btn" class="btn-primary">Save Job</button>
+        <button type="button" id="job-estimate-btn" class="btn-primary btn-quiet">Download Estimate</button>
+        <button type="button" id="job-invoice-btn" class="btn-primary btn-quiet">Download Invoice</button>
+        <button type="button" id="job-duplicate-btn" class="btn-primary btn-quiet" title="Copy this job's services, scope and cost into a new job — e.g. next month's maintenance">Duplicate</button>
+        <button type="button" id="job-delete-btn" class="btn-primary btn-danger-soft">Delete</button>
       </div>
     </div>
   `;
+  document.body.appendChild(panel);
 
-  document.body.appendChild(overlay);
+  const $ = (sel) => panel.querySelector(sel);
+  const titleEl = $('#job-title');
+  const statusEl = $('#job-status');
+  const scopeEl = $('#job-scope');
+  const totalEl = $('#job-total');
+  const costEl = $('#job-cost');
+  const paymentEl = $('#job-payment-input');
+  const noteInput = $('#job-new-note-input');
+  const lineForm = $('#job-line-item-form');
+  [totalEl, costEl, paymentEl, $('#li-unit-price'), $('#li-quantity')].forEach(el => applyMoneyInputBehavior(el));
 
-  // Live margin/profit update (admin only — fields don't exist for regular users)
-  const totalInput = overlay.querySelector('#job-total');
-  const costInput = overlay.querySelector('#job-cost');
-  const marginDisplay = overlay.querySelector('#job-margin-display');
-  const profitDisplay = overlay.querySelector('#job-profit-display');
-  if (totalInput && costInput && marginDisplay) {
-    function updateMargin() {
-      const t = parseMoney(totalInput.value) || 0;
-      const c = parseMoney(costInput.value) || 0;
-      marginDisplay.textContent = t > 0 ? Math.round(((t - c) / t) * 100) + '%' : '—';
-      if (profitDisplay) profitDisplay.textContent = '$' + formatMoney(t - c);
-    }
-    totalInput.addEventListener('input', updateMargin);
-    costInput.addEventListener('input', updateMargin);
+  function track(promise) {
+    pending.add(promise);
+    const done = () => { pending.delete(promise); refreshDirtyChip(); };
+    promise.then(done, done);
+    return promise;
   }
 
-  // Auto-save pending Job Cost / Payment entries when the panel is closed
-  // without an explicit Save/Add Payment click (Section 4). Job cost is a
-  // plain field update (safe to resend if unchanged — the value check below
-  // just avoids a pointless call). Payment is additive, so it only fires
-  // when there is a genuinely unsubmitted amount sitting in the input —
-  // a successful "Add Payment" click tears down and rebuilds this whole
-  // panel, so a stale already-submitted amount can never linger here.
-  async function autoSaveBeforeClose() {
-    if (!admin) return;
-    const costEl = overlay.querySelector('#job-cost');
-    if (costEl) {
-      const raw = costEl.value.trim();
-      if (raw) {
-        const val = parseMoney(raw);
-        if (Number.isFinite(val) && val >= 0 && val !== Number(job.job_cost || 0)) {
-          try {
-            await window.api.updateJob(job.id, { job_cost: val });
-            if (onSave) await onSave();
-          } catch (err) {
-            console.error(err);
-            showToast('Failed to save job cost', 'error');
-          }
+  // ---------- status chip ----------
+  function setJobStatusChip(state) {
+    const el = $('#jobSaveStatus');
+    if (!el) return;
+    const map = {
+      saving: ['Saving…', 'var(--warning-text)'],
+      error: ['Save failed', 'var(--danger-text)'],
+      unsaved: ['Unsaved changes', 'var(--warning-text)'],
+      saved: ['Saved', 'var(--success-text)']
+    };
+    const [text, color] = map[state] || map.saved;
+    el.textContent = text;
+    el.style.color = color;
+  }
+
+  // ---------- fields ----------
+  function lineItemsTotal() {
+    return lineItems.reduce((s, i) => s + Number(i.quantity || 0) * Number(i.unit_price || 0), 0);
+  }
+  function effectiveTotal() {
+    if (lineItems.length) return lineItemsTotal();
+    if (admin && totalEl) return parseMoney(totalEl.value) || 0;
+    return Number(current.total_due || 0);
+  }
+  function collectFields() {
+    const payload = {
+      title: titleEl.value.trim() || 'New Job',
+      status: statusEl.value,
+      scope_of_work: scopeEl.value
+    };
+    if (admin) {
+      if (!lineItems.length && totalEl) payload.total_due = parseMoney(totalEl.value) || 0;
+      // With itemized costs the server keeps job_cost = their sum.
+      if (costEl && !hasItemizedCosts()) payload.job_cost = parseMoney(costEl.value) || 0;
+    }
+    return payload;
+  }
+  // Last-saved values of the job's own fields, compared by value so key
+  // order never matters.
+  let savedFields = collectFields();
+  function sameFields(a, b) {
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    return [...keys].every(k => String(a[k]) === String(b[k]));
+  }
+
+  function pendingPayment() {
+    if (!paymentEl) return 0;
+    const v = parseMoney(paymentEl.value);
+    return v > 0 ? v : 0;
+  }
+  function lineDraft() {
+    if (!lineForm || lineForm.hidden) return null;
+    const description = $('#li-description').value.trim();
+    const unitPrice = parseMoney($('#li-unit-price').value) || 0;
+    if (!description && !unitPrice) return null;
+    return {
+      description: description || 'Line item',
+      quantity: parseMoney($('#li-quantity').value) || 1,
+      unit_price: unitPrice,
+      category: $('#li-category').value
+    };
+  }
+  function openNoteEdits() {
+    return [...panel.querySelectorAll('textarea.job-note-edit-textarea')]
+      .filter(ta => ta.dataset.noteId && ta.value.trim() && ta.value.trim() !== (ta.dataset.original || ''));
+  }
+  function hasUnsavedWork() {
+    return !sameFields(collectFields(), savedFields) ||
+      pendingPayment() > 0 ||
+      Boolean(noteInput && noteInput.value.trim()) ||
+      Boolean(lineDraft()) ||
+      Boolean(expenseDraft()) ||
+      openNoteEdits().length > 0;
+  }
+  function refreshDirtyChip() {
+    if (closing) return;
+    setJobStatusChip(pending.size ? 'saving' : (hasUnsavedWork() ? 'unsaved' : 'saved'));
+  }
+
+  // ---------- money ----------
+  function renderMoney() {
+    const total = effectiveTotal();
+    const paid = Number(current.amount_paid || 0);
+    const balance = total - paid;
+    const set = (sel, text) => { const el = $(sel); if (el) el.textContent = text; };
+    set('#job-total-display', '$' + formatMoney(total));
+    set('#job-paid-display', '$' + formatMoney(paid));
+    set('#job-balance-display', '$' + formatMoney(balance));
+    const balanceTile = $('#job-balance-tile');
+    if (balanceTile) balanceTile.classList.toggle('is-due', balance > 0.005);
+    if (admin) {
+      const cost = costEl ? (parseMoney(costEl.value) || 0) : Number(current.job_cost || 0);
+      const profit = total - cost;
+      set('#job-cost-display', '$' + formatMoney(cost));
+      set('#job-profit-display', '$' + formatMoney(profit));
+      set('#job-margin-display', total > 0 ? `Margin ${Math.round((profit / total) * 100)}%` : 'Margin —');
+      if (costEl) {
+        const itemized = hasItemizedCosts();
+        costEl.readOnly = itemized;
+        costEl.classList.toggle('is-computed', itemized);
+        const costHint = $('#job-cost-hint');
+        if (costHint) {
+          costHint.textContent = itemized
+            ? 'Calculated from the job costs below.'
+            : 'What the job costs you — or itemize it under Job Costs below.';
+        }
+      }
+      if (totalEl) {
+        const fromServices = lineItems.length > 0;
+        totalEl.readOnly = fromServices;
+        totalEl.classList.toggle('is-computed', fromServices);
+        if (fromServices && document.activeElement !== totalEl) totalEl.value = formatMoney(total);
+        const hint = $('#job-total-hint');
+        if (hint) {
+          hint.textContent = fromServices
+            ? 'Calculated from the services below.'
+            : 'Type a total, or add services below to calculate it.';
         }
       }
     }
-    const paymentEl = overlay.querySelector('#job-payment-input');
-    if (paymentEl) {
-      const raw = paymentEl.value.trim();
-      if (raw) {
-        const amount = parseMoney(raw);
-        if (Number.isFinite(amount) && amount > 0) {
-          try {
-            await window.api.addJobPayment(job.id, amount);
-            if (onSave) await onSave();
-          } catch (err) {
-            console.error(err);
-            showToast('Failed to save payment', 'error');
-          }
+  }
+  // The server recalculates the job total whenever its services change, so
+  // mirror that here: update the Job Total field too (it would otherwise keep
+  // the old services total after the last service is removed) and record
+  // the new total as already saved.
+  function syncTotalFromServices() {
+    const total = lineItemsTotal();
+    current.total_due = total;
+    current.balance = total - Number(current.amount_paid || 0);
+    if (totalEl) totalEl.value = formatMoney(total);
+    const now = collectFields();
+    if ('total_due' in now) savedFields.total_due = now.total_due;
+    else delete savedFields.total_due;
+    renderMoney();
+  }
+
+  // ---------- payments (admin) ----------
+  async function recordPayment(amount) {
+    const res = await window.api.addJobPayment(current.id, amount);
+    current = { ...current, ...res.job };
+    sessionPayments.push(amount);
+    if (paymentEl) paymentEl.value = '';
+    renderMoney();
+    triggerFinanceUpdate();
+    loadPayments();
+  }
+
+  function lastUndoablePayment() {
+    if (paymentHistory.supported && paymentHistory.payments.length) {
+      const ordered = paymentHistory.payments.slice()
+        .sort((a, b) => new Date(a.payment_date) - new Date(b.payment_date) || a.id - b.id);
+      const stack = [];
+      ordered.forEach(p => {
+        if (p.amount > 0) {
+          stack.push(p.amount);
+        } else {
+          const idx = stack.lastIndexOf(-p.amount);
+          if (idx >= 0) stack.splice(idx, 1); else stack.pop();
         }
+      });
+      if (stack.length) return stack[stack.length - 1];
+    }
+    return sessionPayments.length ? sessionPayments[sessionPayments.length - 1] : 0;
+  }
+
+  async function loadPayments() {
+    const list = $('#job-payments-list');
+    if (!admin || !list) return;
+    paymentHistory = await window.api.listJobPayments(current.id);
+    const rows = paymentHistory.supported ? paymentHistory.payments : [];
+    const ledgerSum = rows.reduce((s, p) => s + Number(p.amount || 0), 0);
+    const earlier = Number(current.amount_paid || 0) - ledgerSum;
+    const items = rows.map(p => `
+      <div class="job-payment-item${p.amount < 0 ? ' is-correction' : ''}">
+        <span>${formatShortDate(p.payment_date)}</span>
+        <span>${p.amount < 0 ? 'Correction' : 'Payment'}</span>
+        <strong>${p.amount < 0 ? '−' : ''}$${formatMoney(Math.abs(p.amount))}</strong>
+      </div>`);
+    if (paymentHistory.supported && earlier > 0.005) {
+      items.push(`<div class="job-payment-item"><span>Earlier</span><span>Recorded before payment history</span><strong>$${formatMoney(earlier)}</strong></div>`);
+    }
+    list.innerHTML = items.join('');
+  }
+
+  const addPaymentBtn = $('#job-add-payment-btn');
+  if (addPaymentBtn) {
+    addPaymentBtn.onclick = async () => {
+      const amount = pendingPayment();
+      if (!amount) { showToast('Enter a payment amount', 'error'); return; }
+      addPaymentBtn.disabled = true;
+      try {
+        await track(recordPayment(amount));
+        showToast(`Payment of $${formatMoney(amount)} recorded`, 'success');
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Failed to add payment', 'error');
+      } finally {
+        addPaymentBtn.disabled = false;
       }
+    };
+  }
+
+  const undoPaymentBtn = $('#job-undo-payment-btn');
+  if (undoPaymentBtn) {
+    undoPaymentBtn.onclick = async () => {
+      const amount = lastUndoablePayment();
+      if (!amount) {
+        showToast('No payment to undo', 'info');
+        return;
+      }
+      if (!confirm(`Undo the $${formatMoney(amount)} payment?\n\nIt is recorded as a correction, so the payment history stays intact.`)) return;
+      undoPaymentBtn.disabled = true;
+      try {
+        const res = await track(window.api.reverseJobPayment(current.id, amount));
+        current = { ...current, ...res.job };
+        if (!paymentHistory.supported) sessionPayments.pop();
+        renderMoney();
+        triggerFinanceUpdate();
+        await loadPayments();
+        showToast('Payment undone', 'success');
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Failed to undo payment', 'error');
+      } finally {
+        undoPaymentBtn.disabled = false;
+      }
+    };
+  }
+
+  // ---------- services (line items) ----------
+  function renderLineItems() {
+    const list = $('#job-line-items-list');
+    if (!list) return;
+    if (!lineItems.length) {
+      list.innerHTML = `<div class="field-hint">No services yet. Use “+ Service” to add work from your service list${admin ? ', or add a custom line item' : ''}.</div>`;
+      return;
+    }
+    if (admin) {
+      list.innerHTML = `
+        <div class="job-services-table">
+          <div class="job-services-head" aria-hidden="true"><span>Service</span><span>Category</span><span>Qty</span><span>Price</span><span>Amount</span><span></span></div>
+          ${lineItems.map(i => `
+          <div class="job-service-row" data-id="${i.id}">
+            <input class="li-edit" data-field="description" value="${escapeHtml(i.description)}" aria-label="Service description" maxlength="500">
+            <select class="li-edit" data-field="category" aria-label="Category for ${escapeHtml(i.description)}">
+              ${JOB_LINE_ITEM_CATEGORIES.map(c => `<option value="${c}" ${c === i.category ? 'selected' : ''}>${c}</option>`).join('')}
+            </select>
+            <input class="li-edit li-num" data-field="quantity" inputmode="decimal" value="${Number(i.quantity)}" aria-label="Quantity for ${escapeHtml(i.description)}">
+            <input class="li-edit li-num" data-field="unit_price" inputmode="decimal" value="${formatMoney(i.unit_price)}" aria-label="Price for ${escapeHtml(i.description)}">
+            <span class="li-amount">$${formatMoney(Number(i.quantity) * Number(i.unit_price))}</span>
+            <button type="button" class="li-remove" data-id="${i.id}" aria-label="Remove ${escapeHtml(i.description)}" title="Remove">&times;</button>
+          </div>`).join('')}
+          <div class="job-services-total">Services total <strong id="job-services-total">$${formatMoney(lineItemsTotal())}</strong></div>
+        </div>`;
+    } else {
+      list.innerHTML = `
+        <div class="job-services-table is-readonly">
+          ${lineItems.map(i => `
+          <div class="job-service-row">
+            <span class="li-desc">${escapeHtml(i.description || '(no description)')}</span>
+            <span class="li-qty">${Number(i.quantity)} × $${formatMoney(i.unit_price)}</span>
+            <span class="li-amount">$${formatMoney(Number(i.quantity) * Number(i.unit_price))}</span>
+          </div>`).join('')}
+          <div class="job-services-total">Services total <strong>$${formatMoney(lineItemsTotal())}</strong></div>
+        </div>`;
     }
   }
 
-  // Close
-  overlay.querySelector('#closeJobPanel').onclick = async () => {
-    await autoSaveBeforeClose();
-    overlay.remove();
+  async function loadLineItems() {
+    try {
+      const data = await window.api.listJobLineItems(current.id);
+      lineItems = data.lineItems || [];
+    } catch (err) {
+      console.error(err);
+      const list = $('#job-line-items-list');
+      if (list) list.innerHTML = '<div class="field-hint" style="color:var(--danger);">Failed to load services.</div>';
+      return;
+    }
+    lineItemsLoaded = true;
+    renderLineItems();
+    renderMoney();
+    if (!userEdited) savedFields = collectFields();
+    refreshDirtyChip();
+  }
+
+  async function addLineItems(items) {
+    if (!lineItemsLoaded) await loadLineItems();
+    // The first time services are added, don't silently drop a hand-entered
+    // total: offer to keep it as its own line.
+    if (!lineItems.length) {
+      const manualTotal = totalEl ? parseMoney(totalEl.value) : Number(current.total_due || 0);
+      if (manualTotal > 0.005) {
+        const keep = confirm(
+          `This job's total ($${formatMoney(manualTotal)}) was entered by hand. Once a job has services, its total is the sum of its services.\n\n` +
+          `OK — keep $${formatMoney(manualTotal)} as its own line so the total doesn't drop.\n` +
+          `Cancel — replace it with the services' prices.`
+        );
+        if (keep) {
+          items = [{ description: 'Job total (entered before services)', quantity: 1, unit_price: manualTotal, category: 'Miscellaneous' }].concat(items);
+        }
+      }
+    }
+    const res = await track(window.api.addJobLineItemsBulk(current.id, items));
+    lineItems = lineItems.concat(res.lineItems || []);
+    renderLineItems();
+    syncTotalFromServices();
+    triggerFinanceUpdate();
+  }
+
+  const serviceList = $('#job-line-items-list');
+  if (admin && serviceList) {
+    // Live amounts while typing; saved when the field is left (change event).
+    serviceList.addEventListener('input', (e) => {
+      const input = e.target.closest('.li-edit');
+      if (!input) return;
+      const row = input.closest('.job-service-row');
+      const item = lineItems.find(i => Number(i.id) === Number(row.dataset.id));
+      if (!item || (input.dataset.field !== 'quantity' && input.dataset.field !== 'unit_price')) return;
+      const qty = parseMoney(row.querySelector('[data-field="quantity"]').value);
+      const price = parseMoney(row.querySelector('[data-field="unit_price"]').value);
+      row.querySelector('.li-amount').textContent = '$' + formatMoney(qty * price);
+      const draftTotal = lineItems.reduce((s, i) => s + (i === item ? qty * price : Number(i.quantity) * Number(i.unit_price)), 0);
+      const totalOut = $('#job-services-total');
+      if (totalOut) totalOut.textContent = '$' + formatMoney(draftTotal);
+    });
+
+    serviceList.addEventListener('change', (e) => {
+      const input = e.target.closest('.li-edit');
+      if (!input) return;
+      const row = input.closest('.job-service-row');
+      const id = Number(row.dataset.id);
+      const item = lineItems.find(i => Number(i.id) === id);
+      if (!item) return;
+      const field = input.dataset.field;
+      let value = input.value;
+      if (field === 'quantity' || field === 'unit_price') value = parseMoney(value);
+      if (field === 'description') value = value.trim();
+      if (String(item[field]) === String(value)) return;
+      track((async () => {
+        try {
+          const res = await window.api.updateJobLineItem(current.id, id, { [field]: value });
+          const idx = lineItems.findIndex(i => Number(i.id) === id);
+          if (idx >= 0) lineItems[idx] = res.lineItem;
+          syncTotalFromServices();
+          if (field === 'unit_price') input.value = formatMoney(res.lineItem.unit_price);
+          const totalOut = $('#job-services-total');
+          if (totalOut) totalOut.textContent = '$' + formatMoney(lineItemsTotal());
+          triggerFinanceUpdate();
+        } catch (err) {
+          console.error(err);
+          showToast(err.message || 'Failed to update service', 'error');
+          renderLineItems();
+          throw err;
+        }
+      })()).catch(() => {});
+    });
+
+    serviceList.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.li-remove');
+      if (!btn) return;
+      const id = Number(btn.dataset.id);
+      const item = lineItems.find(i => Number(i.id) === id);
+      if (!confirm(`Remove "${(item && item.description) || 'this service'}" from this job?`)) return;
+      try {
+        await track(window.api.deleteJobLineItem(current.id, id));
+        lineItems = lineItems.filter(i => Number(i.id) !== id);
+        renderLineItems();
+        syncTotalFromServices();
+        triggerFinanceUpdate();
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Failed to remove service', 'error');
+      }
+    });
+  }
+
+  $('#job-add-service-btn').onclick = () => {
+    openServicePresetPicker({
+      heading: admin ? 'Add services to this job' : 'Add services to the scope of work',
+      onConfirm: async (services) => {
+        if (admin) {
+          await addLineItems(services.map(s => ({
+            description: s.name,
+            quantity: 1,
+            unit_price: Number(s.defaultRate || 0),
+            category: DEFAULT_SERVICE_CATEGORY
+          })));
+          showToast(`${services.length} service${services.length === 1 ? '' : 's'} added`, 'success');
+        } else {
+          // Regular users can't set prices, so their services go into the
+          // scope of work (saved with the job).
+          const lines = services.map(s => `- ${s.name}`).join('\n');
+          scopeEl.value = scopeEl.value.trim() ? scopeEl.value.replace(/\s+$/, '') + '\n' + lines : lines;
+          userEdited = true;
+          refreshDirtyChip();
+          showToast('Added to the scope of work', 'success');
+        }
+      }
+    });
   };
-  overlay.addEventListener('click', async (e) => {
-    if (e.target === overlay) {
-      await autoSaveBeforeClose();
-      overlay.remove();
-    }
-  });
 
-  // ===== Job tags =====
-  const tagsListEl = overlay.querySelector('#job-tags-list');
-  const tagInput = overlay.querySelector('#job-tag-input');
+  const addLineBtn = $('#job-add-line-btn');
+  if (addLineBtn && lineForm) {
+    addLineBtn.onclick = () => {
+      lineForm.hidden = !lineForm.hidden;
+      if (!lineForm.hidden) $('#li-description').focus();
+    };
+    $('#li-add-btn').onclick = async () => {
+      const draft = lineDraft();
+      if (!draft) { showToast('Enter a description or a price', 'error'); return; }
+      const btn = $('#li-add-btn');
+      btn.disabled = true;
+      try {
+        await addLineItems([draft]);
+        $('#li-description').value = '';
+        $('#li-quantity').value = '1';
+        $('#li-unit-price').value = '';
+        showToast('Line item added', 'success');
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Failed to add line item', 'error');
+      } finally {
+        btn.disabled = false;
+        refreshDirtyChip();
+      }
+    };
+  }
+
+  // ---------- tags ----------
+  const tagsListEl = $('#job-tags-list');
+  const tagInput = $('#job-tag-input');
   let currentTags = tags.slice();
-
   function renderTags() {
     tagsListEl.innerHTML = currentTags.map((t) =>
-      `<span class="job-tag-chip">${escapeHtml(t)}<button type="button" class="job-tag-remove" data-tag="${escapeHtml(t)}">&times;</button></span>`
+      `<span class="job-tag-chip">${escapeHtml(t)}<button type="button" class="job-tag-remove" data-tag="${escapeHtml(t)}" aria-label="Remove tag ${escapeHtml(t)}">&times;</button></span>`
     ).join('');
     tagsListEl.querySelectorAll('.job-tag-remove').forEach((btn) => {
       btn.onclick = () => saveTags(currentTags.filter((t) => t !== btn.dataset.tag));
     });
   }
-
   async function saveTags(nextTags) {
     try {
-      const result = await window.api.updateJobTags(job.id, nextTags);
+      const result = await track(window.api.updateJobTags(current.id, nextTags));
       currentTags = (result.job && result.job.tags) || nextTags;
       renderTags();
     } catch (err) {
@@ -3579,123 +4396,437 @@ function openJobPanel(job, clientId, onSave) {
       showToast('Failed to update tags', 'error');
     }
   }
-
-  tagsListEl.querySelectorAll('.job-tag-remove').forEach((btn) => {
-    btn.onclick = () => saveTags(currentTags.filter((t) => t !== btn.dataset.tag));
-  });
-
   if (tagInput) {
     tagInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const value = tagInput.value.trim();
-        if (value && !currentTags.includes(value)) {
-          saveTags([...currentTags, value]);
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const value = tagInput.value.trim();
+      if (value && !currentTags.includes(value)) saveTags([...currentTags, value]);
+      tagInput.value = '';
+    });
+  }
+  renderTags();
+
+  // ---------- client-level files inside Documents ----------
+  async function renderClientFilesInJob() {
+    const box = $('#job-client-files');
+    if (!box) return;
+    if (!activeClientFiles.length) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = `
+      <div class="job-client-files-title">Client files <span>— uploaded to the client before jobs; shared by all of this client's jobs</span></div>
+      <div class="job-client-files-list"></div>`;
+    renderClientFileRows(box.querySelector('.job-client-files-list'), clientId, activeClientFiles, async () => {
+      try {
+        activeClientFiles = (await window.api.listPDFs(clientId)).files || [];
+      } catch (e) { /* keep the old list */ }
+      renderClientFilesInJob();
+    });
+  }
+
+  // ---------- job costs (itemized expenses with categories; admin) ----------
+  // A job's itemized costs ARE its Job Cost: the server keeps jobs.job_cost
+  // equal to their sum, so profit/margin/client totals use the same figure.
+  function hasItemizedCosts() {
+    return expenseState.supported && expenseState.expenses.length > 0;
+  }
+
+  function activeCategories() {
+    return expenseState.categories.filter(c => c.is_active);
+  }
+
+  function categoryOptions(selectedId, { allowUncategorized = false } = {}) {
+    const opts = activeCategories().map(c =>
+      `<option value="${c.id}" ${Number(selectedId) === Number(c.id) ? 'selected' : ''}>${escapeHtml(c.name)}</option>`);
+    // An expense in a since-deactivated category keeps showing it.
+    const current = expenseState.categories.find(c => Number(c.id) === Number(selectedId));
+    if (current && !current.is_active) {
+      opts.push(`<option value="${current.id}" selected>${escapeHtml(current.name)} (inactive)</option>`);
+    }
+    if (allowUncategorized) {
+      opts.push(`<option value="" ${selectedId === null || selectedId === undefined ? 'selected' : ''}>Uncategorized</option>`);
+    }
+    return opts.join('');
+  }
+
+  function expenseDraft() {
+    if (!expenseState.supported) return null;
+    const desc = $('#exp-description');
+    const amount = $('#exp-amount');
+    if (!desc || !amount) return null;
+    const value = parseMoney(amount.value);
+    if (!desc.value.trim() && !(value > 0)) return null;
+    const cat = $('#exp-category');
+    return {
+      description: desc.value.trim() || 'Cost',
+      amount: value || 0,
+      category_id: cat && cat.value ? Number(cat.value) : null
+    };
+  }
+
+  function renderExpenses() {
+    const body = $('#job-expenses-body');
+    if (!body) return;
+    if (!expenseState.supported) {
+      body.innerHTML = `<p class="field-hint">${escapeHtml(expenseState.message || 'Itemized costs are not available yet.')} Until then, enter the cost in Job Cost above.</p>`;
+      return;
+    }
+    const { expenses, breakdown } = expenseState;
+    const totalCost = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+    const breakdownHtml = expenses.length ? `
+      <div class="job-cost-breakdown" aria-label="Costs by category">
+        ${breakdown.map(b => `
+          <div class="job-cost-cat">
+            <span class="job-cost-cat-name">${escapeHtml(b.name)}${b.category_id !== null && !b.is_active ? ' <span class="job-cost-inactive">(inactive)</span>' : ''}</span>
+            <strong>$${formatMoney(b.total)}</strong>
+          </div>`).join('')}
+        <div class="job-cost-cat job-cost-total"><span>Total Cost</span><strong id="job-costs-total">$${formatMoney(totalCost)}</strong></div>
+      </div>` : '<p class="field-hint">No itemized costs yet. Add each cost with a category — the job cost becomes their total.</p>';
+
+    const rowsHtml = expenses.length ? `
+      <div class="job-expenses-table">
+        <div class="job-expenses-head" aria-hidden="true"><span>Cost</span><span>Category</span><span>Amount</span><span></span></div>
+        ${expenses.map(e => `
+        <div class="job-expense-row" data-id="${e.id}">
+          <input class="exp-edit" data-field="description" value="${escapeHtml(e.description)}" maxlength="500" aria-label="Cost description">
+          <select class="exp-edit" data-field="category_id" aria-label="Category for ${escapeHtml(e.description)}">${categoryOptions(e.category_id, { allowUncategorized: true })}</select>
+          <input class="exp-edit exp-amount" data-field="amount" inputmode="decimal" value="${formatMoney(e.amount)}" aria-label="Amount for ${escapeHtml(e.description)}">
+          <button type="button" class="exp-remove" data-id="${e.id}" aria-label="Remove ${escapeHtml(e.description)}" title="Remove">&times;</button>
+        </div>`).join('')}
+      </div>` : '';
+
+    const hadDraft = {
+      description: $('#exp-description') ? $('#exp-description').value : '',
+      amount: $('#exp-amount') ? $('#exp-amount').value : '',
+      category: $('#exp-category') ? $('#exp-category').value : ''
+    };
+    body.innerHTML = breakdownHtml + rowsHtml + `
+      <div class="job-expense-add-grid">
+        <input id="exp-description" type="text" placeholder="Cost (e.g. 40 bundles of shingles)" aria-label="New cost description" maxlength="500">
+        <select id="exp-category" aria-label="New cost category">${categoryOptions(activeCategories()[0] ? activeCategories()[0].id : null, { allowUncategorized: !activeCategories().length })}</select>
+        <input id="exp-amount" type="text" inputmode="decimal" placeholder="Amount" aria-label="New cost amount">
+        <button type="button" id="exp-add-btn" class="btn-primary">Add Cost</button>
+      </div>`;
+    $('#exp-description').value = hadDraft.description;
+    $('#exp-amount').value = hadDraft.amount;
+    if (hadDraft.category && [...$('#exp-category').options].some(o => o.value === hadDraft.category)) {
+      $('#exp-category').value = hadDraft.category;
+    }
+    applyMoneyInputBehavior($('#exp-amount'));
+    body.querySelectorAll('.exp-amount').forEach(el => applyMoneyInputBehavior(el));
+    $('#exp-add-btn').onclick = addDraftExpense;
+  }
+
+  // Applies a server response (expenses, breakdown, categories and the
+  // job's recalculated cost) and keeps the Job Cost field in step.
+  function applyExpenseResponse(data) {
+    expenseState = {
+      ...expenseState,
+      supported: data.supported !== false,
+      message: data.message || '',
+      loaded: true,
+      expenses: data.expenses || [],
+      breakdown: data.breakdown || [],
+      categories: data.categories || expenseState.categories
+    };
+    if (data.job) {
+      current.job_cost = Number(data.job.job_cost || 0);
+    } else if (hasItemizedCosts()) {
+      current.job_cost = expenseState.expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+    }
+    if (costEl && hasItemizedCosts()) {
+      costEl.value = formatMoney(current.job_cost);
+    }
+    const now = collectFields();
+    if ('job_cost' in now) savedFields.job_cost = now.job_cost;
+    else delete savedFields.job_cost;
+    renderExpenses();
+    renderMoney();
+    refreshDirtyChip();
+  }
+
+  async function loadExpenses() {
+    if (!admin) return;
+    try {
+      applyExpenseResponse(await window.api.listJobExpenses(current.id));
+    } catch (err) {
+      console.error(err);
+      const body = $('#job-expenses-body');
+      if (body) body.innerHTML = '<div class="field-hint" style="color:var(--danger-text);">Failed to load job costs.</div>';
+    }
+  }
+
+  async function addExpense(draft) {
+    const hadTypedCost = !hasItemizedCosts() && Number(current.job_cost || 0) > 0.005;
+    const typedCost = Number(current.job_cost || 0);
+    const data = await track(window.api.addJobExpense(current.id, draft));
+    applyExpenseResponse(data);
+    triggerFinanceUpdate();
+    if (hadTypedCost) {
+      showToast(`The job's earlier cost of $${formatMoney(typedCost)} was kept as an Uncategorized cost.`, 'info', 4500);
+    }
+  }
+
+  async function addDraftExpense() {
+    const draft = expenseDraft();
+    if (!draft) { showToast('Enter a cost description and amount', 'error'); return; }
+    // A typed-but-unsaved Job Cost is saved first so it's the figure kept.
+    if (costEl && !hasItemizedCosts() && !sameFields(collectFields(), savedFields)) {
+      const res = await window.api.updateJob(current.id, collectFields());
+      current = { ...current, ...res.job };
+      savedFields = collectFields();
+    }
+    const btn = $('#exp-add-btn');
+    if (btn) btn.disabled = true;
+    try {
+      await addExpense(draft);
+      $('#exp-description').value = '';
+      $('#exp-amount').value = '';
+      showToast('Cost added', 'success');
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Failed to add cost', 'error');
+    } finally {
+      const again = $('#exp-add-btn');
+      if (again) again.disabled = false;
+      refreshDirtyChip();
+    }
+  }
+
+  const expensesBody = $('#job-expenses-body');
+  if (expensesBody) {
+    // Live Total Cost while an amount is being typed; saved on change.
+    expensesBody.addEventListener('input', (e) => {
+      const input = e.target.closest('.exp-amount');
+      if (!input) return;
+      const row = input.closest('.job-expense-row');
+      const draftTotal = expenseState.expenses.reduce((s, x) =>
+        s + (Number(x.id) === Number(row.dataset.id) ? parseMoney(input.value) : Number(x.amount || 0)), 0);
+      const out = $('#job-costs-total');
+      if (out) out.textContent = '$' + formatMoney(draftTotal);
+    });
+
+    expensesBody.addEventListener('change', (e) => {
+      const input = e.target.closest('.exp-edit');
+      if (!input) return;
+      const row = input.closest('.job-expense-row');
+      const id = Number(row.dataset.id);
+      const expense = expenseState.expenses.find(x => Number(x.id) === id);
+      if (!expense) return;
+      const field = input.dataset.field;
+      let value = input.value;
+      if (field === 'amount') value = parseMoney(value);
+      if (field === 'description') value = value.trim();
+      if (field === 'category_id') value = value === '' ? null : Number(value);
+      if (String(expense[field]) === String(value)) return;
+      track((async () => {
+        try {
+          applyExpenseResponse(await window.api.updateJobExpense(current.id, id, { [field]: value }));
+          triggerFinanceUpdate();
+        } catch (err) {
+          console.error(err);
+          showToast(err.message || 'Failed to update cost', 'error');
+          renderExpenses();
+          throw err;
         }
-        tagInput.value = '';
+      })()).catch(() => {});
+    });
+
+    expensesBody.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.exp-remove');
+      if (!btn) return;
+      const expense = expenseState.expenses.find(x => Number(x.id) === Number(btn.dataset.id));
+      if (!confirm(`Remove the cost "${(expense && expense.description) || 'this cost'}"? The job's cost goes down by $${formatMoney(expense ? expense.amount : 0)}.`)) return;
+      try {
+        applyExpenseResponse(await track(window.api.deleteJobExpense(current.id, btn.dataset.id)));
+        triggerFinanceUpdate();
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || 'Failed to remove cost', 'error');
+      }
+    });
+
+    expensesBody.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.target.id === 'exp-description' || e.target.id === 'exp-amount')) {
+        e.preventDefault();
+        addDraftExpense();
       }
     });
   }
 
-  // ===== Line items (admin only) =====
-  const lineItemsListEl = overlay.querySelector('#job-line-items-list');
-  if (admin && lineItemsListEl) {
-    setupJobLineItems(overlay, job.id);
+  // ---------- save / close ----------
+  async function flush() {
+    await Promise.allSettled([...pending]);
+    const draft = admin ? lineDraft() : null;
+    if (draft) {
+      await addLineItems([draft]);
+      $('#li-description').value = '';
+      $('#li-unit-price').value = '';
+    }
+    const costDraft = admin ? expenseDraft() : null;
+    if (costDraft) {
+      await addExpense(costDraft);
+      $('#exp-description').value = '';
+      $('#exp-amount').value = '';
+    }
+    const payload = collectFields();
+    if (!sameFields(payload, savedFields)) {
+      const res = await window.api.updateJob(current.id, payload);
+      current = { ...current, ...res.job };
+      savedFields = collectFields();
+    }
+    const amount = admin ? pendingPayment() : 0;
+    if (amount > 0) await recordPayment(amount);
+    for (const ta of openNoteEdits()) {
+      await window.api.updateJobNote(current.id, ta.dataset.noteId, ta.value.trim());
+      ta.dataset.original = ta.value.trim();
+    }
+    if (noteInput && noteInput.value.trim()) {
+      await window.api.addJobNote(current.id, noteInput.value.trim());
+      noteInput.value = '';
+      if (notesApi) notesApi.reload();
+    }
+    renderMoney();
   }
 
-  // ===== Job notes, documents, photos =====
-  setupJobNotesSection(overlay, job.id);
-  setupJobFilesSection(overlay, job.id, 'document');
-  setupJobFilesSection(overlay, job.id, 'photo');
-
-  // Save
-  overlay.querySelector('#job-save-btn').onclick = async () => {
-    const btn = overlay.querySelector('#job-save-btn');
+  async function saveAndClose() {
+    if (closing) return;
+    closing = true;
+    setJobStatusChip('saving');
     try {
-      btn.disabled = true; btn.textContent = 'Saving...';
-      const payload = {
-        title: overlay.querySelector('#job-title').value.trim() || 'New Job',
-        status: overlay.querySelector('#job-status').value,
-        scope_of_work: overlay.querySelector('#job-scope').value
-      };
-      if (admin) {
-        payload.total_due = parseMoney(overlay.querySelector('#job-total')?.value) || 0;
-        payload.job_cost = parseMoney(overlay.querySelector('#job-cost')?.value) || 0;
-      }
-      await window.api.updateJob(job.id, payload);
+      await flush();
+    } catch (err) {
+      console.error(err);
+      closing = false;
+      setJobStatusChip('error');
+      showToast(`Couldn't save this job: ${err.message}. It's still open, so nothing is lost.`, 'error');
+      return;
+    }
+    panel.remove();
+    triggerFinanceUpdate();
+    if (onSave) await onSave();
+  }
+  panel._requestClose = saveAndClose;
+  $('#closeJobPanel').onclick = saveAndClose;
+  panel.addEventListener('click', (e) => {
+    if (e.target === panel) saveAndClose();
+  });
+
+  panel.addEventListener('input', (e) => {
+    if (e.target.closest('#job-line-items-list, #job-tag-input')) return;
+    userEdited = true;
+    if (e.target === totalEl || e.target === costEl) renderMoney();
+    refreshDirtyChip();
+  });
+  panel.addEventListener('change', () => refreshDirtyChip());
+
+  const saveBtn = $('#job-save-btn');
+  saveBtn.onclick = async () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    setJobStatusChip('saving');
+    try {
+      await flush();
+      setJobStatusChip('saved');
       showToast('Job saved', 'success');
       if (onSave) await onSave();
     } catch (err) {
       console.error(err);
-      showToast('Failed to save job', 'error');
+      setJobStatusChip('error');
+      showToast(err.message || 'Failed to save job', 'error');
     } finally {
-      btn.disabled = false; btn.textContent = 'Save Job';
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Job';
+      refreshDirtyChip();
     }
   };
 
-  // Add payment (admin only — button doesn't exist otherwise)
-  const addPaymentBtn = overlay.querySelector('#job-add-payment-btn');
-  if (addPaymentBtn) {
-    addPaymentBtn.onclick = async () => {
-      const amount = parseMoney(overlay.querySelector('#job-payment-input').value);
-      if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
-      try {
-        const result = await window.api.addJobPayment(job.id, amount);
-        overlay.remove();
-        openJobPanel(result.job, clientId, onSave);
-        if (onSave) await onSave();
-        showToast('Payment added', 'success');
-      } catch (err) {
-        console.error(err);
-        showToast('Failed to add payment', 'error');
-      }
-    };
-  }
-
   // Estimate / Invoice — available to any user with access to this job;
-  // these PDFs never include job_cost/profit/margin.
-  const jobEstimateBtn = overlay.querySelector('#job-estimate-btn');
-  if (jobEstimateBtn) {
-    jobEstimateBtn.onclick = async () => {
+  // these PDFs never include job_cost/profit/margin. Pending edits are saved
+  // first so the document matches what's on screen.
+  function wireDocButton(btn, mode) {
+    if (!btn) return;
+    const label = btn.textContent;
+    btn.onclick = async () => {
       try {
-        jobEstimateBtn.disabled = true; jobEstimateBtn.textContent = 'Downloading...';
-        await window.api.sendJobEstimate(job.id);
-        showToast('Estimate downloaded', 'success');
+        btn.disabled = true;
+        btn.textContent = 'Downloading...';
+        await flush();
+        if (mode === 'estimate') await window.api.sendJobEstimate(current.id);
+        else await window.api.sendJobInvoice(current.id);
+        showToast(mode === 'estimate' ? 'Estimate downloaded' : 'Invoice downloaded', 'success');
       } catch (err) {
-        showToast(err.message || 'Failed to generate estimate', 'error');
+        showToast(err.message || `Failed to generate ${mode}`, 'error');
       } finally {
-        jobEstimateBtn.disabled = false; jobEstimateBtn.textContent = 'Download Estimate';
+        btn.disabled = false;
+        btn.textContent = label;
+        refreshDirtyChip();
       }
     };
   }
+  wireDocButton($('#job-estimate-btn'), 'estimate');
+  wireDocButton($('#job-invoice-btn'), 'invoice');
 
-  const jobInvoiceBtn = overlay.querySelector('#job-invoice-btn');
-  if (jobInvoiceBtn) {
-    jobInvoiceBtn.onclick = async () => {
-      try {
-        jobInvoiceBtn.disabled = true; jobInvoiceBtn.textContent = 'Downloading...';
-        await window.api.sendJobInvoice(job.id);
-        showToast('Invoice downloaded', 'success');
-      } catch (err) {
-        showToast(err.message || 'Failed to generate invoice', 'error');
-      } finally {
-        jobInvoiceBtn.disabled = false; jobInvoiceBtn.textContent = 'Download Invoice';
-      }
-    };
-  }
-
-  // Delete
-  overlay.querySelector('#job-delete-btn').onclick = async () => {
-    if (!confirm('Permanently delete this job?')) return;
+  const duplicateBtn = $('#job-duplicate-btn');
+  duplicateBtn.onclick = async () => {
+    duplicateBtn.disabled = true;
     try {
-      await window.api.deleteJob(job.id);
-      overlay.remove();
+      await flush();
+      if (!lineItemsLoaded) await loadLineItems();
+      const payload = {
+        client_id: clientId,
+        title: nextRecurringTitle(current.title),
+        status: 'Prospect',
+        scope_of_work: current.scope_of_work || ''
+      };
+      if (admin) {
+        if (lineItems.length) payload.line_items = copyLineItems(lineItems);
+        else payload.total_due = Number(current.total_due || 0);
+        if (hasItemizedCosts()) payload.expenses = copyExpenses(expenseState.expenses);
+        else payload.job_cost = Number(current.job_cost || 0);
+      } else if (lineItems.length && !payload.scope_of_work.trim()) {
+        payload.scope_of_work = scopeFromLineItems(lineItems);
+      }
+      const res = await window.api.createJob(payload);
+      showToast(`Created “${res.job.title}”`, 'success');
+      panel.remove();
+      triggerFinanceUpdate();
+      if (onSave) await onSave();
+      openJobPanel(res.job, clientId, onSave);
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Failed to duplicate job', 'error');
+      duplicateBtn.disabled = false;
+    }
+  };
+
+  $('#job-delete-btn').onclick = async () => {
+    const paid = Number(current.amount_paid || 0);
+    const message = 'Permanently delete this job, including its services, files and notes?' +
+      (paid > 0 ? `\n\nThe $${formatMoney(paid)} received on it stays in the Finance payment history.` : '');
+    if (!confirm(message)) return;
+    try {
+      await window.api.deleteJob(current.id);
+      closing = true;
+      panel.remove();
+      triggerFinanceUpdate();
       if (onSave) await onSave();
       showToast('Job deleted', 'success');
     } catch (err) {
-      showToast('Failed to delete job', 'error');
+      console.error(err);
+      showToast(err.message || 'Failed to delete job', 'error');
     }
   };
+
+  // ---------- load ----------
+  renderMoney();
+  setupJobNotesSection(panel, current.id).then(api => { notesApi = api; });
+  setupJobFilesSection(panel, current.id, 'document');
+  setupJobFilesSection(panel, current.id, 'photo');
+  renderClientFilesInJob();
+  loadLineItems();
+  loadPayments();
+  loadExpenses();
 }
 
 // ======================================================
@@ -3740,6 +4871,10 @@ async function setupJobNotesSection(overlay, jobId) {
           textarea.className = 'job-note-edit-textarea';
           textarea.value = note.content || '';
           textarea.rows = 4;
+          textarea.setAttribute('aria-label', 'Edit note');
+          // Lets the job workspace save an edit left open when it closes.
+          textarea.dataset.noteId = note.id;
+          textarea.dataset.original = note.content || '';
 
           const saveBtn = document.createElement('button');
           saveBtn.type = 'button';
@@ -3800,6 +4935,7 @@ async function setupJobNotesSection(overlay, jobId) {
       addNoteBtn.disabled = true;
       await window.api.addJobNote(jobId, content);
       newNoteInput.value = '';
+      newNoteInput.dispatchEvent(new Event('input', { bubbles: true }));
       loadNotes();
     } catch (err) {
       console.error(err);
@@ -3810,6 +4946,7 @@ async function setupJobNotesSection(overlay, jobId) {
   };
 
   loadNotes();
+  return { reload: loadNotes };
 }
 
 // ======================================================
@@ -3925,84 +5062,6 @@ async function setupJobFilesSection(overlay, jobId, category) {
 }
 
 // ======================================================
-// JOB LINE ITEMS (Section 1) — admin-only cost breakdown with a
-// required Cost Type category per line: Labor, Materials, Commissions,
-// Meals/Drinks, Miscellaneous, Permits.
-// ======================================================
-async function setupJobLineItems(overlay, jobId) {
-  const listEl = overlay.querySelector('#job-line-items-list');
-  const addBtn = overlay.querySelector('#li-add-btn');
-  const descInput = overlay.querySelector('#li-description');
-  const categorySelect = overlay.querySelector('#li-category');
-  const qtyInput = overlay.querySelector('#li-quantity');
-  const priceInput = overlay.querySelector('#li-unit-price');
-  if (!listEl || !addBtn) return;
-
-  async function render() {
-    try {
-      const data = await window.api.listJobLineItems(jobId);
-      const items = data.lineItems || [];
-      if (items.length === 0) {
-        listEl.innerHTML = '<div class="field-hint">No line items yet. Add one below.</div>';
-        return;
-      }
-      const total = items.reduce((sum, i) => sum + Number(i.amount || 0), 0);
-      listEl.innerHTML = items.map((i) => `
-        <div class="job-line-item-row" data-id="${i.id}">
-          <span class="li-desc">${escapeHtml(i.description || '(no description)')}</span>
-          <span class="li-category-badge">${escapeHtml(i.category)}</span>
-          <span class="li-qty">${i.quantity} &times; $${formatMoney(i.unit_price)}</span>
-          <span class="li-amount">$${formatMoney(i.amount)}</span>
-          <button type="button" class="li-remove" data-id="${i.id}">&times;</button>
-        </div>
-      `).join('') + `<div class="job-line-item-total">Total: $${formatMoney(total)}</div>`;
-
-      listEl.querySelectorAll('.li-remove').forEach((btn) => {
-        btn.onclick = async () => {
-          try {
-            await window.api.deleteJobLineItem(jobId, btn.dataset.id);
-            await render();
-          } catch (err) {
-            showToast('Failed to remove line item', 'error');
-          }
-        };
-      });
-    } catch (err) {
-      console.error(err);
-      listEl.innerHTML = '<div class="field-hint">Failed to load line items.</div>';
-    }
-  }
-
-  addBtn.onclick = async () => {
-    const description = descInput.value.trim();
-    const quantity = parseMoney(qtyInput.value) || 1;
-    const unitPrice = parseMoney(priceInput.value) || 0;
-    const category = categorySelect.value;
-    try {
-      addBtn.disabled = true;
-      await window.api.addJobLineItem(jobId, {
-        description,
-        quantity,
-        unit_price: unitPrice,
-        category
-      });
-      descInput.value = '';
-      qtyInput.value = '1';
-      priceInput.value = '';
-      await render();
-      showToast('Line item added', 'success');
-    } catch (err) {
-      console.error(err);
-      showToast('Failed to add line item', 'error');
-    } finally {
-      addBtn.disabled = false;
-    }
-  };
-
-  await render();
-}
-
-// ======================================================
 // PDF UPLOAD BUTTON
 // ======================================================
 function setupPDFUploadButton() {
@@ -4047,92 +5106,24 @@ function setupPDFUploadButton() {
 }
 
 // ======================================================
-// PDF DISPLAY
+// PDF DISPLAY — client-level files (the client account's drop box)
 // ======================================================
 async function loadPDFs(clientId) {
   const container = document.getElementById("pdf-list");
   if (!container) return;
 
-  container.innerHTML = "";
   try {
     const data = await window.api.listPDFs(clientId);
-    if (!data.files || data.files.length === 0) {
-      container.innerHTML = `<div style="color:var(--text-muted); font-size:13px;">No PDFs uploaded yet.</div>`;
+    const files = data.files || [];
+    if (Number(clientId) === Number(activeId)) activeClientFiles = files;
+    if (!files.length) {
+      container.innerHTML = `<div class="field-hint">No client files uploaded.</div>`;
       return;
     }
-
-    data.files.forEach(file => {
-      const card = document.createElement("div");
-      card.style.display = "flex";
-      card.style.justifyContent = "space-between";
-      card.style.alignItems = "center";
-      card.style.background = "var(--surface, #ffffff)";
-      card.style.padding = "10px 14px";
-      card.style.borderRadius = "8px";
-      card.style.marginBottom = "8px";
-      card.style.border = "1px solid var(--border-soft, #e2e8f0)";
-      card.style.boxShadow = "none";
-      card.style.transition = "border-color 0.15s ease";
-
-      card.addEventListener("mouseenter", () => {
-        card.style.borderColor = "var(--border-strong, #cbd5e1)";
-      });
-
-      card.addEventListener("mouseleave", () => {
-        card.style.borderColor = "var(--border-soft, #e2e8f0)";
-      });
-
-      const name = document.createElement("div");
-      name.innerHTML = `<i data-lucide="file-text"></i> ${escapeHtml(file.name)}`;
-      name.style.fontWeight = "600";
-      name.style.fontSize = "14px";
-
-      const btnGroup = document.createElement("div");
-      btnGroup.style.display = "flex";
-      btnGroup.style.gap = "6px";
-
-      const openBtn = document.createElement("a");
-      openBtn.href = file.url;
-      openBtn.target = "_blank";
-      openBtn.innerText = "Open";
-      openBtn.style.background = "var(--primary)";
-      openBtn.style.color = "white";
-      openBtn.style.padding = "5px 12px";
-      openBtn.style.borderRadius = "6px";
-      openBtn.style.fontSize = "12px";
-      openBtn.style.textDecoration = "none";
-
-      const deleteBtn = document.createElement("button");
-      deleteBtn.innerText = "Delete";
-      deleteBtn.style.background = "#4a5568";
-      deleteBtn.style.color = "white";
-      deleteBtn.style.border = "none";
-      deleteBtn.style.padding = "5px 12px";
-      deleteBtn.style.borderRadius = "6px";
-      deleteBtn.style.fontSize = "12px";
-      deleteBtn.style.cursor = "pointer";
-
-      deleteBtn.onclick = async () => {
-        if (!confirm("Delete this PDF permanently?")) return;
-        try {
-          await window.api.deletePDF(clientId, file.name);
-          loadPDFs(clientId);
-        } catch (err) {
-          console.error(err);
-          showToast("Failed to delete file", "error");
-        }
-      };
-
-      btnGroup.appendChild(openBtn);
-      btnGroup.appendChild(deleteBtn);
-      card.appendChild(name);
-      card.appendChild(btnGroup);
-      container.appendChild(card);
-    });
-
-    if (window.lucide) window.lucide.createIcons();
+    renderClientFileRows(container, clientId, files, () => loadPDFs(clientId));
   } catch (err) {
     console.error(err);
+    container.innerHTML = `<div class="field-hint" style="color:var(--danger);">Failed to load files.</div>`;
   }
 }
 
@@ -4170,81 +5161,15 @@ function setupDropZone() {
 }
 
 // ======================================================
-// PANEL BUTTON HANDLER
+// PANEL BUTTON HANDLER (client overview). Money, estimates/invoices and the
+// undo stack for client-level amounts live in the client account workspace
+// (openClientAccountPanel) now.
 // ======================================================
 if (projectPanel) {
   projectPanel.addEventListener("click", async (e) => {
-    const target = e.target;
-
-    // ==============================
-// UNDO FINANCIAL CHANGE
-// ==============================
-if (target.id === "undoFinanceBtn") {
-  if (financeUndoStack.length === 0) {
-    showToast("Nothing to undo", "info");
-    return;
-  }
-
-  if (!confirm("Undo the last payment/total change?")) return;
-
-  const last = financeUndoStack.pop();
-
-  try {
-    await window.api.restoreFinanceState(last.clientId, {
-      total_due: last.total_due,
-      amount_paid: last.amount_paid,
-      balance: last.balance
-    });
-
-    await refreshList();
-    await openClient(last.clientId);
-
-    triggerFinanceUpdate();
-
-    showToast("Undo complete", "success");
-  } catch (err) {
-    console.error(err);
-    showToast("Undo failed", "error");
-  }
-
-  return;
-}
+    const target = e.target.closest("button") || e.target;
 
     if (target.id === "printBtn") printClientWorkspace();
-
-    if (target.id === "estimateBtn") {
-      if (!confirm("Download this client's estimate PDF?")) return;
-
-      try {
-        target.disabled = true;
-        target.textContent = "Downloading...";
-        await window.api.sendEstimate(activeId);
-        showToast("Estimate downloaded", "success");
-      } catch (err) {
-        console.error(err);
-        showToast(err.message || "Failed to generate estimate", "error");
-      } finally {
-        target.disabled = false;
-        target.textContent = "Download Estimate";
-      }
-    }
-
-    if (target.id === "invoiceBtn") {
-      if (!confirm("Download this client's invoice PDF?")) return;
-
-      try {
-        target.disabled = true;
-        target.textContent = "Downloading...";
-        await window.api.sendInvoice(activeId);
-        showToast("Invoice downloaded", "success");
-      } catch (err) {
-        console.error(err);
-        showToast(err.message || "Failed to generate invoice", "error");
-      } finally {
-        target.disabled = false;
-        target.textContent = "Download Invoice";
-      }
-    }
 
     if (target.id === "reviewBtn") {
       const googleLink = activeClient?.address
@@ -4254,24 +5179,40 @@ if (target.id === "undoFinanceBtn") {
     }
 
     if (target.id === "saveBtn") {
-      await savePanelChanges({ silent: false, force: true });
-      openClient(activeId);
+      const ok = await savePanelChanges({ silent: false, force: true });
+      if (ok) openClient(activeId);
     }
 
     if (target.id === "delBtn") {
-      if (confirm("Permanently delete this client?")) {
-        await window.api.deleteClient(activeId);
-        await refreshList();
-        closePanel();
+      if (confirm("Permanently delete this client, including all of its jobs?")) {
+        try {
+          await window.api.deleteClient(activeId);
+          triggerFinanceUpdate();
+          await refreshList();
+          closePanel();
+          showToast("Client deleted", "success");
+        } catch (err) {
+          console.error(err);
+          showToast("Failed to delete client", "error");
+        }
       }
     }
 
     if (target.id === "closeBtn") {
-      await autoSavePendingClientPayment();
-      await savePanelChanges({ silent: true, force: true });
-      closePanel();
+      await requestClientPanelClose();
     }
   });
+}
+
+// Saves the client overview, then closes it. If the save fails the panel
+// stays open so the edits aren't lost.
+async function requestClientPanelClose() {
+  const ok = await savePanelChanges({ silent: true, force: true });
+  if (!ok) {
+    showToast("Couldn't save the client. It's still open, so nothing is lost.", "error");
+    return;
+  }
+  closePanel();
 }
 
 if (emailSettingsBtn) {
@@ -4546,26 +5487,32 @@ function getStoredClientName() {
   return (activeClient?.name || projectPanel.dataset.clientName || "").trim();
 }
 
+// Only the fields shown on the client overview. Money, cost and scope are
+// edited inside jobs / the client account, and the server leaves any field
+// that isn't sent untouched.
 function collectPanelData() {
-  const jobCostRaw = document.getElementById("jobCostInput")?.value || "0";
-  const jobCost = parseMoney(jobCostRaw) || 0;
+  const value = (id) => {
+    const el = document.getElementById(id);
+    return el ? el.value : undefined;
+  };
+  const typedName = (value("p-name") || "").trim();
   return {
     id: activeId,
-    name: getStoredClientName(),
-    address: document.getElementById("p-address")?.value || "",
-    status: document.getElementById("p-status")?.value || "",
-    phone: document.getElementById("p-phone")?.value || "",
-    email: document.getElementById("p-email")?.value || "",
-    scope_of_work: document.getElementById("p-scope")?.value || "",
-    job_cost: jobCost
+    name: typedName || getStoredClientName(),
+    address: value("p-address"),
+    status: value("p-status"),
+    phone: value("p-phone"),
+    email: value("p-email"),
+    technician: value("p-technician")
   };
 }
 
+// Returns true when everything saved.
 async function savePanelChanges({ silent = false, force = false } = {}) {
-  if (!activeId) return;
+  if (!activeId) return true;
   if (isSaving) {
     queuedSave = true;
-    return;
+    return true;
   }
 
   isSaving = true;
@@ -4574,19 +5521,29 @@ async function savePanelChanges({ silent = false, force = false } = {}) {
     await savePendingNotes({ silent: true });
 
     const data = collectPanelData();
-    if (!force && !data) return;
+    if (!force && !data) return true;
 
     await window.api.updateProject(data);
+    if (activeClient && Number(activeClient.id) === Number(data.id)) {
+      ["name", "address", "status", "phone", "email", "technician"].forEach(k => {
+        if (data[k] !== undefined) activeClient[k] = data[k];
+      });
+      projectPanel.dataset.clientName = activeClient.name || "";
+      const headerName = document.getElementById("clientHeaderName");
+      if (headerName) headerName.textContent = activeClient.name || "";
+    }
     await refreshList();
     await setupNotesSection(activeId);
     setSaveStatus("saved");
     if (!silent) {
       showToast("Saved", "success");
     }
+    return true;
   } catch (err) {
     console.error(err);
     setSaveStatus("error");
     if (!silent) showToast("Save failed", "error");
+    return false;
   } finally {
     isSaving = false;
     if (queuedSave) {
@@ -4657,12 +5614,6 @@ if (clientList) {
       searchByTagClick(statusBadge.textContent.trim());
       return;
     }
-    const typeBadge = e.target.closest(".client-type-badge");
-    if (typeBadge && typeBadge.dataset.filterType) {
-      e.stopPropagation();
-      searchByTagClick(typeBadge.textContent.trim());
-      return;
-    }
     const item = e.target.closest(".client-card");
     if (item) openClient(parseInt(item.dataset.id));
   });
@@ -4696,9 +5647,31 @@ document.addEventListener("keydown", async (e) => {
     return;
   }
 
-  if (e.key === "Escape" && projectPanel && projectPanel.style.display === "block") {
-    await savePanelChanges({ silent: true, force: true });
-    closePanel();
+  if (e.key !== "Escape") return;
+
+  // Close the top-most layer only: pickers first, then a job / client
+  // account / new-job dialog (each saves on close), then the client panel.
+  const pickers = ["manageServicesOverlay", "servicePresetPickerOverlay", "servicePickerOverlay"]
+    .map(id => document.getElementById(id))
+    .filter(Boolean);
+  if (pickers.length) {
+    const top = pickers[0];
+    if (typeof top._requestClose === "function") top._requestClose();
+    else top.remove();
+    return;
+  }
+  const dialogs = document.querySelectorAll(".job-modal-overlay");
+  if (dialogs.length) {
+    const top = dialogs[dialogs.length - 1];
+    if (typeof top._requestClose === "function") await top._requestClose();
+    else top.remove();
+    return;
+  }
+  const pdfViewerModal = document.getElementById("pdfModal");
+  if (pdfViewerModal && pdfViewerModal.style.display === "flex") return;
+
+  if (projectPanel && projectPanel.style.display === "block") {
+    await requestClientPanelClose();
   }
 });
 
@@ -4724,7 +5697,6 @@ async function loadDashboardStats() {
     renderWorkflowPanel(result.data);
     applyBranding(result.data.branding);
     window._retentionRiskIds = (result.data.retentionAlerts || []).map(function (a) { return a.id; });
-    initAdvancedFiltering();
   } catch (e) {
     hideDashboardSection();
   } finally {
@@ -4878,12 +5850,17 @@ function applyBranding(branding) {
   }
   if (brandFallback) brandFallback.style.display = 'none';
 
-  // Apply brand colors as CSS variables
-  if (branding.primaryColor) {
+  // Apply brand colors as CSS variables — only when a company has actually
+  // chosen its own. The template default (#2563eb) is already the light
+  // theme's primary; forcing it inline would also override dark mode's
+  // brighter blue and leave links/labels too dark to read on navy.
+  const TEMPLATE_DEFAULT_BRAND = '#2563eb';
+  const isCustom = (color) => color && String(color).toLowerCase() !== TEMPLATE_DEFAULT_BRAND;
+  if (isCustom(branding.primaryColor)) {
     document.documentElement.style.setProperty('--primary', branding.primaryColor);
     document.documentElement.style.setProperty('--brand-primary', branding.primaryColor);
   }
-  if (branding.secondaryColor) {
+  if (isCustom(branding.secondaryColor)) {
     document.documentElement.style.setProperty('--accent', branding.secondaryColor);
     document.documentElement.style.setProperty('--brand-secondary', branding.secondaryColor);
   }

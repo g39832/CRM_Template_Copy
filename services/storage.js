@@ -6,7 +6,9 @@ const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'crm-files';
 const STORAGE_BACKEND = (process.env.STORAGE_BACKEND || 'auto').toLowerCase();
-const LOCAL_UPLOAD_ROOT = path.join(__dirname, '..', 'uploads');
+// LOCAL_UPLOAD_ROOT lets the local test harness keep its files in a temp
+// folder instead of the project's uploads/ directory.
+const LOCAL_UPLOAD_ROOT = process.env.LOCAL_UPLOAD_ROOT || path.join(__dirname, '..', 'uploads');
 
 const supabase = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {

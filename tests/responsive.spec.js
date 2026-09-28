@@ -276,8 +276,9 @@ test.describe('authenticated', () => {
   test('job modal opens and fits the screen', async ({ page }) => {
     await gotoAndSettle(page, '/main');
     const panel = await openFirstClient(page);
-    const job = panel.locator('#jobs-list > div').first();
-    await page.waitForLoadState('networkidle');
+    // Wait for the jobs list to finish loading before checking for a job.
+    await expect(panel.locator('#quick-add-job-btn')).toBeVisible();
+    const job = panel.locator('#jobs-list .job-row[data-job-id]').first();
     test.skip((await job.count()) === 0, 'First client has no jobs.');
     await job.click();
     const modal = page.locator('.job-modal-overlay .job-modal-card').last();

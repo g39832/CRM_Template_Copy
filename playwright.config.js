@@ -23,6 +23,9 @@ const DEVICES = [
 
 module.exports = defineConfig({
   testDir: './tests',
+  // redesign.spec.js creates/edits/deletes records, so it only runs against
+  // the in-memory mock (playwright.local.config.js), never the real project.
+  testIgnore: ['**/redesign.spec.js'],
   globalSetup: require.resolve('./tests/global-setup.js'),
   timeout: 60_000,
   expect: { timeout: 10_000 },

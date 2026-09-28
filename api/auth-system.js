@@ -258,16 +258,8 @@ router.post('/logout', asyncHandler(async (req, res) => {
 // screen. It behaves like a normal 404 in any non-test environment,
 // so it cannot be discovered or used in the demo/production app.
 // ============================================================
-router.post('/test-login', asyncHandler(async (req, res) => {
-  if (process.env.NODE_ENV !== 'test') {
-    throw new AppError(404, 'Not found');
-  }
-
-  assertObject(req.body);
-  const email = parseStringField(req.body.email, 'email', { minLength: 1, maxLength: 254 }).toLowerCase();
-  const requestedRole = req.body.role === 'admin' ? 'admin' : 'user';
-  const displayName = parseStringField(req.body.displayName || '', 'displayName', { required: false, defaultValue: '', maxLength: 200 });
-
+async function signInTestUser(req, { email, role, displayName }) {
+  const requestedRole = role === 'admin' ? 'admin' : 'user';
   const supabase = getClient();
   if (!supabase) throw new AppError(503, 'Database not configured');
 
@@ -308,8 +300,38 @@ router.post('/test-login', asyncHandler(async (req, res) => {
 
   req.session.authenticated = true;
   req.session.user = buildSessionUser(userRow, company);
+  return req.session.user;
+}
 
-  res.json({ success: true, user: req.session.user });
+router.post('/test-login', asyncHandler(async (req, res) => {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new AppError(404, 'Not found');
+  }
+
+  assertObject(req.body);
+  const email = parseStringField(req.body.email, 'email', { minLength: 1, maxLength: 254 }).toLowerCase();
+  const displayName = parseStringField(req.body.displayName || '', 'displayName', { required: false, defaultValue: '', maxLength: 200 });
+  const user = await signInTestUser(req, { email, role: req.body.role, displayName });
+  res.json({ success: true, user });
+}));
+
+// ============================================================
+// GET /api/v2/auth/preview-login?email=...&role=admin|user
+// (LOCAL PREVIEW ONLY — npm run dev:local)
+//
+// A clickable version of test-login so the local preview can print links
+// that sign you straight in. Only exists when BOTH NODE_ENV=test and
+// LOCAL_PREVIEW=1 are set, which only scripts/dev-local.js does (and it
+// refuses to start unless the database is the local mock). Everywhere else
+// it is a plain 404.
+// ============================================================
+router.get('/preview-login', asyncHandler(async (req, res) => {
+  if (process.env.NODE_ENV !== 'test' || process.env.LOCAL_PREVIEW !== '1') {
+    throw new AppError(404, 'Not found');
+  }
+  const email = parseStringField(req.query.email, 'email', { minLength: 1, maxLength: 254 }).toLowerCase();
+  await signInTestUser(req, { email, role: req.query.role, displayName: '' });
+  req.session.save(() => res.redirect('/main'));
 }));
 
 module.exports = router;

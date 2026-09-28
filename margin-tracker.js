@@ -1628,9 +1628,9 @@
     // colors, or the value text reads as too dark against the dark card.
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const revenueColor = isDark ? '#60a5fa' : '#2563eb';
-    const expensesColor = isDark ? '#cbd5e1' : '#64748b';
+    const expensesColor = isDark ? '#cbd5e1' : '#475569';
     const profitColor = isDark ? '#4ade80' : '#15803d';
-    const marginColor = isDark ? '#fbbf24' : '#f59e0b';
+    const marginColor = isDark ? '#fbbf24' : '#b45309';
     return `
       <div class="mt-grid-2">
         ${forecastItem('Next revenue', projected.nextRevenue, revenueColor)}

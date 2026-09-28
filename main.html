@@ -6,7 +6,7 @@
   <title>Dashboard | CRM Template</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
   <script src="/js/theme.js"></script>
-  <link rel="stylesheet" href="/style.css?v=6">
+  <link rel="stylesheet" href="/style.css?v=7">
   <style>
     .page-header {
       display: flex;
@@ -324,7 +324,29 @@
       color: var(--text-main);
       font-size: 0.82rem;
     }
-    .filter-row select option { background: #ffffff; }
+    .filter-row select option { background: var(--surface); color: var(--text-main); }
+    .sort-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0 6px;
+    }
+    .sort-row label {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .sort-row select {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 8px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--text-main);
+      font-size: 0.85rem;
+    }
     .filter-actions button { padding: 6px 10px; border-radius: 6px; font-size: 0.82rem; }
     /* .btn-secondary now comes from the shared style.css */
 
@@ -524,25 +546,35 @@
 
         <div class="search-bar">
           <input type="text" id="searchClients" placeholder="Search name, phone, or email...">
-          <button type="button" id="filterToggleBtn" class="filter-toggle-btn" title="Advanced Filters" style="display:none;"><i data-lucide="sliders-horizontal"></i></button>
+          <button type="button" id="filterToggleBtn" class="filter-toggle-btn" title="Filter clients" aria-label="Filter clients" aria-expanded="false" aria-controls="filterPanel"><i data-lucide="sliders-horizontal"></i></button>
+        </div>
+
+        <div class="sort-row">
+          <label for="sortClients">Sort by</label>
+          <select id="sortClients">
+            <option value="stage">Stage</option>
+            <option value="salesperson">Salesperson</option>
+            <option value="technician">Technician</option>
+            <option value="year">Year (newest first)</option>
+            <option value="name">Name (A–Z)</option>
+          </select>
         </div>
 
         <div id="filterPanel" class="filter-panel" style="display:none;">
           <div class="filter-row">
-            <select id="filterType"><option value="">All types</option><option value="one-off">One-off</option><option value="recurring">Recurring</option></select>
-            <select id="filterStatus"><option value="">All statuses</option><option value="Lead">Lead</option><option value="Prospect">Prospect</option><option value="Approved">Approved</option><option value="Completed">Completed</option><option value="Invoice">Invoice</option><option value="Closed">Closed</option></select>
+            <select id="filterSalesperson" aria-label="Filter by salesperson"><option value="">All salespeople</option></select>
+            <select id="filterTechnician" aria-label="Filter by technician"><option value="">All technicians</option></select>
           </div>
           <div class="filter-row">
-            <input type="date" id="filterDateFrom" placeholder="From date">
-            <input type="date" id="filterDateTo" placeholder="To date">
+            <select id="filterYear" aria-label="Filter by year"><option value="">All years</option></select>
+            <select id="filterStatus" aria-label="Filter by stage"><option value="">All stages</option></select>
           </div>
           <div class="filter-row">
-            <input type="number" id="filterRevenueMin" placeholder="Min revenue" step="0.01">
-            <input type="number" id="filterRevenueMax" placeholder="Max revenue" step="0.01">
+            <input type="date" id="filterDateFrom" aria-label="Added on or after">
+            <input type="date" id="filterDateTo" aria-label="Added on or before">
           </div>
           <div class="filter-row filter-actions">
-            <button type="button" id="applyFilterBtn" class="btn-primary" style="flex:1;">Apply</button>
-            <button type="button" id="clearFilterBtn" class="btn-secondary" style="flex:1;">Clear</button>
+            <button type="button" id="clearFilterBtn" class="btn-secondary" style="flex:1;">Clear filters</button>
           </div>
         </div>
 
@@ -705,7 +737,7 @@
   </div>
 
   <!-- Renderer script -->
-  <script src="/main-renderer.js?v=2" defer></script>
+  <script src="/main-renderer.js?v=3" defer></script>
   <script>
     // Toggle button to finance page (if element exists)
     const toggleBtn = document.getElementById('toggleFinance');

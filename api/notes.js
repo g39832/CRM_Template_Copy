@@ -28,10 +28,28 @@ async function loadJobWithAccessCheck(req, jobId) {
 // ======================================================
 // LIST NOTES
 // ======================================================
+// Client-level notes only. Job notes also carry client_id (so client search
+// still finds them) but belong to their job, so they're left out here and
+// shown inside the job instead.
 router.get('/list/:clientId', asyncHandler(async (req, res) => {
   const clientId = parseIntField(req.params.clientId, 'clientId', { min: 1 });
   await db.schemaReady;
   await loadClientWithAccessCheck(req, clientId);
+
+  const supabase = getClient();
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('notes')
+      .select('id, content, created_at, job_id')
+      .eq('client_id', clientId)
+      .is('job_id', null)
+      .order('created_at', { ascending: true });
+    if (!error) {
+      return res.json({ notes: (data || []).map(({ id, content, created_at }) => ({ id, content, created_at })) });
+    }
+    // Older databases without notes.job_id: every note is a client note.
+  }
+
   const { rows } = await db.query(
     'SELECT id, content, created_at FROM notes WHERE client_id = $1 ORDER BY created_at ASC',
     [clientId]

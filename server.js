@@ -55,6 +55,7 @@ const loginLimiter = rateLimit({
 });
 app.use('/api/v2/auth/google-session', loginLimiter);
 app.use('/api/v2/auth/test-login', loginLimiter);
+app.use('/api/v2/auth/preview-login', loginLimiter);
 
 // ===== SESSION =====
 const sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
@@ -309,6 +310,11 @@ app.use('/api/supabase-config', supabaseConfigRoutes);
 app.use('/api/notes', notesRoutes);
 app.use('/api/jobs', jobsRoutes);
 app.use('/api/job-files', jobFilesRoutes);
+
+// Expense categories (/api/v2/expense-categories) and itemized job costs
+// (/api/jobs/:jobId/expenses).
+const expensesRoutes = require('./api/expenses');
+app.use('/api', expensesRoutes.router);
 
 // ===== V2 API ROUTES =====
 const authSystemRoutes = require('./api/auth-system');

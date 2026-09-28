@@ -243,7 +243,7 @@ async function updateFinanceMetrics() {
       '<td data-label="Received"><input type="text" id="input-received" inputmode="decimal" value="' + formatCurrencyValue(received) + '" /></td>',
       '<td data-label="Remaining"><input type="text" id="input-remaining" inputmode="decimal" value="' + formatCurrencyValue(remaining) + '" /></td>',
       '<td data-label="Clients"><input type="number" id="input-clients" inputmode="numeric" enterkeyhint="done" pattern="[0-9]*" step="1" value="' + clients + '" /></td>',
-      '<td data-label="Avg Margin" style="font-weight:700; color:' + (avgMargin !== null && avgMargin !== undefined ? (avgMargin >= 30 ? 'var(--success)' : avgMargin >= 15 ? 'var(--warning)' : 'var(--danger)') : 'var(--text-muted)') + ';">' + avgMarginDisplay + '</td>',
+      '<td data-label="Avg Margin" style="font-weight:700; color:' + (avgMargin !== null && avgMargin !== undefined ? (avgMargin >= 30 ? 'var(--success-text)' : avgMargin >= 15 ? 'var(--warning-text)' : 'var(--danger-text)') : 'var(--text-muted)') + ';">' + avgMarginDisplay + '</td>',
       '</tr>',
       '<tr class="metrics-actions-row">',
       '<td colspan="6" class="metrics-actions-cell" style="text-align:right;">',

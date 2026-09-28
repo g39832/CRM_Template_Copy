@@ -539,3 +539,102 @@ NOTIFY pgrst, 'reload schema';
 DROP INDEX IF EXISTS public.users_single_admin_idx;
 
 NOTIFY pgrst, 'reload schema';
+
+-- =============================================================
+-- TEMPLATE UPGRADE v6: client overview redesign.
+--
+-- The client page now shows a Technician next to the Salesperson, and job
+-- payments are also written to the payments ledger (so Finance counts
+-- them). This adds:
+--   - clients.technician  — who does the work for the client (free text)
+--   - payments.job_id     — which job a payment was recorded on, for per-job
+--                           payment history. Existing payments keep job_id
+--                           NULL (they were recorded on the client).
+--
+-- The app works without this section (technician names are kept in the
+-- settings table until the column exists, and job payment history is simply
+-- hidden). Running it is purely ADDITIVE: new nullable/defaulted columns and
+-- an index. No table or column is dropped and no row is deleted. Safe to run
+-- multiple times.
+-- =============================================================
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS technician text NOT NULL DEFAULT '';
+
+ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS job_id bigint REFERENCES public.jobs(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS payments_job_id_idx ON public.payments (job_id);
+
+-- Carry over technician names saved before the column existed (the app kept
+-- them in settings as "client_technician:<client id>"). Only fills clients
+-- whose technician is still empty; the settings rows are left in place.
+UPDATE public.clients AS c
+SET technician = s.value
+FROM public.settings AS s
+WHERE s.key = 'client_technician:' || c.id::text
+  AND COALESCE(c.technician, '') = '';
+
+NOTIFY pgrst, 'reload schema';
+
+-- =============================================================
+-- TEMPLATE UPGRADE v7: custom job expense categories.
+--
+--   companies -> expense_categories -> job_expenses <- jobs
+--
+-- Each business manages its own expense categories (Settings -> Expense
+-- Categories); each job can hold itemized costs, each with a category. A
+-- job's cost (jobs.job_cost) is kept equal to the sum of its expenses by the
+-- app, so profit, margin, client totals and Finance keep working unchanged.
+--
+-- Categories are referenced by id, so renaming one renames it on every
+-- existing expense. A category that is in use can't be deleted (ON DELETE
+-- RESTRICT) — the app deactivates it instead, which hides it from new
+-- expenses and keeps every historical expense and total.
+--
+-- Purely ADDITIVE: two new tables, indexes, and four default categories per
+-- existing business. Existing jobs keep their single job_cost figure until
+-- someone itemizes them (the app then keeps that figure as an
+-- "Uncategorized" expense). No table or column is dropped and no row is
+-- deleted. Safe to run multiple times.
+-- =============================================================
+CREATE TABLE IF NOT EXISTS public.expense_categories (
+  id BIGSERIAL PRIMARY KEY,
+  company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS expense_categories_company_name_idx
+  ON public.expense_categories (company_id, lower(name));
+
+CREATE TABLE IF NOT EXISTS public.job_expenses (
+  id BIGSERIAL PRIMARY KEY,
+  job_id BIGINT NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
+  client_id BIGINT REFERENCES public.clients(id) ON DELETE CASCADE,
+  category_id BIGINT REFERENCES public.expense_categories(id) ON DELETE RESTRICT,
+  description TEXT NOT NULL DEFAULT '',
+  amount NUMERIC NOT NULL DEFAULT 0 CHECK (amount >= 0),
+  expense_date TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS job_expenses_job_id_idx ON public.job_expenses (job_id);
+CREATE INDEX IF NOT EXISTS job_expenses_category_id_idx ON public.job_expenses (category_id);
+
+-- Default categories for every business that doesn't have any yet.
+INSERT INTO public.expense_categories (company_id, name, sort_order)
+SELECT c.id, d.name, d.sort_order
+FROM public.companies AS c
+CROSS JOIN (VALUES
+  ('Labor', 0),
+  ('Materials', 1),
+  ('Commissions', 2),
+  ('Miscellaneous Expenses', 3)
+) AS d(name, sort_order)
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.expense_categories AS e WHERE e.company_id = c.id
+);
+
+NOTIFY pgrst, 'reload schema';

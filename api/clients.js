@@ -12,6 +12,15 @@ const {
   sanitizeClients,
   filterClientsForUser
 } = require('./access-control');
+const {
+  getValidYear,
+  getFinanceTotalsForYear,
+  getAverageMarginForYear,
+  updateFinanceTotals,
+  updateFinanceTotalsSafe,
+  refreshFinanceYearsFor
+} = require('./finance-totals');
+const { attachClientExtras, setTechnician, clearTechnicianFallback } = require('./client-extras');
 
 const CLIENT_STAGES = ['Lead', 'Photo report', 'Prospect', 'Approved', 'Invoiced', 'Closed'];
 
@@ -26,82 +35,11 @@ async function loadClientWithAccessCheck(req, id) {
   return client;
 }
 
-// ======================================================
-// HELPER: SAFE YEAR HANDLER
-// ======================================================
-function getValidYear(inputYear) {
-  const currentYear = new Date().getFullYear();
-  const parsed = Number.parseInt(inputYear, 10);
-  return !parsed || parsed < 2000 || parsed > currentYear + 5
-    ? currentYear
-    : parsed;
-}
-
 function parseOptionalPagination(value, max) {
   if (value === undefined || value === null || value === '') return null;
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed < 0) return null;
   return Math.min(parsed, max);
-}
-
-async function getFinanceTotalsForYear(year) {
-  const clientSummaryResult = await db.query(`
-    SELECT
-      COUNT(*)::int AS total_clients,
-      COALESCE(SUM(total_due), 0) AS total_expected,
-      COALESCE(SUM(balance), 0) AS total_remaining
-    FROM clients
-    WHERE EXTRACT(YEAR FROM created_at)::int = $1
-  `, [year]);
-
-  const paymentSummaryResult = await db.query(`
-    SELECT COALESCE(SUM(amount), 0) AS total_received
-    FROM payments
-    WHERE EXTRACT(YEAR FROM payment_date)::int = $1
-  `, [year]);
-
-  const clientSummary = clientSummaryResult.rows[0] || {};
-  const paymentSummary = paymentSummaryResult.rows[0] || {};
-
-  return {
-    total_clients: Number(clientSummary.total_clients || 0),
-    total_expected: Number(clientSummary.total_expected || 0),
-    total_received: Number(paymentSummary.total_received || 0),
-    total_remaining: Number(clientSummary.total_remaining || 0)
-  };
-}
-
-// ======================================================
-// HELPER: UPDATE FINANCE TOTALS FOR A YEAR
-// ======================================================
-async function updateFinanceTotals(year) {
-  year = getValidYear(year);
-  const totals = await getFinanceTotalsForYear(year);
-
-  await db.query(`
-    INSERT INTO finance_overrides (year, total_expected, total_received, total_remaining, total_clients)
-    VALUES ($1, $2, $3, $4, $5)
-    ON CONFLICT(year) DO UPDATE SET
-      total_expected = EXCLUDED.total_expected,
-      total_received = EXCLUDED.total_received,
-      total_remaining = EXCLUDED.total_remaining,
-      total_clients = EXCLUDED.total_clients,
-      updated_at = CURRENT_TIMESTAMP
-  `, [
-    year,
-    totals.total_expected,
-    totals.total_received,
-    totals.total_remaining,
-    totals.total_clients
-  ]);
-}
-
-async function updateFinanceTotalsSafe(year, context = 'finance totals') {
-  try {
-    await updateFinanceTotals(year);
-  } catch (err) {
-    console.error(`Failed to update ${context} for year ${year}:`, err);
-  }
 }
 
 // ======================================================
@@ -152,7 +90,8 @@ router.get('/search/filtered', asyncHandler(async (req, res) => {
   const { data, error } = await query.order('created_at', { ascending: false }).limit(500);
   if (error) throw new AppError(500, 'Filtered search failed: ' + error.message);
 
-  return res.json(sanitizeClients(req, filterClientsForUser(req, data || [])));
+  const visible = sanitizeClients(req, filterClientsForUser(req, data || []));
+  return res.json(await attachClientExtras(visible));
 }));
 
 router.get('/search', asyncHandler(async (req, res) => {
@@ -166,7 +105,7 @@ router.get('/search', asyncHandler(async (req, res) => {
   async function respondFiltered(rows) {
     const visible = filterClientsForUser(req, rows);
     const sliced = isAdmin(req) || limit === null ? visible : visible.slice(offset, offset + limit);
-    return res.json(sanitizeClients(req, sliced));
+    return res.json(await attachClientExtras(sanitizeClients(req, sliced)));
   }
 
   if (!term) {
@@ -288,25 +227,32 @@ router.post('/save-client', asyncHandler(async (req, res) => {
 // ======================================================
 // UPDATE CLIENT
 // ======================================================
+// Only the fields present in the request body are changed; anything left
+// out keeps its stored value. (The client page no longer shows every field —
+// cost, scope and totals are edited inside a job — so a save from it must
+// never blank or zero the fields it doesn't send.)
 router.post('/update-project', asyncHandler(async (req, res) => {
   assertObject(req.body);
   const id = parseIntField(req.body.id, 'id', { min: 1 });
-  const fName = parseStringField(req.body.fName ?? '', 'fName', { required: false, maxLength: 120, defaultValue: '' });
-  const lName = parseStringField(req.body.lName ?? '', 'lName', { required: false, maxLength: 120, defaultValue: '' });
-  const name = parseStringField(req.body.name ?? '', 'name', { required: false, maxLength: 260, defaultValue: '' });
-  const phone = parseStringField(req.body.phone ?? '', 'phone', { required: false, maxLength: 40, defaultValue: '' });
-  const email = parseStringField(req.body.email ?? '', 'email', { required: false, maxLength: 254, defaultValue: '' });
-  const address = parseStringField(req.body.address ?? '', 'address', { required: false, maxLength: 500, defaultValue: '' });
-  const status = parseStringField(req.body.status ?? '', 'status', { required: false, maxLength: 30, defaultValue: '' });
-  const scopeOfWork = parseStringField(req.body.scope_of_work ?? '', 'scope_of_work', { required: false, maxLength: 5000, defaultValue: '' });
-  // Financial fields (Section 8) — only admins may change these, even
-  // through this general-purpose "save changes" endpoint.
-  const totalDueInput = isAdmin(req) ? req.body.total_due : undefined;
-  const jobCostInput = isAdmin(req) ? req.body.job_cost : undefined;
 
   await db.schemaReady;
   const clientRow = await loadClientWithAccessCheck(req, id);
   const fallbackName = String(clientRow.name || '').trim();
+  const has = (key) => req.body[key] !== undefined && req.body[key] !== null;
+  const keep = (key, parsed) => (has(key) ? parsed() : String(clientRow[key] ?? ''));
+
+  const fName = parseStringField(req.body.fName ?? '', 'fName', { required: false, maxLength: 120, defaultValue: '' });
+  const lName = parseStringField(req.body.lName ?? '', 'lName', { required: false, maxLength: 120, defaultValue: '' });
+  const name = parseStringField(req.body.name ?? '', 'name', { required: false, maxLength: 260, defaultValue: '' });
+  const phone = keep('phone', () => parseStringField(req.body.phone, 'phone', { required: false, maxLength: 40, defaultValue: '' }));
+  const email = keep('email', () => parseStringField(req.body.email, 'email', { required: false, maxLength: 254, defaultValue: '' }));
+  const address = keep('address', () => parseStringField(req.body.address, 'address', { required: false, maxLength: 500, defaultValue: '' }));
+  const status = parseStringField(req.body.status ?? '', 'status', { required: false, maxLength: 30, defaultValue: '' });
+  const scopeOfWork = keep('scope_of_work', () => parseStringField(req.body.scope_of_work, 'scope_of_work', { required: false, maxLength: 5000, defaultValue: '' }));
+  // Financial fields (Section 8) — only admins may change these, even
+  // through this general-purpose "save changes" endpoint.
+  const totalDueInput = isAdmin(req) ? req.body.total_due : undefined;
+  const jobCostInput = isAdmin(req) ? req.body.job_cost : undefined;
 
   const newTotal = typeof totalDueInput !== 'undefined'
     ? parseNumberField(totalDueInput, 'total_due', { required: false, defaultValue: Number(clientRow.total_due || 0) })
@@ -349,10 +295,17 @@ router.post('/update-project', asyncHandler(async (req, res) => {
     }
   }
 
+  // Technician is operational (not financial) info, so anyone who can edit
+  // this client may set it.
+  let technician;
+  if (req.body.technician !== undefined) {
+    technician = await setTechnician(id, req.body.technician);
+  }
+
   const year = new Date(clientRow.created_at).getFullYear();
   await updateFinanceTotals(year);
 
-  return res.json({ success: true, financeUpdated: true });
+  return res.json({ success: true, financeUpdated: true, technician });
 }));
 
 // ======================================================
@@ -366,6 +319,7 @@ router.post('/delete-client', asyncHandler(async (req, res) => {
   const clientRow = await loadClientWithAccessCheck(req, id);
 
   await db.query('DELETE FROM clients WHERE id = $1', [id]);
+  await clearTechnicianFallback(id).catch(() => {});
 
   if (clientRow) {
     const year = new Date(clientRow.created_at).getFullYear();
@@ -459,8 +413,8 @@ router.put('/clients/:id/payment', requireAdmin, asyncHandler(async (req, res) =
     conn.release();
   }
 
-  const year = clientRow.created_at ? new Date(clientRow.created_at).getFullYear() : new Date().getFullYear();
-  await updateFinanceTotalsSafe(year, 'client payment');
+  // The payment row is dated today, so today's year changes too.
+  await refreshFinanceYearsFor(clientRow.created_at, 'client payment');
 
   return res.json({ success: true, financeUpdated: true });
 }));
@@ -497,8 +451,8 @@ router.put('/clients/:id/reset-paid', requireAdmin, asyncHandler(async (req, res
     conn.release();
   }
 
-  const year = clientRow.created_at ? new Date(clientRow.created_at).getFullYear() : new Date().getFullYear();
-  await updateFinanceTotalsSafe(year, 'reset paid');
+  // The payment row is dated today, so today's year changes too.
+  await refreshFinanceYearsFor(clientRow.created_at, 'reset paid');
 
   const updatedClientResult = await db.query('SELECT total_due, amount_paid, balance FROM clients WHERE id = $1', [id]);
   return res.json({ success: true, client: updatedClientResult.rows[0], financeUpdated: true });
@@ -544,8 +498,8 @@ router.put('/clients/:id/finance-state', requireAdmin, asyncHandler(async (req, 
     conn.release();
   }
 
-  const year = clientRow.created_at ? new Date(clientRow.created_at).getFullYear() : new Date().getFullYear();
-  await updateFinanceTotalsSafe(year, 'finance state restore');
+  // The payment row is dated today, so today's year changes too.
+  await refreshFinanceYearsFor(clientRow.created_at, 'finance state restore');
 
   const updatedClientResult = await db.query('SELECT total_due, amount_paid, balance FROM clients WHERE id = $1', [id]);
   return res.json({ success: true, client: updatedClientResult.rows[0], financeUpdated: true });
@@ -632,22 +586,13 @@ router.get('/finance/summary', requireAdmin, asyncHandler(async (req, res) => {
       total_remaining: yearSummary.total_remaining
     };
 
-    // Compute average margin % for clients created in this year
-    // margin = (total_due - job_cost) / total_due * 100, only where total_due > 0
+    // Average margin % for the year's priced work (client-level records and
+    // jobs): margin = (total_due - job_cost) / total_due * 100, only where
+    // both a price and a cost are recorded.
     let avgMarginPct = null;
     try {
-      const marginResult = await db.query(`
-        SELECT AVG(((total_due - job_cost) / NULLIF(total_due, 0)) * 100) AS avg_margin
-        FROM clients
-        WHERE EXTRACT(YEAR FROM created_at)::int = $1
-          AND total_due > 0
-          AND job_cost IS NOT NULL
-          AND job_cost > 0
-      `, [year]);
-      const raw = marginResult.rows[0]?.avg_margin;
-      avgMarginPct = raw !== null && raw !== undefined ? Number(raw) : null;
+      avgMarginPct = await getAverageMarginForYear(year);
     } catch (e) {
-      // job_cost column may not exist yet on older DBs — gracefully skip
       avgMarginPct = null;
     }
 
