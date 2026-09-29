@@ -20,6 +20,19 @@ const {
 
 const CATEGORIES = ['document', 'photo'];
 
+// What each section accepts (matches the file pickers in the job panel).
+// Checked for every file before any is stored, so a rejected batch never
+// leaves half its files behind.
+const DOCUMENT_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx'];
+const PHOTO_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.bmp', '.tif', '.tiff', '.avif'];
+
+function isAllowedFile(file, category) {
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const mime = String(file.mimetype || '').toLowerCase();
+  if (category === 'photo') return mime.startsWith('image/') || PHOTO_EXTENSIONS.includes(ext);
+  return DOCUMENT_EXTENSIONS.includes(ext) || mime === 'application/pdf';
+}
+
 const TMP_UPLOAD_DIR = path.join(os.tmpdir(), 'crm-uploads');
 fs.mkdirSync(TMP_UPLOAD_DIR, { recursive: true });
 
@@ -77,6 +90,12 @@ router.post('/:jobId/upload', upload.any(), asyncHandler(async (req, res) => {
     const { job } = await loadJobWithAccess(req, jobId);
     const category = CATEGORIES.includes(req.body.category) ? req.body.category : 'document';
     if (!files.length) throw new AppError(400, 'No files uploaded.');
+    const rejected = files.filter((f) => !isAllowedFile(f, category)).map((f) => path.basename(f.originalname || 'file'));
+    if (rejected.length) {
+      throw new AppError(400, category === 'photo'
+        ? `Only images can be added to Photos: ${rejected.join(', ')}`
+        : `Only PDF, Word or Excel files can be added to Documents: ${rejected.join(', ')}`);
+    }
     if (!isRemoteStorageEnabled() && !isLocalStorageEnabled()) throw new AppError(500, 'File storage is not configured.');
     if (isRemoteStorageEnabled()) await ensureRemoteBucket();
 

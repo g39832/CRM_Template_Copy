@@ -1002,6 +1002,16 @@ window.api = {
     return res.json();
   },
 
+  async itemizeExistingJobCost(jobId) {
+    const res = await fetch(`/api/jobs/${jobId}/expenses/itemize-existing`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    if (!res.ok) throw new Error(await this._readResponseError(res, 'Failed to itemize the cost'));
+    return res.json();
+  },
+
   async updateJobExpense(jobId, expenseId, payload) {
     const res = await fetch(`/api/jobs/${jobId}/expenses/${expenseId}`, {
       method: 'PUT',
@@ -3821,7 +3831,7 @@ function openJobPanel(job, clientId, onSave) {
           <div class="total-tile"><span class="total-tile-label">Received</span><strong class="total-tile-value" id="job-paid-display">$0.00</strong></div>
           <div class="total-tile" id="job-balance-tile"><span class="total-tile-label">Balance</span><strong class="total-tile-value" id="job-balance-display">$0.00</strong></div>
           ${admin ? `
-          <div class="total-tile"><span class="total-tile-label">Cost</span><strong class="total-tile-value" id="job-cost-display">$0.00</strong></div>
+          <div class="total-tile is-readonly" title="Calculated from Job Costs — add or change costs there"><span class="total-tile-label">Cost</span><strong class="total-tile-value" id="job-cost-display">$0.00</strong><span class="total-tile-sub" id="job-cost-source">From Job Costs</span></div>
           <div class="total-tile"><span class="total-tile-label">Profit</span><strong class="total-tile-value" id="job-profit-display">$0.00</strong><span class="total-tile-sub" id="job-margin-display"></span></div>` : ''}
         </div>
         ${admin ? `
@@ -3831,10 +3841,10 @@ function openJobPanel(job, clientId, onSave) {
             <input id="job-total" type="text" inputmode="decimal" value="${formatMoney(job.total_due)}">
             <span class="field-hint" id="job-total-hint"></span>
           </div>
-          <div class="job-modal-field">
+          <div class="job-modal-field" id="job-cost-field" hidden>
             <label for="job-cost">Job Cost</label>
             <input id="job-cost" type="text" inputmode="decimal" value="${formatMoney(job.job_cost)}">
-            <span class="field-hint" id="job-cost-hint">What the job costs you — used for profit and margin.</span>
+            <span class="field-hint" id="job-cost-hint">Itemized job costs need the one-time database update. Until then, enter the job's cost here.</span>
           </div>
         </div>
         <div class="job-modal-field">
@@ -3877,15 +3887,16 @@ function openJobPanel(job, clientId, onSave) {
         <div class="job-modal-field">
           <label for="job-scope">Scope of work</label>
           <textarea id="job-scope" rows="4" placeholder="Describe the work for this job...">${escapeHtml(job.scope_of_work || '')}</textarea>
-          <span class="field-hint">Printed on the estimate and invoice. If left blank, the services above are listed instead.</span>
+          <span class="field-hint">This is what the customer sees on the estimate and invoice. “+ Service” adds each service here; quantities, prices and categories stay internal. If left blank, the services above are listed instead.</span>
         </div>
       </section>
 
       <section class="job-section job-files-field" aria-labelledby="jobDocsHeading">
         <h4 class="job-section-title" id="jobDocsHeading">Documents &amp; PDFs</h4>
         <div id="job-documents-list" class="job-files-list"></div>
-        <div class="job-files-upload-row">
+        <div class="job-files-upload-row job-dropzone" id="job-documents-dropzone">
           <input type="file" id="job-documents-input" multiple hidden accept=".pdf,.doc,.docx,.xls,.xlsx,application/pdf">
+          <span class="job-dropzone-text">Drag &amp; drop PDFs or documents here, or</span>
           <button type="button" id="job-documents-upload-btn" class="panel-secondary-btn">Upload Document / PDF</button>
         </div>
         <div id="job-documents-progress" class="job-file-progress" hidden>
@@ -3898,8 +3909,9 @@ function openJobPanel(job, clientId, onSave) {
       <section class="job-section job-files-field" aria-labelledby="jobPhotosHeading">
         <h4 class="job-section-title" id="jobPhotosHeading">Photos</h4>
         <div id="job-photos-list" class="job-files-list job-photos-grid"></div>
-        <div class="job-files-upload-row">
+        <div class="job-files-upload-row job-dropzone" id="job-photos-dropzone">
           <input type="file" id="job-photos-input" multiple hidden accept="image/*">
+          <span class="job-dropzone-text">Drag &amp; drop photos here, or</span>
           <button type="button" id="job-photos-upload-btn" class="panel-secondary-btn">Upload Photos</button>
         </div>
         <div id="job-photos-progress" class="job-file-progress" hidden>
@@ -3937,7 +3949,8 @@ function openJobPanel(job, clientId, onSave) {
   const paymentEl = $('#job-payment-input');
   const noteInput = $('#job-new-note-input');
   const lineForm = $('#job-line-item-form');
-  [totalEl, costEl, paymentEl, $('#li-unit-price'), $('#li-quantity')].forEach(el => applyMoneyInputBehavior(el));
+  [totalEl, costEl, paymentEl, $('#li-unit-price')].forEach(el => applyMoneyInputBehavior(el));
+  applyMoneyInputBehavior($('#li-quantity'), { decimals: 'auto' });
 
   function track(promise) {
     pending.add(promise);
@@ -3978,8 +3991,10 @@ function openJobPanel(job, clientId, onSave) {
     };
     if (admin) {
       if (!lineItems.length && totalEl) payload.total_due = parseMoney(totalEl.value) || 0;
-      // With itemized costs the server keeps job_cost = their sum.
-      if (costEl && !hasItemizedCosts()) payload.job_cost = parseMoney(costEl.value) || 0;
+      // The job's cost is controlled only by Job Costs (the server keeps
+      // job_cost = their sum). The single Job Cost field is only offered
+      // before the v7 migration, when there is no itemized list yet.
+      if (costEl && costIsTyped()) payload.job_cost = parseMoney(costEl.value) || 0;
     }
     return payload;
   }
@@ -4037,22 +4052,14 @@ function openJobPanel(job, clientId, onSave) {
     const balanceTile = $('#job-balance-tile');
     if (balanceTile) balanceTile.classList.toggle('is-due', balance > 0.005);
     if (admin) {
-      const cost = costEl ? (parseMoney(costEl.value) || 0) : Number(current.job_cost || 0);
+      const cost = costEl && costIsTyped() ? (parseMoney(costEl.value) || 0) : Number(current.job_cost || 0);
       const profit = total - cost;
       set('#job-cost-display', '$' + formatMoney(cost));
       set('#job-profit-display', '$' + formatMoney(profit));
       set('#job-margin-display', total > 0 ? `Margin ${Math.round((profit / total) * 100)}%` : 'Margin —');
-      if (costEl) {
-        const itemized = hasItemizedCosts();
-        costEl.readOnly = itemized;
-        costEl.classList.toggle('is-computed', itemized);
-        const costHint = $('#job-cost-hint');
-        if (costHint) {
-          costHint.textContent = itemized
-            ? 'Calculated from the job costs below.'
-            : 'What the job costs you — or itemize it under Job Costs below.';
-        }
-      }
+      const costField = $('#job-cost-field');
+      if (costField) costField.hidden = !costIsTyped();
+      set('#job-cost-source', costIsTyped() ? 'Entered below' : 'From Job Costs');
       if (totalEl) {
         const fromServices = lineItems.length > 0;
         totalEl.readOnly = fromServices;
@@ -4175,6 +4182,57 @@ function openJobPanel(job, clientId, onSave) {
     };
   }
 
+  // ---------- scope of work ----------
+  // Services added with “+ Service” are part of the scope of work: each one
+  // is written into the scope text as "- Service name" (what the customer
+  // sees on the estimate/invoice), while its quantity, price and category
+  // stay on the business side.
+  function scopeLineFor(name) {
+    return `- ${String(name || '').trim()}`;
+  }
+  function scopeHasLine(line) {
+    return scopeEl.value.split(/\r?\n/).some(l => l.trim().toLowerCase() === line.toLowerCase());
+  }
+  function addToScope(names) {
+    const lines = names.map(scopeLineFor).filter(l => l !== '- ' && !scopeHasLine(l));
+    if (!lines.length) return false;
+    const base = scopeEl.value.replace(/\s+$/, '');
+    scopeEl.value = base ? base + '\n' + lines.join('\n') : lines.join('\n');
+    return true;
+  }
+  function removeFromScope(name) {
+    const target = scopeLineFor(name).toLowerCase();
+    const lines = scopeEl.value.split(/\r?\n/);
+    const idx = lines.findIndex(l => l.trim().toLowerCase() === target);
+    if (idx < 0) return false;
+    lines.splice(idx, 1);
+    scopeEl.value = lines.join('\n');
+    return true;
+  }
+  function renameInScope(oldName, newName) {
+    const target = scopeLineFor(oldName).toLowerCase();
+    const lines = scopeEl.value.split(/\r?\n/);
+    const idx = lines.findIndex(l => l.trim().toLowerCase() === target);
+    if (idx < 0 || !String(newName || '').trim()) return false;
+    lines[idx] = scopeLineFor(newName);
+    scopeEl.value = lines.join('\n');
+    return true;
+  }
+  // Saves the job's fields right away after a service action changed the
+  // scope, so the scope and the services never drift apart.
+  function saveScopeNow() {
+    userEdited = true;
+    const payload = collectFields();
+    return track((async () => {
+      const res = await window.api.updateJob(current.id, payload);
+      current = { ...current, ...res.job };
+      savedFields = payload;
+    })()).catch((err) => {
+      console.error(err);
+      refreshDirtyChip();
+    });
+  }
+
   // ---------- services (line items) ----------
   function renderLineItems() {
     const list = $('#job-line-items-list');
@@ -4200,6 +4258,8 @@ function openJobPanel(job, clientId, onSave) {
           </div>`).join('')}
           <div class="job-services-total">Services total <strong id="job-services-total">$${formatMoney(lineItemsTotal())}</strong></div>
         </div>`;
+      list.querySelectorAll('[data-field="unit_price"]').forEach(el => applyMoneyInputBehavior(el));
+      list.querySelectorAll('[data-field="quantity"]').forEach(el => applyMoneyInputBehavior(el, { decimals: 'auto' }));
     } else {
       list.innerHTML = `
         <div class="job-services-table is-readonly">
@@ -4286,9 +4346,11 @@ function openJobPanel(job, clientId, onSave) {
       if (String(item[field]) === String(value)) return;
       track((async () => {
         try {
+          const previousDescription = item.description;
           const res = await window.api.updateJobLineItem(current.id, id, { [field]: value });
           const idx = lineItems.findIndex(i => Number(i.id) === id);
           if (idx >= 0) lineItems[idx] = res.lineItem;
+          if (field === 'description' && renameInScope(previousDescription, res.lineItem.description)) saveScopeNow();
           syncTotalFromServices();
           if (field === 'unit_price') input.value = formatMoney(res.lineItem.unit_price);
           const totalOut = $('#job-services-total');
@@ -4314,6 +4376,10 @@ function openJobPanel(job, clientId, onSave) {
         lineItems = lineItems.filter(i => Number(i.id) !== id);
         renderLineItems();
         syncTotalFromServices();
+        // Its scope line goes too, unless another service of that name remains.
+        const removedName = String((item && item.description) || '').trim().toLowerCase();
+        if (removedName && !lineItems.some(i => String(i.description || '').trim().toLowerCase() === removedName)
+          && removeFromScope(item.description)) saveScopeNow();
         triggerFinanceUpdate();
       } catch (err) {
         console.error(err);
@@ -4333,12 +4399,12 @@ function openJobPanel(job, clientId, onSave) {
             unit_price: Number(s.defaultRate || 0),
             category: DEFAULT_SERVICE_CATEGORY
           })));
-          showToast(`${services.length} service${services.length === 1 ? '' : 's'} added`, 'success');
+          if (addToScope(services.map(s => s.name))) await saveScopeNow();
+          showToast(`${services.length} service${services.length === 1 ? '' : 's'} added to the job and its scope of work`, 'success');
         } else {
           // Regular users can't set prices, so their services go into the
           // scope of work (saved with the job).
-          const lines = services.map(s => `- ${s.name}`).join('\n');
-          scopeEl.value = scopeEl.value.trim() ? scopeEl.value.replace(/\s+$/, '') + '\n' + lines : lines;
+          addToScope(services.map(s => s.name));
           userEdited = true;
           refreshDirtyChip();
           showToast('Added to the scope of work', 'success');
@@ -4430,6 +4496,11 @@ function openJobPanel(job, clientId, onSave) {
   function hasItemizedCosts() {
     return expenseState.supported && expenseState.expenses.length > 0;
   }
+  // True only before the v7 migration (no itemized cost list exists), when
+  // the single Job Cost field is still the way to enter a cost.
+  function costIsTyped() {
+    return expenseState.loaded && !expenseState.supported;
+  }
 
   function activeCategories() {
     return expenseState.categories.filter(c => c.is_active);
@@ -4481,7 +4552,14 @@ function openJobPanel(job, clientId, onSave) {
             <strong>$${formatMoney(b.total)}</strong>
           </div>`).join('')}
         <div class="job-cost-cat job-cost-total"><span>Total Cost</span><strong id="job-costs-total">$${formatMoney(totalCost)}</strong></div>
-      </div>` : '<p class="field-hint">No itemized costs yet. Add each cost with a category — the job cost becomes their total.</p>';
+      </div>` : (Number(current.job_cost || 0) > 0.005 ? `
+      <div class="job-cost-legacy">
+        <div class="job-cost-legacy-text">
+          <strong>$${formatMoney(current.job_cost)}</strong> cost entered before itemized costs
+          <span class="field-hint">It stays this job's cost and becomes an Uncategorized line when you add the first cost — or move it into the list now to edit or re-categorize it.</span>
+        </div>
+        <button type="button" id="exp-itemize-legacy-btn" class="btn-primary btn-quiet">Move into cost list</button>
+      </div>` : '<p class="field-hint">No itemized costs yet. Add each cost with a description, amount and category — the job’s cost is their total.</p>');
 
     const rowsHtml = expenses.length ? `
       <div class="job-expenses-table">
@@ -4515,6 +4593,21 @@ function openJobPanel(job, clientId, onSave) {
     applyMoneyInputBehavior($('#exp-amount'));
     body.querySelectorAll('.exp-amount').forEach(el => applyMoneyInputBehavior(el));
     $('#exp-add-btn').onclick = addDraftExpense;
+    const itemizeBtn = $('#exp-itemize-legacy-btn');
+    if (itemizeBtn) {
+      itemizeBtn.onclick = async () => {
+        itemizeBtn.disabled = true;
+        try {
+          applyExpenseResponse(await track(window.api.itemizeExistingJobCost(current.id)));
+          triggerFinanceUpdate();
+          showToast('The earlier cost is now an Uncategorized line you can edit', 'success');
+        } catch (err) {
+          console.error(err);
+          showToast(err.message || 'Failed to move the cost', 'error');
+          itemizeBtn.disabled = false;
+        }
+      };
+    }
   }
 
   // Applies a server response (expenses, breakdown, categories and the
@@ -4534,7 +4627,7 @@ function openJobPanel(job, clientId, onSave) {
     } else if (hasItemizedCosts()) {
       current.job_cost = expenseState.expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
     }
-    if (costEl && hasItemizedCosts()) {
+    if (costEl && document.activeElement !== costEl) {
       costEl.value = formatMoney(current.job_cost);
     }
     const now = collectFields();
@@ -4570,12 +4663,6 @@ function openJobPanel(job, clientId, onSave) {
   async function addDraftExpense() {
     const draft = expenseDraft();
     if (!draft) { showToast('Enter a cost description and amount', 'error'); return; }
-    // A typed-but-unsaved Job Cost is saved first so it's the figure kept.
-    if (costEl && !hasItemizedCosts() && !sameFields(collectFields(), savedFields)) {
-      const res = await window.api.updateJob(current.id, collectFields());
-      current = { ...current, ...res.job };
-      savedFields = collectFields();
-    }
     const btn = $('#exp-add-btn');
     if (btn) btn.disabled = true;
     try {
@@ -4708,6 +4795,14 @@ function openJobPanel(job, clientId, onSave) {
   }
   panel._requestClose = saveAndClose;
   $('#closeJobPanel').onclick = saveAndClose;
+  ['dragover', 'drop'].forEach((type) => {
+    panel.addEventListener(type, (e) => {
+      if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) {
+        e.preventDefault();
+        if (type === 'dragover' && !e.target.closest('.job-files-field')) e.dataTransfer.dropEffect = 'none';
+      }
+    });
+  });
   panel.addEventListener('click', (e) => {
     if (e.target === panel) saveAndClose();
   });
@@ -5035,28 +5130,87 @@ async function setupJobFilesSection(overlay, jobId, category) {
     }
   }
 
-  uploadBtn.onclick = () => fileInput.click();
+  // Same rule as the server (api/job-files.js) and the file picker.
+  const DOC_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx'];
+  function isAccepted(file) {
+    const name = String(file.name || '').toLowerCase();
+    const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
+    if (isPhoto) return String(file.type || '').startsWith('image/') || /\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?|avif)$/.test(name);
+    return DOC_EXTENSIONS.includes(ext) || file.type === 'application/pdf';
+  }
 
-  fileInput.addEventListener('change', async () => {
-    const files = fileInput.files;
-    if (!files || !files.length) return;
+  let uploading = false;
+  // Used by both the picker and drag-and-drop. Unsupported files are left
+  // out (and named) instead of failing the whole batch; existing files are
+  // never touched — uploads only ever add.
+  async function uploadFiles(fileList) {
+    const all = Array.from(fileList || []);
+    if (!all.length) return;
+    if (uploading) { showToast('Please wait for the current upload to finish', 'info'); return; }
+    const files = all.filter(isAccepted);
+    const skipped = all.filter(f => !isAccepted(f));
+    if (skipped.length) {
+      showToast(`${isPhoto ? 'Only images can be added to Photos' : 'Only PDF, Word or Excel files can be added to Documents'} — skipped ${skipped.map(f => f.name).join(', ')}`, 'error', 5000);
+    }
+    if (!files.length) return;
+    uploading = true;
     uploadBtn.disabled = true;
+    if (dropzone) dropzone.classList.add('is-uploading');
     setProgress(0, `Uploading ${files.length} file${files.length > 1 ? 's' : ''}...`);
     try {
       await window.api.uploadJobFiles(jobId, category, files, (pct) => {
         setProgress(pct, `Uploading... ${pct}%`);
       });
-      showToast(`${isPhoto ? 'Photo' : 'Document'}${files.length > 1 ? 's' : ''} uploaded`, 'success');
+      showToast(`${files.length} ${isPhoto ? 'photo' : 'document'}${files.length > 1 ? 's' : ''} uploaded`, 'success');
       loadFiles();
     } catch (err) {
       console.error(err);
       showToast(err.message || `Failed to upload ${isPhoto ? 'photos' : 'documents'}`, 'error');
     } finally {
+      uploading = false;
       uploadBtn.disabled = false;
+      if (dropzone) dropzone.classList.remove('is-uploading');
       fileInput.value = '';
       hideProgress();
     }
-  });
+  }
+
+  uploadBtn.onclick = () => fileInput.click();
+  fileInput.addEventListener('change', () => uploadFiles(fileInput.files));
+
+  // Drag-and-drop: the whole Documents (or Photos) section is the target,
+  // highlighted while files are dragged over it.
+  const section = uploadBtn.closest('.job-section');
+  const dropzone = overlay.querySelector(isPhoto ? '#job-photos-dropzone' : '#job-documents-dropzone');
+  const hasFiles = (e) => Boolean(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'));
+  if (section) {
+    let depth = 0;
+    const setActive = (on) => { section.classList.toggle('is-dragover', on); };
+    section.addEventListener('dragenter', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth += 1;
+      setActive(true);
+    });
+    section.addEventListener('dragover', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+    section.addEventListener('dragleave', (e) => {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (!depth) setActive(false);
+    });
+    section.addEventListener('drop', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      depth = 0;
+      setActive(false);
+      uploadFiles(e.dataTransfer.files);
+    });
+  }
 
   loadFiles();
 }
@@ -5384,67 +5538,12 @@ function parseMoney(value) {
 }
 
 
-function applyMoneyInputBehavior(input) {
-  if (!input) return;
-
-  const initial = input.value?.trim();
-  if (initial) {
-    input.value = formatMoney(parseMoney(initial));
-  }
-
-  function formatTypingValue(raw) {
-    if (!raw) return "";
-    const cleaned = String(raw).replace(/[^0-9.]/g, "");
-    if (!cleaned) return "";
-
-    const firstDot = cleaned.indexOf(".");
-    let integerPart = cleaned;
-    let decimalPart = "";
-    let hasDot = false;
-
-    if (firstDot >= 0) {
-      hasDot = true;
-      integerPart = cleaned.slice(0, firstDot);
-      decimalPart = cleaned.slice(firstDot + 1).replace(/\./g, "").slice(0, 2);
-    }
-
-    const normalizedInteger = integerPart.replace(/^0+(?=\d)/, "");
-    const displayInteger = normalizedInteger || (hasDot ? "0" : "");
-    const formattedInteger = displayInteger
-      ? Number(displayInteger).toLocaleString("en-US", { maximumFractionDigits: 0 })
-      : "";
-
-    if (hasDot) return `${formattedInteger}.${decimalPart}`;
-    return formattedInteger;
-  }
-
-  function caretPosFromDigitCount(value, digitCount) {
-    if (digitCount <= 0) return 0;
-    let count = 0;
-    for (let i = 0; i < value.length; i++) {
-      if (/\d/.test(value[i])) count++;
-      if (count === digitCount) return i + 1;
-    }
-    return value.length;
-  }
-
-  input.addEventListener("input", () => {
-    const selectionStart = input.selectionStart ?? input.value.length;
-    const beforeCursor = input.value.slice(0, selectionStart);
-    const digitsBefore = (beforeCursor.match(/\d/g) || []).length;
-
-    const formatted = formatTypingValue(input.value);
-    input.value = formatted;
-
-    const nextPos = caretPosFromDigitCount(formatted, digitsBefore);
-    input.setSelectionRange(nextPos, nextPos);
-  });
-
-  input.addEventListener("blur", () => {
-    const raw = input.value.trim();
-    if (!raw) return;
-    input.value = formatMoney(parseMoney(raw));
-  });
+// Money fields type naturally (no reformatting while typing) and show
+// "1,250.50" once the field is left — see public/js/money-input.js.
+// Pass { decimals: 'auto' } for quantities.
+function applyMoneyInputBehavior(input, options) {
+  if (!input || !window.crmMoney) return;
+  window.crmMoney.attach(input, options);
 }
 
 

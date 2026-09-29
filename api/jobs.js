@@ -10,7 +10,7 @@ const {
   sanitizeJobs
 } = require('./access-control');
 const { refreshFinanceYearsFor } = require('./finance-totals');
-const { hasPaymentJobId, markColumnAbsent, isMissingColumnError } = require('./schema-features');
+const { hasPaymentJobId, hasExpenseTables, markColumnAbsent, isMissingColumnError } = require('./schema-features');
 const { itemizedJobCost, copyExpensesToJob } = require('./expenses');
 
 const router = express.Router();
@@ -223,11 +223,16 @@ router.put('/:jobId', asyncHandler(async (req, res) => {
     : Number(job.total_due || 0);
   const amountPaid = Number(job.amount_paid || 0);
   const balance = totalDue - amountPaid;
-  // A job with itemized expenses always costs exactly their sum.
+  // A job with itemized expenses always costs exactly their sum. Once the
+  // itemized cost list exists (v7), it is the only place a job's cost is
+  // changed: a job_cost sent here is ignored and an older job's typed-in
+  // cost is kept as-is (it becomes an Uncategorized cost line when the job
+  // is first itemized). Before v7 the single Job Cost field still works.
   const itemized = await itemizedJobCost(jobId);
+  const costIsItemizedOnly = itemized !== null || await hasExpenseTables();
   const jobCost = itemized !== null
     ? itemized
-    : isAdmin(req) && typeof req.body.job_cost !== 'undefined'
+    : !costIsItemizedOnly && isAdmin(req) && typeof req.body.job_cost !== 'undefined'
       ? parseNumberField(req.body.job_cost, 'job_cost', { required: false, defaultValue: Number(job.job_cost || 0) })
       : Number(job.job_cost || 0);
 
@@ -306,7 +311,7 @@ async function applyJobPayment(req, jobId, signedAmount) {
 
   const currentPaid = Number(job.amount_paid || 0);
   if (signedAmount < 0 && -signedAmount > currentPaid + MONEY_EPSILON) {
-    throw new AppError(400, `Cannot remove more than the $${currentPaid.toFixed(2)} received on this job`);
+    throw new AppError(400, `Cannot remove more than the $${currentPaid.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} received on this job`);
   }
 
   const ledgerRow = await recordLedgerEntry(supabase, job, signedAmount);

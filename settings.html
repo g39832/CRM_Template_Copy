@@ -6,7 +6,7 @@
   <title>Admin Settings</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
   <script src="/js/theme.js"></script>
-  <link rel="stylesheet" href="/style.css?v=7">
+  <link rel="stylesheet" href="/style.css?v=8">
   <!-- Lucide icons (outline, consistent stroke — replaces emoji-as-icon usage) -->
   <script src="https://cdn.jsdelivr.net/npm/lucide@1.47.0/dist/umd/lucide.min.js"></script>
   <style>
@@ -144,16 +144,37 @@
       font-size: 0.8rem;
       margin-top: 2px;
     }
+    /* Switch: the <span> after the (invisible, full-size) checkbox is the
+       track and its ::after is the knob, so both follow input:checked.
+       (The knob used to be drawn on the label itself, which the :checked
+       selector never reached — the switch changed but never slid.) */
     .toggle {
       width: 44px;
       height: 24px;
-      border-radius: 999px;
-      background: var(--border-strong);
       position: relative;
+      display: inline-block;
       cursor: pointer;
       flex-shrink: 0;
     }
-    .toggle::after {
+    .toggle input {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      opacity: 0;
+      cursor: pointer;
+      z-index: 1;
+    }
+    .toggle span {
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      background: var(--border-strong);
+      transition: background 0.2s ease;
+      pointer-events: none;
+    }
+    .toggle span::after {
       content: '';
       position: absolute;
       width: 18px;
@@ -162,17 +183,15 @@
       top: 3px;
       left: 3px;
       background: #ffffff;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.3);
       transition: transform 0.2s ease;
     }
-    .toggle input {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      cursor: pointer;
-    }
-    .toggle input:checked + span::after,
-    .toggle.checked::after {
-      transform: translateX(20px);
+    .toggle input:checked + span { background: var(--success); }
+    .toggle input:checked + span::after { transform: translateX(20px); }
+    .toggle input:focus-visible + span,
+    .feature-toggle input:focus-visible + label {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
     }
 
     /* ---- Form fields ---- */
@@ -505,7 +524,7 @@
           <div class="setting-row">
             <div>
               <div class="label">Compact dashboard layout</div>
-              <div class="help">Tightens spacing in the main dashboard.</div>
+              <div class="help">Tightens spacing on the Clients dashboard. Saved to this browser.</div>
             </div>
             <label class="toggle">
               <input type="checkbox" id="prefCompactLayout">
@@ -515,7 +534,7 @@
           <div class="setting-row">
             <div>
               <div class="label">Email reminders</div>
-              <div class="help">Store a reminder preference for follow-ups and invoices.</div>
+              <div class="help">Stores your reminder preference for follow-ups and invoices (saved to this browser). The CRM does not send reminder emails yet.</div>
             </div>
             <label class="toggle">
               <input type="checkbox" id="prefEmailReminders">
@@ -531,7 +550,7 @@
             <button type="button" class="btn-secondary" id="logoutBtn">Sign Out</button>
             <button type="button" class="btn-primary" id="saveUserSettingsBtn">Save My Settings</button>
           </div>
-          <div class="settings-note">Password changes require your current password. Preferences save to this browser for a smoother client demo flow.</div>
+          <div class="settings-note">Password changes require your current password. Preferences save to this browser as soon as you switch them.</div>
         </div>
       </div>
 
@@ -713,7 +732,7 @@
     <!-- ===== TAB 5: Workflow ===== -->
     <div class="settings-card" id="tabWorkflow" role="tabpanel" data-admin-only="true">
       <h2>Platform Preferences</h2>
-      <p class="subtitle">Change your core operational model. The dashboard layout adjusts to match your selection.</p>
+      <p class="subtitle">Record how your business mainly works. This is saved for your business, but it does not currently change anything else in the CRM — clients, jobs, recurring work, totals and Finance work the same whichever you choose.</p>
       <div class="field-group">
         <label for="workflowSelect">Operational Model</label>
         <select id="workflowSelect">

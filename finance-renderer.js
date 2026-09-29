@@ -70,62 +70,11 @@ function parseCurrencyValue(value) {
   return Number.isFinite(num) ? num : 0;
 }
 
+// Natural typing (no reformatting while typing); formatted on blur —
+// see public/js/money-input.js.
 function applyCurrencyInputBehavior(input) {
-  if (!input) return;
-
-  function formatTypingValue(raw) {
-    if (!raw) return "";
-    const cleaned = String(raw).replace(/[^0-9.]/g, "");
-    if (!cleaned) return "";
-
-    const firstDot = cleaned.indexOf(".");
-    let integerPart = cleaned;
-    let decimalPart = "";
-    let hasDot = false;
-
-    if (firstDot >= 0) {
-      hasDot = true;
-      integerPart = cleaned.slice(0, firstDot);
-      decimalPart = cleaned.slice(firstDot + 1).replace(/\./g, "").slice(0, 2);
-    }
-
-    const normalizedInteger = integerPart.replace(/^0+(?=\d)/, "");
-    const displayInteger = normalizedInteger || (hasDot ? "0" : "");
-    const formattedInteger = displayInteger
-      ? Number(displayInteger).toLocaleString("en-US", { maximumFractionDigits: 0 })
-      : "";
-
-    if (hasDot) return `${formattedInteger}.${decimalPart}`;
-    return formattedInteger;
-  }
-
-  function caretPosFromDigitCount(value, digitCount) {
-    if (digitCount <= 0) return 0;
-    let count = 0;
-    for (let i = 0; i < value.length; i++) {
-      if (/\d/.test(value[i])) count++;
-      if (count === digitCount) return i + 1;
-    }
-    return value.length;
-  }
-
-  input.addEventListener("input", () => {
-    const selectionStart = input.selectionStart ?? input.value.length;
-    const beforeCursor = input.value.slice(0, selectionStart);
-    const digitsBefore = (beforeCursor.match(/\d/g) || []).length;
-
-    const formatted = formatTypingValue(input.value);
-    input.value = formatted;
-
-    const nextPos = caretPosFromDigitCount(formatted, digitsBefore);
-    input.setSelectionRange(nextPos, nextPos);
-  });
-
-  input.addEventListener("blur", () => {
-    const raw = input.value.trim();
-    if (!raw) return;
-    input.value = formatCurrencyValue(parseCurrencyValue(raw));
-  });
+  if (!input || !window.crmMoney) return;
+  window.crmMoney.attach(input);
 }
 
 // ======================================================

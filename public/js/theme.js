@@ -45,3 +45,50 @@
 
   window.crmTheme = { getTheme: getTheme, setTheme: setTheme, toggleTheme: toggleTheme };
 })();
+
+// Browser-side preferences from Settings -> My Settings -> Preferences
+// (besides dark mode above). Saved to this browser, like the theme.
+//   compactLayout  - tightens spacing on the Clients dashboard
+//                    (html.crm-compact, styled in style.css)
+//   emailReminders - stored preference only; nothing sends reminders yet
+(function () {
+  var STORAGE_KEY = 'crm-preferences';
+  var DEFAULTS = { compactLayout: false, emailReminders: false };
+
+  function read() {
+    var prefs = {};
+    Object.keys(DEFAULTS).forEach(function (k) { prefs[k] = DEFAULTS[k]; });
+    try {
+      var stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      Object.keys(DEFAULTS).forEach(function (k) {
+        if (typeof stored[k] === 'boolean') prefs[k] = stored[k];
+      });
+    } catch (err) { /* storage unavailable or corrupt — defaults */ }
+    return prefs;
+  }
+
+  function apply(prefs) {
+    document.documentElement.classList.toggle('crm-compact', Boolean(prefs.compactLayout));
+  }
+
+  function get(key) {
+    return read()[key];
+  }
+
+  // Returns true when the value was actually saved (false if this browser
+  // blocks storage — the change then only lasts until the page reloads).
+  function set(key, value) {
+    var prefs = read();
+    prefs[key] = Boolean(value);
+    apply(prefs);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  apply(read());
+  window.crmPrefs = { get: get, set: set, all: read };
+})();

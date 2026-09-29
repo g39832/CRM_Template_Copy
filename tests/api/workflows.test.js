@@ -576,3 +576,166 @@ test('client-level cost and Finance margin include itemized job costs', async ()
   const summary = await admin('GET', `/api/finance/summary?year=${YEAR}`);
   assert.equal(typeof summary.data.avgMarginPct, 'number');
 });
+
+// ---------------------------------------------------------------------------
+// Second round of changes
+// ---------------------------------------------------------------------------
+
+// Text drawn on a pdfkit page: inflate every content stream and decode the
+// hex glyph strings in drawing order (kerned text is split into pieces, so
+// the pieces of each TJ array are joined).
+function pdfText(buffer) {
+  const zlib = require('zlib');
+  const raw = buffer.toString('latin1');
+  let out = '';
+  const re = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  let m;
+  while ((m = re.exec(raw))) {
+    let content;
+    try { content = zlib.inflateSync(Buffer.from(m[1], 'latin1')).toString('latin1'); } catch (e) { continue; }
+    const pieces = content.match(/\[[^\]]*\]\s*TJ|<[0-9a-fA-F]*>\s*Tj/g) || [];
+    for (const piece of pieces) {
+      const hex = (piece.match(/<([0-9a-fA-F]*)>/g) || []).map((h) => h.slice(1, -1)).join('');
+      out += Buffer.from(hex, 'hex').toString('latin1') + '\n';
+    }
+  }
+  return out;
+}
+
+test('customer PDFs show the scope and one total — no cost breakdown, categories, quantities or unit prices; commas in totals', async () => {
+  const admin = await login('owner@example.com', 'admin');
+  // Job 1: scope "Tear off and replace roof", services Tear-off labor (Labor,
+  // 1 x 800) and Shingles (Materials, 30 x 40) = $2,000.
+  for (const mode of ['estimate', 'invoice']) {
+    const res = await admin('POST', `/api/jobs/1/${mode}`, {});
+    assert.equal(res.status, 200);
+    const text = pdfText(res.data);
+    assert.match(text, /Tear off and replace roof/, `${mode}: scope of work printed`);
+    assert.match(text, /2,000\.00/, `${mode}: total with a thousands comma`);
+    for (const hidden of ['COST BREAKDOWN', 'DESCRIPTION', 'CATEGORY', 'UNIT PRICE', 'QTY', 'Materials', 'Labor', 'Shingles', '40.00', '800.00']) {
+      assert.ok(!text.includes(hidden), `${mode}: must not show "${hidden}"`);
+    }
+  }
+  // Blank scope: the services are listed as the scope — names only.
+  await admin('PUT', '/api/jobs/1', { scope_of_work: '' });
+  const text = pdfText((await admin('POST', '/api/jobs/1/estimate', {})).data);
+  assert.match(text, /Tear-off labor/);
+  assert.match(text, /Shingles/);
+  assert.ok(!text.includes('Materials') && !text.includes('40.00'), 'no category or unit price for listed services');
+  // Large amounts get commas: 150000 -> 150,000.00
+  await admin('PUT', '/api/jobs/2', { total_due: 150000 });
+  assert.match(pdfText((await admin('POST', '/api/jobs/2/invoice', {})).data), /150,000\.00/);
+});
+
+test('with itemized costs available, a job cost can only change through Job Costs', async () => {
+  await migrateAll();
+  const admin = await login('owner@example.com', 'admin');
+  // Job 2 has an older typed-in cost ($700) and no itemized costs.
+  let put = await admin('PUT', '/api/jobs/2', { job_cost: 9999, title: 'Gutter Job' });
+  assert.equal(put.status, 200);
+  assert.equal(put.data.job.job_cost, 700, 'direct job_cost edit ignored; old cost kept');
+  // Job 1 is itemized ($1,200).
+  put = await admin('PUT', '/api/jobs/1', { job_cost: 5 });
+  assert.equal(put.data.job.job_cost, 1200);
+  // The older cost moves into the list as an Uncategorized line, same total.
+  const moved = await admin('POST', '/api/jobs/2/expenses/itemize-existing', {});
+  assert.equal(moved.status, 200);
+  assert.deepEqual(moved.data.expenses.map((e) => [e.description, e.amount, e.category_name]),
+    [['Cost entered before itemized expenses', 700, 'Uncategorized']]);
+  assert.equal(moved.data.job.job_cost, 700);
+  // Running it again adds nothing; editing the line changes the job cost.
+  assert.equal((await admin('POST', '/api/jobs/2/expenses/itemize-existing', {})).data.expenses.length, 1);
+  const edited = await admin('PUT', `/api/jobs/2/expenses/${moved.data.expenses[0].id}`, { amount: 725.5, category_id: 2 });
+  assert.equal(edited.data.job.job_cost, 725.5);
+  const overview = (await admin('GET', `/api/finance/overview?year=${YEAR}`)).data;
+  assert.equal(overview.totals.cost, 3500 + 400 + 1200 + 725.5 + 40 + 40);
+  // A job with no cost: nothing to move.
+  assert.equal((await admin('POST', '/api/jobs/3/expenses/itemize-existing', {})).data.expenses.length, 1, 'job 3 keeps its $40 as one line');
+  const sam = await login('sam@example.com', 'user');
+  assert.equal((await sam('POST', '/api/jobs/2/expenses/itemize-existing', {})).status, 403);
+});
+
+test('Finance overview: revenue, cost, profit, months, salespeople and cost categories add up (admin only)', async () => {
+  await migrateAll();
+  const admin = await login('owner@example.com', 'admin');
+  const res = await admin('GET', `/api/finance/overview?year=${YEAR}`);
+  assert.equal(res.status, 200);
+  const d = res.data;
+  // Clients created this year: Alice 5000/3500, Bob 1200/400; jobs 1-4.
+  assert.equal(d.totals.revenue, 5000 + 1200 + 2000 + 1500 + 120 + 120);
+  assert.equal(d.totals.cost, 3500 + 400 + 1200 + 700 + 40 + 40);
+  assert.equal(d.totals.profit, d.totals.revenue - d.totals.cost);
+  assert.equal(d.totals.received, 3200);
+  assert.equal(d.monthly.reduce((s, m) => s + m.received, 0), d.totals.received);
+  assert.equal(d.monthly[1].received, 2000);
+  assert.equal(d.salespeople.reduce((s, p) => s + p.revenue, 0), d.totals.revenue);
+  assert.deepEqual(d.salespeople.map((p) => p.name), ['Sam Sales', 'Riley Rep']);
+  const cats = Object.fromEntries(d.costByCategory.map((c) => [c.name, c.amount]));
+  assert.deepEqual(cats, { Materials: 700, Labor: 500, 'Client account costs': 3900, 'Job costs not itemized': 780 });
+  assert.equal(d.costByCategory.reduce((s, c) => s + c.amount, 0), d.totals.cost);
+  // Last year: Eve Closed and her job.
+  const last = (await admin('GET', `/api/finance/overview?year=${YEAR - 1}`)).data;
+  assert.equal(last.totals.revenue, 800 + 900);
+  assert.deepEqual(last.costByCategory.map((c) => c.name), ['Dumpsters', 'Client account costs']);
+  const sam = await login('sam@example.com', 'user');
+  assert.equal((await sam('GET', `/api/finance/overview?year=${YEAR}`)).status, 403);
+  // Before the v7 migration it still works (no itemized categories).
+  await resetDb();
+  const before = (await admin('GET', `/api/finance/overview?year=${YEAR}`)).data;
+  assert.equal(before.totals.cost, d.totals.cost);
+});
+
+test('a client can be created without an email (and still with one)', async () => {
+  const admin = await login('owner@example.com', 'admin');
+  let res = await admin('POST', '/api/save-client', { fName: 'No', lName: 'Email', phone: '555-0199', address: '', email: '', status: 'Lead' });
+  assert.equal(res.status, 200);
+  res = await admin('POST', '/api/save-client', { fName: 'Missing', lName: 'Field', phone: '555-0198', status: 'Lead' });
+  assert.equal(res.status, 200, 'email may be left out entirely');
+  res = await admin('POST', '/api/save-client', { fName: 'Has', lName: 'Email', phone: '555-0197', email: 'has@example.com', status: 'Lead' });
+  assert.equal(res.status, 200);
+  const sam = await login('sam@example.com', 'user');
+  assert.equal((await sam('POST', '/api/save-client', { fName: 'User', lName: 'Made', phone: '1' })).status, 200);
+  const clients = (await dump()).tables.clients;
+  assert.equal(clients.find((c) => c.name === 'No Email').email, '');
+  assert.equal(clients.find((c) => c.name === 'Missing Field').email, '');
+  assert.equal(clients.find((c) => c.name === 'Has Email').email, 'has@example.com');
+  assert.equal(clients.find((c) => c.name === 'Alice Legacy').email, 'alice@example.com', 'existing emails untouched');
+});
+
+test('job uploads: several files at once, wrong types rejected before anything is stored, existing files kept', async () => {
+  const admin = await login('owner@example.com', 'admin');
+  const cookie = sessionCookies.get('owner@example.com|admin');
+  const { PDF_BYTES, PNG_BYTES } = require('../local-env');
+  async function upload(category, files) {
+    const form = new FormData();
+    form.append('category', category);
+    for (const [name, bytes, type] of files) form.append('files', new Blob([bytes], { type }), name);
+    const r = await fetch(`${APP}/api/job-files/1/upload`, { method: 'POST', headers: { cookie }, body: form });
+    return { status: r.status, data: await r.json() };
+  }
+  let res = await upload('document', [['a.pdf', PDF_BYTES, 'application/pdf'], ['b.pdf', PDF_BYTES, 'application/pdf']]);
+  assert.equal(res.status, 200);
+  assert.equal(res.data.files.length, 2);
+  res = await upload('photo', [['c.png', PNG_BYTES, 'image/png']]);
+  assert.equal(res.status, 200);
+  const before = (await dump()).tables.job_files.length;
+  res = await upload('document', [['ok.pdf', PDF_BYTES, 'application/pdf'], ['notes.txt', Buffer.from('hi'), 'text/plain']]);
+  assert.equal(res.status, 400);
+  assert.match(res.data.error, /notes\.txt/);
+  res = await upload('photo', [['scan.pdf', PDF_BYTES, 'application/pdf']]);
+  assert.equal(res.status, 400);
+  const files = (await dump()).tables.job_files;
+  assert.equal(files.length, before, 'a rejected batch stores nothing');
+  assert.ok(files.find((f) => f.file_name === 'contract.pdf') && files.find((f) => f.file_name === 'before.png'), 'existing files kept');
+  const docs = (await admin('GET', '/api/job-files/1?category=document')).data.files.map((f) => f.file_name);
+  assert.deepEqual(docs.sort(), ['a.pdf', 'b.pdf', 'contract.pdf']);
+});
+
+test('Operational Model saves and reloads (stored preference)', async () => {
+  const admin = await login('owner@example.com', 'admin');
+  const save = await admin('PATCH', '/api/v2/admin/settings', { company: { business_workflow: 'returning' } });
+  assert.equal(save.status, 200);
+  const got = await admin('GET', '/api/v2/admin/settings');
+  assert.equal(got.data.data.company.business_workflow, 'returning');
+  assert.equal((await admin('PATCH', '/api/v2/admin/settings', { company: { business_workflow: 'bogus' } })).status, 400);
+});

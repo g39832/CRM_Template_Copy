@@ -599,7 +599,8 @@ test.describe('job costs with custom expense categories', () => {
     await expect(tileValue(page, 'costTile')).toHaveText('$2,300.00');
     const job = await openJob(page, 'Roof Replacement');
     await expect(breakdown(page)).toHaveText([/Labor\s*\$500\.00/, /Materials\s*\$700\.00/, /Total Cost\s*\$1,200\.00/]);
-    await expect(job.locator('#job-cost')).toHaveJSProperty('readOnly', true);
+    // Money shows the cost read-only; it is changed only in Job Costs.
+    await expect(job.locator('#job-cost-field')).toBeHidden();
 
     await costs(page).locator('#exp-description').fill('Sales commission');
     await costs(page).locator('#exp-category').selectOption({ label: 'Commissions' });
@@ -756,4 +757,367 @@ test.describe('layout and themes', () => {
       }
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Second round of changes
+// ---------------------------------------------------------------------------
+test.describe('second round: costs, services, inputs, uploads, settings, clients, finance, scrolling', () => {
+  const costs = (page) => page.locator('#job-costs-section');
+
+  test('Money shows Cost read-only; costs change only in Job Costs; an older cost is kept and can be moved into the list', async ({ page }) => {
+    onlyOn([DESKTOP, 'phone-390']);
+    const errors = trackErrors(page);
+    await resetDb({ migrated: true });
+    await loginAs(page, 'owner@example.com', 'admin');
+    const panel = await openClient(page, 'Bob Both');
+    const job = await openJob(page, 'Gutter Job'); // older job: typed-in cost $700, not itemized
+    await expect(job.locator('#job-cost-field')).toBeHidden();
+    await expect(job.locator('#job-cost-display')).toHaveText('$700.00');
+    await expect(job.locator('#job-cost-source')).toHaveText('From Job Costs');
+    await expect(job.locator('.job-money-inputs input:visible')).toHaveCount(1); // only Job Total
+    await expect(costs(page).locator('.job-cost-legacy')).toContainText('$700.00');
+
+    await costs(page).locator('#exp-itemize-legacy-btn').click();
+    const row = costs(page).locator('.job-expense-row');
+    await expect(row).toHaveCount(1);
+    await expect(row.locator('[data-field="description"]')).toHaveValue('Cost entered before itemized expenses');
+    await expect(row.locator('[data-field="category_id"] option:checked')).toHaveText('Uncategorized');
+    await expect(job.locator('#job-cost-display')).toHaveText('$700.00');
+
+    await row.locator('[data-field="category_id"]').selectOption({ label: 'Materials' });
+    await expect(costs(page).locator('.job-cost-cat').first()).toContainText('Materials');
+    await row.locator('[data-field="amount"]').fill('725.50');
+    await row.locator('[data-field="amount"]').blur();
+    await expect(job.locator('#job-cost-display')).toHaveText('$725.50');
+    await expect(job.locator('#job-profit-display')).toHaveText('$774.50');
+    await closeJob(page);
+    await expect(tileValue(page, 'costTile')).toHaveText('$2,325.50'); // 1,200 + 725.50 + 400 client-level
+    const db = await dump();
+    expect(db.tables.jobs.find((j) => j.id === 2).job_cost).toBe(725.5);
+    expect(errors).toEqual([]);
+    void panel;
+  });
+
+  test('decimal typing is natural in cost, payment, total, quantity and price fields; values save as numbers', async ({ page }) => {
+    onlyOn([DESKTOP, 'phone-390', 'tablet-768']);
+    const errors = trackErrors(page);
+    await resetDb({ migrated: true });
+    await loginAs(page, 'owner@example.com', 'admin');
+    await openClient(page, 'Bob Both');
+    let job = await openJob(page, 'Roof Replacement');
+
+    // New cost typed key by key — never reformatted mid-typing.
+    const amount = costs(page).locator('#exp-amount');
+    await amount.click();
+    const typed = [];
+    for (const ch of '1250.50') {
+      await page.keyboard.type(ch);
+      typed.push(await amount.inputValue());
+    }
+    expect(typed).toEqual(['1', '12', '125', '1250', '1250.', '1250.5', '1250.50']);
+    await costs(page).locator('#exp-description').click();
+    await expect(amount).toHaveValue('1,250.50');
+    await amount.click();
+    await expect(amount).toHaveValue('1250.50'); // editable again, no commas
+    await page.keyboard.press('End');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.press('Backspace');
+    await expect(amount).toHaveValue('1250');
+    await page.keyboard.type('.75');
+    await expect(amount).toHaveValue('1250.75');
+    await costs(page).locator('#exp-description').fill('Dumpster');
+    await costs(page).locator('#exp-add-btn').click();
+    await expect(job.locator('#job-cost-display')).toHaveText('$2,450.75');
+
+    // Editing an existing value: 700 -> 700.5
+    const shingles = costs(page).locator('.job-expense-row', { has: page.locator('input[value="Shingles"]') }).locator('[data-field="amount"]');
+    await shingles.click();
+    await expect(shingles).toHaveValue('700');
+    await page.keyboard.press('End');
+    await page.keyboard.type('.5');
+    await expect(shingles).toHaveValue('700.5');
+    await shingles.blur();
+    await expect(shingles).toHaveValue('700.50');
+    await expect(job.locator('#job-cost-display')).toHaveText('$2,451.25');
+
+    // Payments: "0.50", replace, "10.5"
+    const pay = job.locator('#job-payment-input');
+    await pay.click();
+    await page.keyboard.type('0.50');
+    await expect(pay).toHaveValue('0.50');
+    await pay.fill('');
+    await pay.click();
+    await page.keyboard.type('10.5');
+    await expect(pay).toHaveValue('10.5');
+    await job.locator('#job-add-payment-btn').click();
+    await expect(job.locator('#job-paid-display')).toHaveText('$510.50');
+
+    // Service quantity and price
+    const tear = job.locator('.job-service-row', { has: page.locator('input[value="Tear-off labor"]') });
+    const qty = tear.locator('[data-field="quantity"]');
+    await qty.click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type('1.5');
+    await expect(qty).toHaveValue('1.5');
+    await qty.blur();
+    await expect(qty).toHaveValue('1.5');
+    const price = tear.locator('[data-field="unit_price"]');
+    await price.click();
+    await expect(price).toHaveValue('800');
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type('12500.50');
+    await expect(price).toHaveValue('12500.50');
+    await price.blur();
+    await expect(price).toHaveValue('12,500.50');
+    await expect(job.locator('#job-total-display')).toHaveText('$19,950.75'); // 1.5 x 12,500.50 + 1,200
+    await closeJob(page);
+
+    const db = await dump();
+    expect(db.tables.job_expenses.find((e) => e.description === 'Dumpster').amount).toBe(1250.75);
+    expect(db.tables.job_expenses.find((e) => e.description === 'Shingles').amount).toBe(700.5);
+    expect(db.tables.payments.filter((p) => p.amount === 10.5)).toHaveLength(1);
+    const li = db.tables.job_line_items.find((i) => i.description === 'Tear-off labor');
+    expect([li.quantity, li.unit_price]).toEqual([1.5, 12500.5]);
+
+    // A job total typed by hand (job without services).
+    job = await openJob(page, 'Gutter Job');
+    const total = job.locator('#job-total');
+    await total.click();
+    await expect(total).toHaveValue('1500');
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type('150000');
+    await total.blur();
+    await expect(total).toHaveValue('150,000.00');
+    await expect(job.locator('#job-total-display')).toHaveText('$150,000.00');
+    await closeJob(page);
+    expect((await dump()).tables.jobs.find((j) => j.id === 2).total_due).toBe(150000);
+    expect(errors).toEqual([]);
+  });
+
+  test('+ Service adds the service to the Scope of Work (saved right away); removing it takes the line out', async ({ page }) => {
+    onlyOn([DESKTOP, 'phone-390']);
+    const errors = trackErrors(page);
+    await loginAs(page, 'owner@example.com', 'admin');
+    await openClient(page, 'Carla Jobs');
+    const job = await openJob(page, 'September Maintenance');
+    await expect(job.locator('#job-scope')).toHaveValue('Monthly maintenance visit');
+    await job.locator('#job-add-service-btn').click();
+    const picker = page.locator('#servicePresetPickerOverlay');
+    await picker.locator('label', { hasText: 'Gutter Cleaning' }).click();
+    await picker.locator('label', { hasText: 'Roof Inspection' }).click();
+    await picker.locator('#presetPickerConfirm').click();
+    await expect(job.locator('#job-scope')).toHaveValue('Monthly maintenance visit\n- Gutter Cleaning\n- Roof Inspection');
+    await expect(job.locator('#job-total-display')).toHaveText('$550.00'); // 120 + 250 + 180
+    await expect.poll(async () => (await dump()).tables.jobs.find((j) => j.id === 4).scope_of_work)
+      .toBe('Monthly maintenance visit\n- Gutter Cleaning\n- Roof Inspection');
+    await expect(job.locator('#jobSaveStatus')).toHaveText('Saved');
+
+    // Adding the same service again doesn't duplicate its scope line.
+    await job.locator('#job-add-service-btn').click();
+    await picker.locator('label', { hasText: 'Gutter Cleaning' }).click();
+    await picker.locator('#presetPickerConfirm').click();
+    await expect(job.locator('.job-service-row')).toHaveCount(4);
+    await expect(job.locator('#job-scope')).toHaveValue('Monthly maintenance visit\n- Gutter Cleaning\n- Roof Inspection');
+
+    await job.locator('.job-service-row', { has: page.locator('input[value="Roof Inspection"]') }).locator('.li-remove').click();
+    await expect(job.locator('#job-scope')).toHaveValue('Monthly maintenance visit\n- Gutter Cleaning');
+    // One Gutter Cleaning removed, one left: its scope line stays.
+    await job.locator('.job-service-row', { has: page.locator('input[value="Gutter Cleaning"]') }).first().locator('.li-remove').click();
+    await expect(job.locator('#job-scope')).toHaveValue('Monthly maintenance visit\n- Gutter Cleaning');
+    await closeJob(page);
+    const saved = (await dump()).tables.jobs.find((j) => j.id === 4);
+    expect(saved.scope_of_work).toBe('Monthly maintenance visit\n- Gutter Cleaning');
+    expect(saved.total_due).toBe(300);
+    expect(errors).toEqual([]);
+  });
+
+  test('drag and drop: PDFs into Documents, images into Photos, several at once; wrong types rejected; existing files kept', async ({ page }) => {
+    onlyOn([DESKTOP, 'tablet-landscape-1024']);
+    const errors = trackErrors(page);
+    await loginAs(page, 'owner@example.com', 'admin');
+    await openClient(page, 'Bob Both');
+    const job = await openJob(page, 'Roof Replacement');
+    await expect(job.locator('#job-documents-list')).toContainText('contract.pdf');
+
+    const makeTransfer = (files) => page.evaluateHandle((list) => {
+      const dt = new DataTransfer();
+      for (const [name, type, text] of list) dt.items.add(new File([text], name, { type }));
+      return dt;
+    }, files);
+    const docs = job.locator('section', { has: page.locator('#job-documents-dropzone') });
+    let dt = await makeTransfer([['dropped-one.pdf', 'application/pdf', '%PDF-1.4 a'], ['dropped-two.pdf', 'application/pdf', '%PDF-1.4 b']]);
+    await docs.dispatchEvent('dragenter', { dataTransfer: dt });
+    await expect(docs).toHaveClass(/is-dragover/);
+    await docs.dispatchEvent('dragover', { dataTransfer: dt });
+    await docs.dispatchEvent('drop', { dataTransfer: dt });
+    await expect(docs).not.toHaveClass(/is-dragover/);
+    await expect(job.locator('#job-documents-list')).toContainText('dropped-one.pdf');
+    await expect(job.locator('#job-documents-list')).toContainText('dropped-two.pdf');
+    await expect(job.locator('#job-documents-list')).toContainText('contract.pdf');
+
+    const photos = job.locator('section', { has: page.locator('#job-photos-dropzone') });
+    dt = await makeTransfer([['roof.png', 'image/png', 'png'], ['notes.txt', 'text/plain', 'hello']]);
+    await photos.dispatchEvent('drop', { dataTransfer: dt });
+    await expect(page.locator('.toast', { hasText: 'notes.txt' })).toBeVisible();
+    await expect(job.locator('#job-photos-list .job-photo-thumb')).toHaveCount(2); // before.png + roof.png
+
+    dt = await makeTransfer([['notes.txt', 'text/plain', 'hello']]);
+    await docs.dispatchEvent('drop', { dataTransfer: dt });
+    await expect(page.locator('.toast', { hasText: 'Only PDF, Word or Excel' })).toBeVisible();
+
+    const files = (await dump()).tables.job_files.filter((f) => f.job_id === 1).map((f) => f.file_name).sort();
+    expect(files).toEqual(['before.png', 'contract.pdf', 'dropped-one.pdf', 'dropped-two.pdf', 'roof.png']);
+    // The upload buttons still open the file picker.
+    const chooser = page.waitForEvent('filechooser');
+    await job.locator('#job-documents-upload-btn').click();
+    expect((await chooser).isMultiple()).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  test('Settings switches slide, change the setting and survive a reload (light and dark)', async ({ page }) => {
+    onlyOn([DESKTOP, 'phone-390']);
+    const errors = trackErrors(page);
+    await loginAs(page, 'owner@example.com', 'admin');
+    await page.request.patch('/api/v2/admin/settings', {
+      data: { features: [{ component_type: 'hero', is_active: true }, { component_type: 'faq', is_active: false }] }
+    });
+    await page.goto('/settings', { waitUntil: 'networkidle' });
+    const knob = (id) => page.evaluate((sel) => getComputedStyle(document.querySelector(sel).nextElementSibling, '::after').transform, id);
+    const sw = (id) => page.locator(`label.toggle:has(${id})`);
+
+    for (const id of ['#prefCompactLayout', '#prefEmailReminders']) {
+      await expect(page.locator(id)).not.toBeChecked();
+      expect(await knob(id)).toBe('none');
+      await sw(id).click();
+      await expect(page.locator(id)).toBeChecked();
+      await expect.poll(() => knob(id)).not.toBe('none'); // the knob slid across
+    }
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.locator('#prefCompactLayout')).toBeChecked();
+    await expect(page.locator('#prefEmailReminders')).toBeChecked();
+    await page.goto('/main', { waitUntil: 'networkidle' });
+    await expect(page.locator('html')).toHaveClass(/crm-compact/);
+    await page.goto('/settings', { waitUntil: 'networkidle' });
+    await sw('#prefCompactLayout').click();
+    await expect(page.locator('#prefCompactLayout')).not.toBeChecked();
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.locator('#prefCompactLayout')).not.toBeChecked();
+    await expect(page.locator('html')).not.toHaveClass(/crm-compact/);
+
+    // Dark mode switch
+    await sw('#prefDarkMode').click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.locator('#prefDarkMode')).toBeChecked();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect.poll(() => knob('#prefEmailReminders')).not.toBe('none'); // still drawn correctly in dark
+
+    // Feature switches (saved to the database with Save Features)
+    await page.locator('.tab-btn[data-tab="features"]').click();
+    const faq = page.locator('.feature-item', { hasText: 'faq' });
+    await expect(faq.locator('input')).not.toBeChecked();
+    await faq.locator('.feature-toggle label').click();
+    await expect(faq.locator('input')).toBeChecked();
+    await page.locator('#saveFeaturesBtn').click();
+    await expect(page.locator('#formFeedback')).toHaveText('Features saved');
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.locator('.tab-btn[data-tab="features"]').click();
+    await expect(page.locator('.feature-item', { hasText: 'faq' }).locator('input')).toBeChecked();
+    const rows = (await dump()).tables.company_components;
+    expect(rows.find((r) => r.component_type === 'faq').is_active).toBe(true);
+
+    // Operational Model: saved and shown after reload; described honestly.
+    await page.locator('.tab-btn[data-tab="workflow"]').click();
+    await expect(page.locator('#tabWorkflow')).toContainText('does not currently change');
+    await page.selectOption('#workflowSelect', 'single');
+    await page.locator('#saveWorkflowBtn').click();
+    await expect(page.locator('#formFeedback')).toHaveText('Preference saved');
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.locator('#workflowSelect')).toHaveValue('single');
+
+    await sw('#prefDarkMode').click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    expect(errors).toEqual([]);
+  });
+
+  test('a client can be added without an email, and with one', async ({ page }) => {
+    onlyOn([DESKTOP, 'phone-390']);
+    const errors = trackErrors(page);
+    await loginAs(page, 'owner@example.com', 'admin');
+    await page.goto('/main', { waitUntil: 'networkidle' });
+    await expect(page.locator('#email')).not.toHaveAttribute('required', /.*/);
+    await page.fill('#fName', 'Nora');
+    await page.fill('#lName', 'Noemail');
+    await page.fill('#phone', '555-0142');
+    await page.locator('#clientIntakeForm button[type="submit"]').click();
+    await expect(page.locator('.client-card', { hasText: 'Nora Noemail' })).toBeVisible();
+    await page.fill('#fName', 'Wes');
+    await page.fill('#lName', 'Withemail');
+    await page.fill('#phone', '555-0143');
+    await page.fill('#email', 'wes@example.com');
+    await page.locator('#clientIntakeForm button[type="submit"]').click();
+    await expect(page.locator('.client-card', { hasText: 'Wes Withemail' })).toBeVisible();
+    const clients = (await dump()).tables.clients;
+    expect(clients.find((c) => c.name === 'Nora Noemail').email).toBe('');
+    expect(clients.find((c) => c.name === 'Wes Withemail').email).toBe('wes@example.com');
+
+    // An existing client's email is kept and still shown as a link.
+    const panel = await openClient(page, 'Alice Legacy');
+    await expect(panel.locator('#p-email')).toHaveValue('alice@example.com');
+    await expect(panel.locator('a[href^="mailto:"]')).toHaveCount(1);
+    expect(errors).toEqual([]);
+  });
+
+  test('Finance overview draws KPI cards and charts from live data, in light and dark', async ({ page }) => {
+    const errors = trackErrors(page);
+    await resetDb({ migrated: true });
+    await loginAs(page, 'owner@example.com', 'admin');
+    for (const theme of ['light', 'dark']) {
+      await page.addInitScript((t) => localStorage.setItem('crm-theme', t), theme);
+      await page.goto('/finance', { waitUntil: 'networkidle' });
+      await expect(page.locator('#foKpis .fo-kpi')).toHaveCount(5);
+      await expect(page.locator('#foKpis')).toContainText('$7,000.00'); // same as Year Totals (override)
+      await expect(page.locator('#foProfit')).toContainText('$9,940.00');
+      await expect(page.locator('#foProfit')).toContainText('$5,880.00');
+      await expect(page.locator('#foProfit')).toContainText('40.8%');
+      await expect(page.locator('#foMonthly .fo-col')).toHaveCount(12);
+      await expect(page.locator('#foSales')).toContainText('Sam Sales');
+      await expect(page.locator('#foCosts')).toContainText('Materials');
+      await expect(page.locator('#metricsBody input#input-expected')).toHaveValue('7,000.00'); // existing table still there
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+    }
+    // The year picker redraws the overview.
+    await page.fill('#finance-year', String(new Date().getFullYear() - 1));
+    await expect(page.locator('#foProfit')).toContainText('$1,700.00');
+    expect(errors).toEqual([]);
+  });
+
+  test('mouse-wheel / trackpad scrolling works in small and split-screen windows', async ({ page }) => {
+    onlyOn([DESKTOP]);
+    await loginAs(page, 'owner@example.com', 'admin');
+    for (const [w, h] of [[1440, 700], [960, 700], [760, 700], [700, 640], [500, 700]]) {
+      await page.setViewportSize({ width: w, height: h });
+      for (const path of ['/main', '/finance', '/settings']) {
+        await page.goto(path, { waitUntil: 'networkidle' });
+        const scrollable = await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight + 20);
+        if (!scrollable) continue;
+        await page.mouse.move(w / 2, h / 2);
+        await page.mouse.wheel(0, 300);
+        await expect.poll(() => page.evaluate(() => window.scrollY), { message: `${path} at ${w}x${h}` }).toBeGreaterThan(0);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), `${path} ${w}px sideways`).toBeLessThanOrEqual(1);
+      }
+    }
+    // Inside an open job the wheel scrolls the job workspace.
+    await page.setViewportSize({ width: 760, height: 640 });
+    await openClient(page, 'Bob Both');
+    const job = await openJob(page, 'Roof Replacement');
+    const box = await job.locator('#jobPanelCard').boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + Math.min(box.height / 2, 300));
+    await page.mouse.wheel(0, 400);
+    await expect.poll(() => job.locator('#jobPanelCard').evaluate((el) => {
+      let n = el; while (n && n.scrollTop === 0) n = n.parentElement; return n ? n.scrollTop : 0;
+    })).toBeGreaterThan(0);
+  });
 });

@@ -397,6 +397,23 @@ router.post('/jobs/:jobId/expenses', requireAdmin, asyncHandler(async (req, res)
   await respondWithJobExpenses(req, res, supabase, jobId, { created_id: data.id });
 }));
 
+// Moves an older job's single typed-in cost into the itemized list as an
+// Uncategorized line (the same thing adding the first cost does), so it can
+// be edited, re-categorized or removed from Job Costs. Nothing is lost: the
+// job's cost stays exactly the same.
+router.post('/jobs/:jobId/expenses/itemize-existing', requireAdmin, asyncHandler(async (req, res) => {
+  const jobId = parseIntField(req.params.jobId, 'jobId', { min: 1 });
+  await db.schemaReady;
+  const job = await loadJobForAdmin(req, jobId);
+  await requireExpenseTables();
+  const supabase = requireSupabase();
+  await ensureDefaultCategories(supabase, companyIdOf(req));
+  await preserveUnitemizedCost(supabase, job, req);
+  await recomputeJobCostFromExpenses(supabase, jobId);
+  await refreshFinanceYearsFor(job.created_at, 'job expense itemize');
+  await respondWithJobExpenses(req, res, supabase, jobId);
+}));
+
 router.put('/jobs/:jobId/expenses/:expenseId', requireAdmin, asyncHandler(async (req, res) => {
   assertObject(req.body);
   const jobId = parseIntField(req.params.jobId, 'jobId', { min: 1 });

@@ -6,7 +6,7 @@
   <title>CRM Template - Finance</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
   <script src="/js/theme.js"></script>
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
 
   <style>
     .page-header {
@@ -1123,6 +1123,126 @@
         flex-direction: row;
       }
     }
+
+    /* ================= FINANCIAL OVERVIEW =================
+       Visual summary at the top of Finance (public/js/finance-overview.js).
+       Chart colors: revenue / cost / profit are fixed categorical slots,
+       validated for color-vision deficiency in light and dark. */
+    .fo-root {
+      --fo-revenue: #2a78d6;
+      --fo-cost: #eb6834;
+      --fo-profit: #1baf7a;
+      --fo-track: #eef1f5;
+    }
+    :root[data-theme="dark"] .fo-root {
+      --fo-revenue: #3987e5;
+      --fo-cost: #d95926;
+      --fo-profit: #199e70;
+      --fo-track: #22314b;
+    }
+    .fo-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .fo-year { display: flex; align-items: center; gap: 8px; }
+    .fo-year label { font-weight: 700; font-size: 0.85rem; color: var(--text-muted); }
+    .fo-year input { width: 110px; min-height: 40px; padding: 6px 10px; border-radius: var(--radius-md); border: 1px solid var(--border-strong); background: var(--surface); font-weight: 700; }
+
+    .fo-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .fo-kpi {
+      position: relative; overflow: hidden;
+      background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-lg);
+      padding: 16px 16px 14px; min-height: 118px; box-shadow: var(--shadow-soft);
+      display: flex; flex-direction: column; gap: 6px;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .fo-kpi:hover { transform: translateY(-2px); box-shadow: var(--shadow-lift); }
+    .fo-kpi::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--fo-accent, var(--primary)); }
+    .fo-kpi-top { display: flex; align-items: center; gap: 8px; }
+    .fo-kpi-icon {
+      width: 32px; height: 32px; min-height: 0; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center;
+      background: var(--fo-accent-soft, var(--primary-soft)); color: var(--fo-accent-text, var(--primary-text));
+    }
+    .fo-kpi-label { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+    .fo-kpi-value { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; color: var(--text-main); line-height: 1.15; overflow-wrap: anywhere; }
+    .fo-kpi-meta { font-size: 0.8rem; color: var(--text-muted); }
+    .fo-kpi--blue { --fo-accent: var(--primary); --fo-accent-soft: var(--primary-soft); --fo-accent-text: var(--primary-text); }
+    .fo-kpi--green { --fo-accent: var(--success); --fo-accent-soft: var(--success-soft); --fo-accent-text: var(--success-text); }
+    .fo-kpi--amber { --fo-accent: var(--warning); --fo-accent-soft: var(--warning-soft); --fo-accent-text: var(--warning-text); }
+    .fo-kpi--red { --fo-accent: var(--danger); --fo-accent-soft: var(--danger-soft); --fo-accent-text: var(--danger-text); }
+    .fo-kpi--slate { --fo-accent: var(--border-strong); --fo-accent-soft: var(--surface-muted); --fo-accent-text: var(--text-main); }
+    .fo-progress { height: 8px; border-radius: 999px; background: var(--fo-track); overflow: hidden; margin-top: auto; }
+    .fo-progress > span { display: block; height: 100%; border-radius: 999px; background: var(--success); }
+    .fo-status { display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; font-weight: 700; }
+    .fo-status [data-lucide] { width: 14px; height: 14px; vertical-align: -2px; }
+
+    .fo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+    .fo-card { background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-lg); padding: 18px; box-shadow: var(--shadow-soft); min-width: 0; }
+    .fo-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .fo-card-head h4 { margin: 0; font-size: 1rem; font-weight: 800; color: var(--text-main); }
+    .fo-card-note { font-size: 0.78rem; color: var(--text-muted); }
+    .fo-empty { padding: 26px 8px; text-align: center; color: var(--text-muted); font-size: 0.88rem; }
+
+    /* Revenue / cost / profit bars + margin ring */
+    .fo-profit { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+    .fo-bars { flex: 1 1 260px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+    .fo-bar-row { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+    .fo-bar-label { font-size: 0.85rem; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 6px; }
+    .fo-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+    .fo-bar-track { height: 14px; border-radius: 4px; background: var(--fo-track); overflow: hidden; }
+    .fo-bar-fill { height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; }
+    .fo-bar-value { font-size: 0.9rem; font-weight: 800; color: var(--text-main); font-variant-numeric: tabular-nums; text-align: right; }
+    .fo-bar-value.is-negative { color: var(--danger-text); }
+    .fo-ring { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 0 auto; }
+    .fo-ring svg { width: 124px; height: 124px; display: block; }
+    .fo-ring-value { font-size: 1.35rem; font-weight: 800; fill: var(--text-main); }
+    .fo-ring-label { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.08em; fill: var(--text-muted); text-transform: uppercase; }
+
+    /* Monthly column chart */
+    .fo-columns { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 6px; margin-top: 22px; }
+    .fo-yaxis { position: relative; height: 170px; font-size: 0.68rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .fo-yaxis span { position: absolute; right: 0; transform: translateY(50%); }
+    .fo-plot { position: relative; height: 170px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 2px; align-items: end;
+      background-image: linear-gradient(to top, var(--border-soft) 1px, transparent 1px); background-size: 100% 50%; border-bottom: 1px solid var(--border-strong); }
+    .fo-col { height: 100%; display: flex; align-items: flex-end; justify-content: center; cursor: default; border-radius: 4px; }
+    .fo-col:hover, .fo-col:focus-visible { background: var(--primary-soft); outline: none; }
+    .fo-col-fill { width: min(70%, 26px); background: var(--fo-revenue); border-radius: 4px 4px 0 0; min-height: 0; }
+    .fo-col-peak { position: absolute; font-size: 0.7rem; font-weight: 800; color: var(--text-main); transform: translateX(-50%); white-space: nowrap; padding-bottom: 2px; line-height: 1.2; }
+    .fo-xaxis { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 2px; margin-left: 46px; margin-top: 4px; font-size: 0.68rem; color: var(--text-muted); text-align: center; }
+    .fo-chart-foot { margin-top: 10px; font-size: 0.8rem; color: var(--text-muted); }
+
+    /* Salesperson + category lists */
+    .fo-list { display: flex; flex-direction: column; gap: 12px; }
+    .fo-list-row { display: flex; flex-direction: column; gap: 5px; }
+    .fo-list-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+    .fo-list-name { font-weight: 800; color: var(--text-main); font-size: 0.92rem; display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .fo-list-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fo-list-amount { font-weight: 800; color: var(--text-main); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .fo-list-meta { font-size: 0.78rem; color: var(--text-muted); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .fo-avatar { width: 28px; height: 28px; min-height: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+      background: var(--primary-soft); color: var(--primary-text); font-size: 0.72rem; font-weight: 800; }
+    .fo-share { height: 8px; border-radius: 999px; background: var(--fo-track); overflow: hidden; }
+    .fo-share > span { display: block; height: 100%; border-radius: 999px; }
+    .fo-total-row { display: flex; justify-content: space-between; padding-top: 10px; border-top: 1px solid var(--border-soft); font-weight: 800; color: var(--text-main); }
+
+    .fo-tooltip { position: fixed; z-index: 50; pointer-events: none; background: var(--text-main); color: var(--surface); padding: 6px 10px; border-radius: 8px; font-size: 0.8rem; font-weight: 700; box-shadow: var(--shadow-lift); white-space: nowrap; }
+    .fo-skeleton { background: linear-gradient(90deg, var(--surface-muted), var(--border-soft), var(--surface-muted)); background-size: 200% 100%; animation: fo-shimmer 1.2s linear infinite; border: none; }
+    .fo-skeleton-block { height: 150px; border-radius: var(--radius-md); }
+    @keyframes fo-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+    .fo-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+    @media (max-width: 1180px) {
+      .fo-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 900px) {
+      .fo-grid { grid-template-columns: minmax(0, 1fr); }
+    }
+    @media (max-width: 600px) {
+      .fo-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .fo-kpi { padding: 12px 12px 12px 14px; min-height: 104px; }
+      .fo-kpi-value { font-size: 1.2rem; }
+      .fo-card { padding: 14px; }
+      .fo-bar-row { grid-template-columns: 64px minmax(0, 1fr) auto; }
+      .fo-year { width: 100%; }
+      .fo-year input { flex: 1; }
+    }
   </style>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.225/pdf.min.js"></script>
@@ -1156,19 +1276,52 @@
 
   <div class="finance-container">
 
+    <!-- ================= FINANCIAL OVERVIEW (visual) ================= -->
+    <section class="section fo-root" id="sectionOverview" aria-labelledby="foTitle">
+      <div class="section-header fo-header">
+        <div>
+          <h3 id="foTitle">Financial Overview</h3>
+          <p class="section-copy">Where the year stands at a glance — earnings, money in, costs, margin and who sold it.</p>
+        </div>
+        <div class="fo-year">
+          <label for="finance-year">Year</label>
+          <input type="number" id="finance-year" min="2000" max="2100" value="2026">
+        </div>
+      </div>
+
+      <div class="fo-kpis" id="foKpis" aria-live="polite">
+        <div class="fo-kpi fo-skeleton"></div><div class="fo-kpi fo-skeleton"></div><div class="fo-kpi fo-skeleton"></div><div class="fo-kpi fo-skeleton"></div><div class="fo-kpi fo-skeleton"></div>
+      </div>
+
+      <div class="fo-grid">
+        <div class="fo-card" id="foProfitCard">
+          <div class="fo-card-head"><h4>Revenue, cost &amp; profit</h4><span class="fo-card-note">Jobs and client accounts created this year</span></div>
+          <div class="fo-card-body" id="foProfit"><div class="fo-skeleton fo-skeleton-block"></div></div>
+        </div>
+        <div class="fo-card" id="foMonthlyCard">
+          <div class="fo-card-head"><h4>Money received by month</h4><span class="fo-card-note">Payments recorded this year</span></div>
+          <div class="fo-card-body" id="foMonthly"><div class="fo-skeleton fo-skeleton-block"></div></div>
+        </div>
+        <div class="fo-card" id="foSalesCard">
+          <div class="fo-card-head"><h4>Sales by salesperson</h4><span class="fo-card-note">Revenue from each salesperson’s clients</span></div>
+          <div class="fo-card-body" id="foSales"><div class="fo-skeleton fo-skeleton-block"></div></div>
+        </div>
+        <div class="fo-card" id="foCostCard">
+          <div class="fo-card-head"><h4>Costs by category</h4><span class="fo-card-note">From each job’s itemized Job Costs</span></div>
+          <div class="fo-card-body" id="foCosts"><div class="fo-skeleton fo-skeleton-block"></div></div>
+        </div>
+      </div>
+      <div class="fo-tooltip" id="foTooltip" role="tooltip" hidden></div>
+    </section>
+
     <!-- ================= SECTION A ================= -->
     <div class="section" id="sectionA">
       <div class="section-header">
         <div>
-          <h3>Yearly Metrics</h3>
-          <p class="section-copy">Totals update from your live client and payment records, with manual overrides if you need them.</p>
+          <h3>Year Totals &amp; Overrides</h3>
+          <p class="section-copy">Totals update from your live client and payment records, with manual overrides if you need them. The cards above use these same totals.</p>
         </div>
       </div>
-
-      <label for="finance-year" style="display:block; margin-bottom:6px; font-weight:600;">
-        Select Year:
-      </label>
-      <input type="number" id="finance-year" min="2000" max="2100" value="2026">
 
       <table class="metrics-table">
         <thead>
@@ -1246,7 +1399,9 @@
     </div>
   </div>
 
+  <script src="/js/money-input.js" defer></script>
   <script src="finance-renderer.js" defer></script>
+  <script src="/js/finance-overview.js" defer></script>
   <script src="margin-tracker.js" defer></script>
 
   <script>

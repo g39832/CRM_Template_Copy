@@ -2380,7 +2380,17 @@ input[type="tel"]:focus {
 
 /* Comfortable tap targets + no horizontal overflow on phones */
 @media (max-width: 768px) {
-  html, body { overflow-x: hidden; }
+  /* html is left alone on purpose. This used to set overflow-x: hidden on
+     html AND body; with html no longer "visible", body stopped handing its
+     overflow to the viewport and became its own (never-scrolling) scroll
+     container. Mouse-wheel/trackpad scrolling then went to body and did
+     nothing — split-screen and small windows could only be scrolled by
+     dragging the scrollbar. body alone propagates to the viewport; clip
+     (where supported) hides sideways overflow without any scroll container. */
+  body, body.dashboard-body { overflow-x: hidden; }
+  @supports (overflow-x: clip) {
+    body, body.dashboard-body { overflow-x: clip; }
+  }
   .job-row {
     flex-direction: column;
     align-items: stretch;
@@ -3650,3 +3660,78 @@ textarea::placeholder {
   .job-expense-add-grid #exp-description { grid-column: 1 / -1; }
   .job-expense-add-grid .btn-primary { grid-column: 1 / -1; }
 }
+
+/* =========================
+   COMPACT LAYOUT PREFERENCE
+   Settings -> Preferences -> "Compact dashboard layout" (html.crm-compact,
+   set by public/js/theme.js). Only tightens spacing on the Clients page.
+========================= */
+html.crm-compact .crm-dashboard .sidebar { padding: 12px 14px; }
+html.crm-compact .sidebar h2 { margin-bottom: 8px; }
+html.crm-compact .sidebar form { margin-bottom: 12px; gap: 6px; }
+html.crm-compact .client-card { padding: 7px 10px; margin-bottom: 4px; }
+html.crm-compact .client-item + .client-item,
+html.crm-compact .client-card + .client-card { margin-top: 4px; }
+html.crm-compact #Main_header { padding-top: 8px; padding-bottom: 8px; }
+
+/* =========================
+   JOB DOCUMENTS / PHOTOS DRAG-AND-DROP
+   The upload row is drawn as a drop zone; the whole section accepts
+   dropped files and is highlighted while files are dragged over it.
+========================= */
+.job-dropzone {
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-md, 10px);
+  background: var(--surface-muted);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.job-dropzone-text {
+  flex: 1 1 auto;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.job-files-field.is-dragover {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-md, 10px);
+}
+.job-files-field.is-dragover .job-dropzone {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.job-files-field.is-dragover .job-dropzone-text { color: var(--primary-text, var(--primary)); font-weight: 600; }
+.job-dropzone.is-uploading { opacity: 0.7; }
+/* Phones/tablets can't drag files from another app into the page. */
+@media (pointer: coarse) {
+  .job-dropzone { border-style: solid; border-width: 1px; background: transparent; padding: 0; border-color: transparent; }
+  .job-dropzone-text { display: none; }
+}
+@media (max-width: 640px) {
+  .job-dropzone-text { text-align: center; }
+}
+
+/* The single Job Cost field is only shown before the v7 migration; the
+   display:flex on .job-modal-field would otherwise override [hidden]. */
+.job-modal-field[hidden] { display: none; }
+/* Upload progress shows only while uploading (display:flex overrode [hidden]). */
+.job-file-progress[hidden] { display: none; }
+
+/* Read-only Cost tile in the job's Money section (set by Job Costs). */
+.total-tile.is-readonly .total-tile-sub { color: var(--text-muted); }
+
+/* An older job's single typed-in cost, shown in Job Costs. */
+.job-cost-legacy {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md, 10px);
+  background: var(--surface-muted);
+}
+.job-cost-legacy-text { flex: 1 1 240px; display: flex; flex-direction: column; gap: 2px; }

@@ -24,6 +24,21 @@
     });
   }
 
+  // ==================== OTHER PREFERENCES ====================
+  // Saved to this browser the moment they are switched (see crmPrefs in
+  // public/js/theme.js), so a reload shows the same state.
+  [['prefCompactLayout', 'compactLayout', 'Compact layout'], ['prefEmailReminders', 'emailReminders', 'Email reminders']]
+    .forEach(function (pref) {
+      var el = document.getElementById(pref[0]);
+      if (!el || !window.crmPrefs) return;
+      el.checked = Boolean(window.crmPrefs.get(pref[1]));
+      el.addEventListener('change', function () {
+        var saved = window.crmPrefs.set(pref[1], el.checked);
+        if (saved) showSuccess(pref[2] + (el.checked ? ' turned on' : ' turned off'));
+        else showError('This browser is blocking saved preferences, so this change will not last after a reload.');
+      });
+    });
+
   // ==================== NAV THEME TOGGLE BUTTON ====================
   (function () {
     var btn = document.getElementById('themeToggleBtn');

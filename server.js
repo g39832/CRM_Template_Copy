@@ -316,6 +316,9 @@ app.use('/api/job-files', jobFilesRoutes);
 const expensesRoutes = require('./api/expenses');
 app.use('/api', expensesRoutes.router);
 
+// Read-only breakdowns for the Finance page's visual overview.
+app.use('/api', require('./api/finance-overview'));
+
 // ===== V2 API ROUTES =====
 const authSystemRoutes = require('./api/auth-system');
 const dashboardRoutes = require('./api/dashboard');

@@ -135,8 +135,9 @@ async function handleJobDocumentGeneration(req, res, mode) {
     }
     const normalizedProfile = normalizeCompanyProfile(storedCompanyProfile || {});
 
-    // Pull this job's categorized cost line items (if any) so the PDF
-    // shows a real cost breakdown instead of just a single total.
+    // This job's services (line items): their sum is the document total and,
+    // when the scope text is blank, their names are the scope. Quantities,
+    // unit prices and categories never appear on the customer's document.
     let lineItems = [];
     try {
       const dbV2 = getClient();
@@ -195,9 +196,9 @@ async function handleJobDocumentGeneration(req, res, mode) {
   }
 }
 
-// Job-scoped invoice/estimate PDFs only ever show total_due/amount_paid/
-// balance and the customer-facing line-item pricing (see buildInvoiceData/
-// generateInvoicePDF) — never job_cost, profit, or margin — so a regular
+// Job-scoped invoice/estimate PDFs only ever show the scope of work and
+// total_due/amount_paid/balance (see buildInvoiceData/generateInvoicePDF) —
+// never line-item pricing, categories, job_cost, profit, or margin — so a regular
 // user with access to the job may generate one. Ownership is still
 // enforced inside handleJobDocumentGeneration via canAccessClient.
 router.post('/jobs/:jobId/invoice', asyncHandler((req, res) =>

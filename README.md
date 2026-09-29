@@ -139,11 +139,22 @@ The client page is a condensed **overview**; the detailed work happens inside ea
   "October Maintenance" with the same services and cost. **Duplicate** inside a job does
   the same in one click.
 - **Job workspace** (click a job) — status, tags, money (Job Total, Received, Balance,
-  Cost, Profit, Margin), payments with history and undo, **Services & Scope of Work**
-  (**+ Service** from the preset list, custom line items, inline edit/remove; the job
-  total is the sum of its services, and the scope text prints on the estimate/invoice —
-  if it's blank, the services are listed instead), documents & PDFs, photos, notes, and
-  estimate/invoice downloads. Closing it with **X**, Escape or a click outside saves
+  Cost, Profit, Margin — **Cost is read-only here**; it comes from Job Costs), payments
+  with history and undo, **Services & Scope of Work** (**+ Service** from the preset
+  list, custom line items, inline edit/remove; the job total is the sum of its services),
+  documents & PDFs and photos (click to upload or **drag and drop** files onto the
+  section — PDF/Word/Excel for Documents, images for Photos, several at once), notes, and
+  estimate/invoice downloads.
+  - **+ Service is part of the Scope of Work**: each added service is written into the
+    scope text as `- Service name` (saved immediately); removing or renaming the service
+    updates that line. Quantity, unit price and category stay business-side.
+  - **Estimates and invoices are customer-facing**: they show the business and client
+    details, the Scope of Work (if the scope text is blank, the service names are listed)
+    and one clear total (plus paid / balance due on invoices). They never show a cost
+    breakdown, categories, quantities, unit prices, job costs, profit or margin. Amounts
+    are printed with thousands separators (`12,500.00`).
+  - Money fields accept natural typing (`1250.50` types straight through, nothing is
+    reformatted while typing); they show `1,250.50` once you leave the field. Closing it with **X**, Escape or a click outside saves
   everything first, including a typed-but-unsubmitted payment or note; if a save fails
   the job stays open so nothing is lost.
 - **Client account** — shown in the jobs list only when a client has money, services or
@@ -160,14 +171,41 @@ The client page is a condensed **overview**; the detailed work happens inside ea
   job payments are written to the `payments` ledger (so money received on jobs shows up
   in Finance and the margin tracker). Payment corrections are recorded as negative
   entries; payment records are never deleted.
+  The page opens with a **Financial Overview** (modelled on the Roofing CRM finance
+  dashboard): KPI cards (Expected Earnings, Received with % collected, Remaining,
+  Clients, Avg Margin with a Healthy/Watch/Low indicator), a revenue/cost/profit chart
+  with a margin ring, money received by month, sales by salesperson and costs by
+  category. It is read-only (`GET /api/finance/overview`, admin only) and uses the same
+  rules as the year totals; the Year Totals & Overrides table, Margin Tracker and Tax
+  Documents below are unchanged.
+- **New clients** — only the name (and phone) is needed; email is optional everywhere.
+
+### Settings notes
+
+- **My Settings → Preferences** switches (Dark mode, Compact dashboard layout, Email
+  reminders) save to the browser as soon as they are switched. Compact layout tightens
+  spacing on the Clients page. Email reminders is only a stored preference — the CRM
+  does not send reminder emails.
+- **Platform Preferences → Operational Model** (`companies.business_workflow`: single /
+  returning / both) is saved and reloaded, but **nothing in the CRM currently changes
+  with it** — clients, jobs, recurring work, totals and Finance behave the same for every
+  choice. It is returned by `/api/v2/dashboard/stats`, whose workflow panel is not part
+  of the current dashboard. The setting page says so.
 
 ### Job costs and expense categories
 
 Inside a job (admins — job cost is admin-only), **Job Costs** lists each cost with a
 description, amount and category, shows a total per category plus the Total Cost, and
 the job's cost *is* that total — so profit, margin, the client's Cost tile and Finance
-all use it with no separate calculation. The first itemized cost on a job that already
-had a typed-in cost keeps that figure as an **Uncategorized** line, so nothing drops.
+all use it with no separate calculation. Job Costs is the **only** place a job's cost
+is changed: the Money section's Cost tile just displays it, and the server ignores a
+`job_cost` sent to `PUT /api/jobs/:id` once the v7 tables exist. An older job that has
+a typed-in cost from before itemized costs keeps it — Job Costs shows it with a **Move
+into cost list** button (`POST /api/jobs/:id/expenses/itemize-existing`), and adding
+the first itemized cost does the same automatically: the figure becomes an
+**Uncategorized** line, so nothing drops. (Before the v7 migration there is no itemized
+list, so the single Job Cost field is still shown in Money.) Client-level cost on the
+older **Client account** records stays editable there, as before.
 
 Categories belong to the business and are managed in **Settings → Expense Categories**
 (admins). New businesses start with Labor, Materials, Commissions and Miscellaneous
@@ -259,8 +297,8 @@ user out once, because their session exists only in Postgres.
 - Update the login logo or badge if you want custom branding.
 - Update the storage bucket name in `.env` if you want a different file bucket.
 - Use `Company Profile` in the app to change the company name, address, phone, and email that appear on invoices.
-- The invoice/estimate buttons download a PDF directly (including the categorized cost
-  breakdown when a job has line items), so no email setup is required for that workflow.
+- The invoice/estimate buttons download a customer-facing PDF directly (scope of work and
+  one total — no internal cost breakdown), so no email setup is required for that workflow.
 - Add or refine Supabase Row Level Security policies before production use — this template
   relies on the server-side service role key plus its own `api/access-control.js` checks
   rather than RLS, so RLS is optional defense-in-depth, not currently required for it to work.
@@ -291,6 +329,7 @@ end of `style.css`, plus small additions to the media blocks in `main.html`,
 | Settings page had 24px page padding on phones, which pushed the nav off-screen | settings | 12px padding at ≤600px |
 | Margin table and heatmap scroll sideways on small screens, but you lost track of which client a row belonged to | finance | client column pinned, with a shadow hinting at more content; 44px expand buttons on touch |
 | Badge text under 10px | dashboard | 0.7rem on phones/touch |
+| Split-screen / small windows (≤768px) could only be scrolled by dragging the scrollbar — mouse wheel and trackpad did nothing | all pages | `overflow-x` is no longer set on `html` (that made `body` a separate, non-scrolling scroll container that swallowed wheel events); `body` alone clips sideways overflow |
 
 Cross-device tests: see [`tests/README.md`](tests/README.md)
 (`npm run test:responsive`).
