@@ -28,18 +28,20 @@ function customPrompt(message, defaultValue) {
     var input = document.createElement('input');
     input.type = 'text';
     input.value = defaultValue || '';
-    input.style.cssText = 'width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border-strong,#cbd5e1);background:var(--surface,#ffffff);color:var(--text-main,#0f172a);font-size:0.9rem;box-sizing:border-box;outline:none;';
+    input.style.cssText = 'width:100%;box-sizing:border-box;';
 
     var btnRow = document.createElement('div');
     btnRow.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:16px;';
 
     var cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.cssText = 'padding:8px 16px;border-radius:8px;border:1px solid var(--border-strong,#cbd5e1);background:var(--surface,#ffffff);color:var(--text-main,#0f172a);cursor:pointer;font-size:0.85rem;font-weight:600;';
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn-secondary';
 
     var okBtn = document.createElement('button');
     okBtn.textContent = 'OK';
-    okBtn.style.cssText = 'padding:8px 16px;border-radius:8px;border:none;background:var(--primary,#2563eb);color:#fff;cursor:pointer;font-size:0.85rem;font-weight:600;';
+    okBtn.type = 'button';
+    okBtn.className = 'btn-primary';
 
     function close(val) {
       overlay.remove();
@@ -2337,13 +2339,13 @@ async function openClient(id) {
               <div id="notes-list" class="notes-list"></div>
               <div class="notes-actions">
                 <textarea id="new-note-input" placeholder="Add a note..." rows="4"></textarea>
-                <button id="add-note-btn" class="btn-primary add-note-btn" style="background:var(--primary);">Add Note</button>
+                <button id="add-note-btn" class="btn-primary add-note-btn">Add Note</button>
               </div>
             </div>
           </details>
 
           <div class="panel-actions panel-full-span">
-            <button id="saveBtn" class="btn-primary" style="background:var(--primary); flex:2;">Save Changes</button>
+            <button id="saveBtn" class="btn-primary" style="flex:2;">Save Changes</button>
             <button id="reviewBtn" class="btn-primary btn-quiet" style="flex:2;">Send Google Review</button>
             <button id="printBtn" class="btn-primary btn-quiet" style="flex:1;">Print</button>
             <button id="delBtn" class="btn-primary btn-danger-soft" style="flex:1;">Delete</button>
@@ -2770,21 +2772,14 @@ async function setupNotesSection(clientId) {
 
         const editBtn = document.createElement("button");
         editBtn.innerText = "Edit";
-        editBtn.style.background = "var(--primary)";
-        editBtn.style.color = "#fff";
-        editBtn.style.border = "none";
-        editBtn.style.padding = "4px 8px";
-        editBtn.style.borderRadius = "4px";
-        editBtn.style.cursor = "pointer";
+        editBtn.type = "button";
+        editBtn.className = "btn-secondary btn-sm";
 
         const deleteBtn = document.createElement("button");
         deleteBtn.innerText = "Delete";
-        deleteBtn.style.background = "#4a5568";
-        deleteBtn.style.color = "#fff";
-        deleteBtn.style.border = "none";
-        deleteBtn.style.padding = "4px 8px";
-        deleteBtn.style.borderRadius = "4px";
-        deleteBtn.style.cursor = "pointer";
+        deleteBtn.type = "button";
+        deleteBtn.className = "btn-danger btn-sm";
+        deleteBtn.style.marginLeft = "6px";
 
         editBtn.onclick = async () => {
           const current = note.content || "";
@@ -2792,35 +2787,21 @@ async function setupNotesSection(clientId) {
           textarea.value = current;
           textarea.rows = 4;
           textarea.style.flex = "1";
-          textarea.style.padding = "6px 8px";
           textarea.style.resize = "vertical";
-          textarea.style.background = "var(--surface)";
-          textarea.style.color = "var(--text-main)";
-          textarea.style.border = "1px solid var(--border-soft)";
-          textarea.style.borderRadius = "4px";
-          textarea.style.fontFamily = "inherit";
           textarea.dataset.noteId = note.id;
           textarea.dataset.clientId = clientId;
           textarea.dataset.original = current;
 
           const saveBtn = document.createElement("button");
           saveBtn.innerText = "Save";
-          saveBtn.style.background = "var(--primary)";
-          saveBtn.style.color = "#fff";
-          saveBtn.style.border = "none";
-          saveBtn.style.padding = "4px 8px";
-          saveBtn.style.borderRadius = "4px";
-          saveBtn.style.cursor = "pointer";
+          saveBtn.type = "button";
+          saveBtn.className = "btn-primary btn-sm";
           saveBtn.style.marginLeft = "6px";
 
           const cancelBtn = document.createElement("button");
           cancelBtn.innerText = "Cancel";
-          cancelBtn.style.background = "var(--surface-muted)";
-          cancelBtn.style.color = "var(--text-main)";
-          cancelBtn.style.border = "1px solid var(--border-soft)";
-          cancelBtn.style.padding = "4px 8px";
-          cancelBtn.style.borderRadius = "4px";
-          cancelBtn.style.cursor = "pointer";
+          cancelBtn.type = "button";
+          cancelBtn.className = "btn-secondary btn-sm";
           cancelBtn.style.marginLeft = "6px";
 
           noteDiv.replaceChild(textarea, contentDiv);
@@ -3232,15 +3213,16 @@ async function setupScopeServices(clientId, { onChange } = {}) {
         var rate = cs.customRate || cs.defaultRate;
         if (rate > 0) {
           var rateSpan = document.createElement('span');
-          rateSpan.style.cssText = 'font-family:\'Courier New\',monospace;font-weight:700;color:var(--accent);margin-left:2px;';
+          rateSpan.style.cssText = 'font-variant-numeric:tabular-nums;font-weight:700;color:var(--primary-text);margin-left:2px;';
           rateSpan.textContent = '$' + formatMoney(rate);
           chip.appendChild(rateSpan);
         }
 
         var removeBtn = document.createElement('button');
         removeBtn.innerHTML = '&times;';
+        removeBtn.type = 'button';
         removeBtn.style.cssText =
-          'border:none;background:transparent;color:var(--danger);' +
+          'border:none;background:transparent;color:var(--danger-text);min-height:0;' +
           'cursor:pointer;font-size:1.1rem;line-height:1;padding:0 2px;margin-left:2px;';
         removeBtn.title = 'Remove ' + cs.serviceName;
         removeBtn.setAttribute('aria-label', 'Remove ' + cs.serviceName);
@@ -3335,18 +3317,15 @@ function openServicePicker(clientId, onSave) {
       'border:1px solid var(--border-soft);border-radius:18px;' +
       'padding:24px;box-shadow: var(--shadow-lift);color:var(--text-main);' +
     '">' +
-      '<button id="closeServicePicker" style="' +
-        'position:absolute;top:12px;right:14px;border:none;background:transparent;' +
-        'color:var(--accent);font-size:1.5rem;cursor:pointer;line-height:1;' +
-      '">&times;</button>' +
+      '<button type="button" id="closeServicePicker" class="close-x" aria-label="Close">&times;</button>' +
       '<div style="font-size:0.75rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:4px;">Add Services</div>' +
       '<h3 style="margin:0 0 16px;font-size:1.1rem;">Select services to add to scope</h3>' +
       '<div id="servicePickerList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">' +
         '<div style="color:var(--text-muted);">Loading services...</div>' +
       '</div>' +
       '<div style="display:flex;gap:8px;">' +
-        '<button id="servicePickerSaveBtn" class="btn-primary" style="background:var(--primary);flex:1;padding:10px;">Add Selected</button>' +
-        '<button id="servicePickerCancelBtn" class="btn-primary btn-quiet" style="flex:1;padding:10px;">Cancel</button>' +
+        '<button id="servicePickerSaveBtn" class="btn-primary" style="flex:1;">Add Selected</button>' +
+        '<button id="servicePickerCancelBtn" class="btn-primary btn-quiet" style="flex:1;">Cancel</button>' +
       '</div>' +
     '</div>';
 
@@ -3401,7 +3380,7 @@ function openServicePicker(clientId, onSave) {
         var cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.value = svc.id;
-        cb.style.cssText = 'width:18px;height:18px;accent-color:var(--primary);cursor:pointer;';
+        cb.style.cssText = 'width:18px;height:18px;';
         cb.addEventListener('change', function () {
           if (cb.checked) {
             checked.push(svc.id);
@@ -3418,7 +3397,7 @@ function openServicePicker(clientId, onSave) {
           (svc.description ? '<div style="font-size:0.78rem;color:var(--text-muted);">' + escapeHtml(svc.description) + '</div>' : '');
 
         var rateSpan = document.createElement('div');
-        rateSpan.style.cssText = 'font-family:\'Courier New\',monospace;font-weight:700;color:var(--accent);font-size:0.9rem;';
+        rateSpan.style.cssText = 'font-variant-numeric:tabular-nums;font-weight:700;color:var(--primary-text);font-size:0.9rem;';
         rateSpan.textContent = svc.defaultRate > 0 ? '$' + formatMoney(svc.defaultRate) : '';
 
         row.appendChild(cb);
@@ -3476,20 +3455,17 @@ function openManageServicesModal(onSave, { onClose } = {}) {
       'border:1px solid var(--border-soft);border-radius:18px;' +
       'padding:24px;box-shadow: var(--shadow-lift);color:var(--text-main);' +
     '">' +
-      '<button id="closeManageServices" style="' +
-        'position:absolute;top:12px;right:14px;border:none;background:transparent;' +
-        'color:var(--accent);font-size:1.5rem;cursor:pointer;line-height:1;' +
-      '">&times;</button>' +
+      '<button type="button" id="closeManageServices" class="close-x" aria-label="Close">&times;</button>' +
       '<div style="font-size:0.75rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:4px;">Admin</div>' +
       '<h3 style="margin:0 0 4px;font-size:1.1rem;">Manage Service Presets</h3>' +
       '<p style="font-size:0.85rem;color:var(--text-muted);margin:0 0 16px;">Add, edit, or remove global service options.</p>' +
 
       '<div style="display:flex;gap:8px;margin-bottom:16px;">' +
         '<input id="newSvcName" type="text" placeholder="Service name (e.g. Mowing)"' +
-          'style="flex:1;padding:10px 14px;border-radius:10px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text-main);font-size:0.95rem;">' +
+          ' style="flex:1;min-width:0;">' +
         '<input id="newSvcRate" type="text" inputmode="decimal" placeholder="Rate"' +
-          'style="width:100px;padding:10px 14px;border-radius:10px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text-main);font-size:0.95rem;">' +
-        '<button id="addSvcBtn" class="btn-primary" style="padding:10px 16px;white-space:nowrap;">Add</button>' +
+          ' style="width:110px;">' +
+        '<button id="addSvcBtn" class="btn-primary">Add</button>' +
       '</div>' +
 
       '<div id="manageServicesList" style="display:flex;flex-direction:column;gap:6px;">' +
@@ -3497,7 +3473,7 @@ function openManageServicesModal(onSave, { onClose } = {}) {
       '</div>' +
 
       '<div style="display:flex;gap:8px;margin-top:16px;">' +
-        '<button id="manageServicesDoneBtn" class="btn-primary btn-quiet" style="flex:1;padding:10px;">Done</button>' +
+        '<button id="manageServicesDoneBtn" class="btn-primary btn-quiet" style="flex:1;">Done</button>' +
       '</div>' +
     '</div>';
 
@@ -3548,14 +3524,13 @@ function openManageServicesModal(onSave, { onClose } = {}) {
           (svc.description ? '<div style="font-size:0.78rem;color:var(--text-muted);">' + escapeHtml(svc.description) + '</div>' : '');
 
         var rateSpan = document.createElement('div');
-        rateSpan.style.cssText = 'font-family:\'Courier New\',monospace;font-weight:700;color:var(--accent);font-size:0.9rem;padding:0 8px;';
+        rateSpan.style.cssText = 'font-variant-numeric:tabular-nums;font-weight:700;color:var(--primary-text);font-size:0.9rem;padding:0 8px;';
         rateSpan.textContent = svc.defaultRate > 0 ? '$' + formatMoney(svc.defaultRate) : '';
 
         var toggleActiveBtn = document.createElement('button');
         toggleActiveBtn.textContent = svc.isActive ? 'Deactivate' : 'Activate';
-        toggleActiveBtn.style.cssText =
-          'border:none;background:var(--surface-muted);color:var(--text-main);' +
-          'padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;';
+        toggleActiveBtn.type = 'button';
+        toggleActiveBtn.className = 'btn-secondary btn-sm';
         toggleActiveBtn.onclick = async function () {
           try {
             await window.api.updateService(svc.id, { isActive: !svc.isActive });
@@ -3567,9 +3542,8 @@ function openManageServicesModal(onSave, { onClose } = {}) {
 
         var editBtn = document.createElement('button');
         editBtn.textContent = 'Edit';
-        editBtn.style.cssText =
-          'border:none;background:var(--primary-soft);color:var(--primary);' +
-          'padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;';
+        editBtn.type = 'button';
+        editBtn.className = 'btn-secondary btn-sm';
 
         editBtn.onclick = function () {
           (async function () {
@@ -3588,9 +3562,8 @@ function openManageServicesModal(onSave, { onClose } = {}) {
 
         var delBtn = document.createElement('button');
         delBtn.textContent = 'Delete';
-        delBtn.style.cssText =
-          'border:none;background:rgba(255,100,100,0.15);color:var(--danger);' +
-          'padding:4px 10px;border-radius:6px;cursor:pointer;font-size:0.78rem;';
+        delBtn.type = 'button';
+        delBtn.className = 'btn-danger btn-sm';
         delBtn.onclick = async function () {
           if (!confirm('Delete "' + svc.name + '" permanently?')) return;
           try {
@@ -4953,12 +4926,12 @@ async function setupJobNotesSection(overlay, jobId) {
 
         const editBtn = document.createElement('button');
         editBtn.type = 'button';
-        editBtn.className = 'job-note-action-btn';
+        editBtn.className = 'job-note-action-btn btn-secondary btn-sm';
         editBtn.innerText = 'Edit';
 
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
-        deleteBtn.className = 'job-note-action-btn job-note-delete-btn';
+        deleteBtn.className = 'job-note-action-btn job-note-delete-btn btn-danger btn-sm';
         deleteBtn.innerText = 'Delete';
 
         editBtn.onclick = () => {
@@ -4973,12 +4946,12 @@ async function setupJobNotesSection(overlay, jobId) {
 
           const saveBtn = document.createElement('button');
           saveBtn.type = 'button';
-          saveBtn.className = 'job-note-action-btn';
+          saveBtn.className = 'job-note-action-btn btn-primary btn-sm';
           saveBtn.innerText = 'Save';
 
           const cancelBtn = document.createElement('button');
           cancelBtn.type = 'button';
-          cancelBtn.className = 'job-note-action-btn';
+          cancelBtn.className = 'job-note-action-btn btn-secondary btn-sm';
           cancelBtn.innerText = 'Cancel';
 
           noteDiv.replaceChild(textarea, contentDiv);

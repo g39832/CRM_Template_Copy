@@ -2,7 +2,6 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  font-family: 'Nunito', sans-serif;
 }
 
 :root {
@@ -88,7 +87,7 @@ input,
 select,
 textarea,
 button {
-  min-height: var(--tap-size);
+  min-height: var(--control-h, 40px);
   color: inherit;
   font-family: inherit;
 }
@@ -288,31 +287,6 @@ body.dashboard-body {
 }
 
 .sidebar #fName,
-.sidebar #lName,
-.sidebar #address {
-  min-height: 42px;
-  border: 1px solid var(--border-strong);
-  background: var(--surface-muted);
-  color: var(--text-main);
-  border-radius: 8px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
-}
-
-.sidebar #fName::placeholder,
-.sidebar #lName::placeholder,
-.sidebar #address::placeholder {
-  color: var(--text-muted);
-}
-
-.sidebar #fName:focus,
-.sidebar #lName:focus,
-.sidebar #address:focus {
-  border-color: var(--primary);
-  background: var(--surface-muted);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-
-.sidebar #fName,
 .sidebar #lName {
   flex: 0.9;
 }
@@ -321,34 +295,10 @@ body.dashboard-body {
   flex: 1.35;
 }
 
-/* Inputs */
-input[type="email"],
-input[type="tel"] {
+/* New-client form: fields stack with even spacing */
+.sidebar form input[type="email"],
+.sidebar form input[type="tel"] {
   margin-bottom: 10px;
-  padding: 10px;
-  min-height: 42px;
-  border-radius: 8px;
-  border: 1px solid var(--border-strong);
-  outline: none;
-  background: var(--surface-muted);
-  color: var(--text-main);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
-}
-
-input[type="email"]::placeholder,
-input[type="tel"]::placeholder {
-  color: var(--text-muted);
-}
-
-input[type="tel"] {
-  color: var(--text-main);
-}
-
-input[type="email"]:focus,
-input[type="tel"]:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-  background: var(--surface-muted);
 }
 
 /* Buttons — one canonical set, reused by every page (no page-local
@@ -399,20 +349,6 @@ input[type="tel"]:focus {
 
 .search-bar input {
   width: 100%;
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border-strong);
-  outline: none;
-  background: var(--surface-muted);
-  color: var(--text-main);
-}
-.search-bar input::placeholder {
-  color: var(--text-muted);
-}
-.search-bar input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-  background: var(--surface-muted);
 }
 
 .search-bar {
@@ -1108,15 +1044,6 @@ input[type="tel"]:focus {
     margin-bottom: 16px;
   }
 
-  .sidebar #fName,
-  .sidebar #lName,
-  .sidebar #address,
-  input[type="email"],
-  input[type="tel"],
-  .search-bar input {
-    min-height: 46px;
-    font-size: 16px;
-  }
 
   .client-list {
     max-height: none;
@@ -1200,7 +1127,6 @@ input[type="tel"]:focus {
 
   #projectPanel .panel-title-block,
   #projectPanel .panel-contact-links,
-  #projectPanel .save-status-chip,
   #projectPanel .panel-section,
   #projectPanel .panel-full-span,
   #projectPanel .field-stack,
@@ -2368,7 +2294,7 @@ input[type="tel"]:focus {
 .panel-collapse { margin-top: 6px; }
 .panel-collapse > summary {
   cursor: pointer;
-  font-weight: 800;
+  font-weight: 700;
   font-size: 1rem;
   color: #fff;
   padding: 8px 4px;
@@ -2745,23 +2671,8 @@ input[type="tel"]:focus {
   resize: vertical;
 }
 
-.job-note-action-btn {
-  background: var(--primary);
-  color: #fff;
-  border: none;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: 0.8rem;
-  min-height: auto;
-  flex: 0 0 auto;
-}
-
-.job-note-delete-btn {
-  background: var(--surface);
-  color: var(--danger);
-  border: 1px solid var(--danger);
-}
+/* Note Edit/Delete/Save/Cancel use .btn-* .btn-sm (see CONTROLS). */
+.job-note-action-btn { flex: 0 0 auto; }
 
 /* ======================================================
    JOB FILES — Documents & Photos (separate categories, same component)
@@ -3168,7 +3079,7 @@ input[type="tel"]:focus {
 }
 .total-tile-value {
   font-size: 1.15rem;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--text-main);
   overflow-wrap: anywhere;
 }
@@ -3310,7 +3221,7 @@ input[type="tel"]:focus {
 .job-section-title {
   margin: 0;
   font-size: 0.95rem;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--text-main);
 }
 .job-money-tiles {
@@ -3735,3 +3646,487 @@ html.crm-compact #Main_header { padding-top: 8px; padding-bottom: 8px; }
   background: var(--surface-muted);
 }
 .job-cost-legacy-text { flex: 1 1 240px; display: flex; flex-direction: column; gap: 2px; }
+
+/* =====================================================================
+   CONTROLS — one system for every button, input, select and toggle
+   ---------------------------------------------------------------------
+   This is the last word on how controls LOOK (size, border, radius,
+   colour, focus). Component rules above still decide layout (width,
+   flex, grid placement). Sizes:
+     default  40px tall  — forms, primary actions
+     compact  34px tall  — dense rows (services, costs, table actions)
+   Touch screens and phones get 44px (see the end of this section).
+   ===================================================================== */
+:root {
+  --font-ui: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --control-h: 40px;
+  --control-h-sm: 34px;
+  --control-radius: 8px;
+  --control-font: 0.9rem;
+  --control-font-sm: 0.84rem;
+  --control-pad-x: 12px;
+  --btn-pad-x: 16px;
+  --btn-pad-x-sm: 12px;
+  --control-bg: var(--surface);
+  --control-border: var(--border-strong);
+  --control-border-hover: #9aa6b8;
+  --control-disabled-bg: var(--surface-muted);
+  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.28);
+  --danger-solid: #dc2626;
+  --danger-solid-hover: #b91c1c;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234b5563' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --control-bg: #111c30;
+  --control-border: #3d4f6b;
+  --control-border-hover: #5b6f8f;
+  --control-disabled-bg: #1a2539;
+  --focus-ring: 0 0 0 3px rgba(96, 165, 250, 0.35);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23aab4c8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  /* Native dropdown lists, date pickers and scrollbars follow the theme. */
+  color-scheme: dark;
+}
+
+/* One typeface everywhere ('Nunito' was never loaded, so the browser fell
+   back to Arial, and to Arial Black for the heavy headings). */
+*,
+body,
+body.dashboard-body { font-family: var(--font-ui); }
+h1, h2, h3, h4, .page-title, .stat-value, .total-tile-value { font-weight: 700; }
+
+/* The hidden attribute always wins (display:inline-flex on buttons below
+   would otherwise un-hide e.g. Expense Categories' "Save name"). */
+[hidden] { display: none !important; }
+
+/* ---------- Text inputs, selects, textareas ---------- */
+input:not([type="checkbox"], [type="radio"], [type="file"], [type="color"], [type="range"], [type="hidden"], [type="button"], [type="submit"]),
+select:not([hidden]),
+textarea:not([hidden]) {
+  min-height: var(--control-h);
+  padding: 8px var(--control-pad-x);
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  background-color: var(--control-bg);
+  color: var(--text-main);
+  font-size: var(--control-font);
+  line-height: 1.35;
+  outline: none;
+  box-shadow: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+textarea:not([hidden]) { line-height: 1.5; }
+input:not([type="checkbox"], [type="radio"], [type="file"], [type="color"], [type="range"], [type="hidden"], [type="button"], [type="submit"]):hover:not(:disabled):not(:focus),
+select:not([hidden]):hover:not(:disabled):not(:focus),
+textarea:not([hidden]):hover:not(:disabled):not(:focus) {
+  border-color: var(--control-border-hover);
+}
+input:not([type="checkbox"], [type="radio"], [type="file"], [type="color"], [type="range"], [type="hidden"], [type="button"], [type="submit"]):focus,
+select:not([hidden]):focus,
+textarea:not([hidden]):focus {
+  border-color: var(--primary);
+  box-shadow: var(--focus-ring);
+  background-color: var(--control-bg);
+}
+/* Read-only: tinted background, but the value stays fully readable. */
+input[readonly]:not([type="checkbox"], [type="radio"]),
+textarea[readonly] {
+  background-color: var(--control-disabled-bg);
+  color: var(--text-main);
+  cursor: default;
+}
+/* Disabled: tinted and dimmed, clearly not editable. */
+input:disabled, select:not([hidden]):disabled, textarea:not([hidden]):disabled {
+  background-color: var(--control-disabled-bg);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+/* Selects: one chevron, text never runs under it, readable options. */
+select:not([hidden]) {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding-right: 34px;
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 12px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+select[multiple], select[size]:not([size="1"]) {
+  padding-right: var(--control-pad-x);
+  background-image: none;
+}
+select:not([hidden]) option, select optgroup {
+  background-color: var(--surface);
+  color: var(--text-main);
+}
+
+/* Number/date inputs: no spinner arrows; native date picker kept. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.75; }
+input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
+/* Checkboxes/radios: native, brand-coloured, never stretched to 40px. */
+input[type="checkbox"],
+input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+/* File inputs (Settings logo etc.): the picker button matches .btn-secondary. */
+input[type="file"] {
+  min-height: 0;
+  font-size: var(--control-font-sm);
+  color: var(--text-muted);
+}
+input[type="file"]::file-selector-button {
+  height: var(--control-h-sm);
+  margin-right: 10px;
+  padding: 0 var(--btn-pad-x-sm);
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--text-main);
+  font: 600 var(--control-font-sm) var(--font-ui);
+  cursor: pointer;
+}
+input[type="file"]::file-selector-button:hover { background: var(--surface-muted); }
+
+/* ---------- Buttons ----------
+   primary    .btn-primary, .job-open-btn
+   secondary  .btn-secondary, .btn-primary.btn-quiet, .panel-secondary-btn,
+              .job-duplicate-btn, header/modal ".secondary" buttons
+   danger     .btn-danger, .btn-primary.btn-danger-soft
+   small      add .btn-sm */
+.btn-primary,
+.btn-secondary,
+.btn-danger,
+.panel-secondary-btn,
+.mt-action-btn,
+.mt-icon-btn,
+.job-open-btn,
+.job-duplicate-btn,
+.filter-toggle-btn,
+.page-header-actions button,
+.email-settings-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--control-h);
+  padding: 0 var(--btn-pad-x);
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
+  font-family: var(--font-ui);
+  font-size: var(--control-font);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: none;
+  transform: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* Primary */
+.btn-primary,
+.mt-action-btn,
+.mt-icon-btn,
+.job-open-btn,
+.page-header-actions button:not(.secondary),
+.email-settings-actions button:not(.secondary) {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled),
+.mt-action-btn:hover:not(:disabled),
+.mt-icon-btn:hover:not(:disabled),
+.job-open-btn:hover:not(:disabled),
+.page-header-actions button:not(.secondary):hover:not(:disabled),
+.email-settings-actions button:not(.secondary):hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+  color: #fff;
+}
+.btn-primary:active:not(:disabled),
+.job-open-btn:active:not(:disabled) { background: #1e40af; border-color: #1e40af; }
+
+/* Secondary */
+.btn-secondary,
+.btn-primary.btn-quiet,
+.mt-action-btn.secondary,
+.panel-secondary-btn,
+.job-duplicate-btn,
+.filter-toggle-btn,
+.page-header-actions button.secondary,
+.email-settings-actions button.secondary {
+  background: var(--surface);
+  border-color: var(--control-border);
+  color: var(--text-main);
+}
+.btn-secondary:hover:not(:disabled),
+.btn-primary.btn-quiet:hover:not(:disabled),
+.mt-action-btn.secondary:hover:not(:disabled),
+.panel-secondary-btn:hover:not(:disabled),
+.job-duplicate-btn:hover:not(:disabled),
+.filter-toggle-btn:hover:not(:disabled),
+.page-header-actions button.secondary:hover:not(:disabled),
+.email-settings-actions button.secondary:hover:not(:disabled) {
+  background: var(--surface-muted);
+  border-color: var(--control-border-hover);
+  color: var(--text-main);
+}
+.btn-secondary:active:not(:disabled),
+.btn-primary.btn-quiet:active:not(:disabled),
+.panel-secondary-btn:active:not(:disabled) { background: var(--border-soft); }
+
+/* Destructive: outlined red, fills solid red on hover. */
+.btn-danger,
+.btn-primary.btn-danger-soft {
+  background: var(--surface);
+  border-color: var(--danger);
+  color: var(--danger-text);
+}
+.btn-danger:hover:not(:disabled),
+.btn-primary.btn-danger-soft:hover:not(:disabled) {
+  background: var(--danger-solid);
+  border-color: var(--danger-solid);
+  color: #fff;
+}
+.btn-danger:active:not(:disabled),
+.btn-primary.btn-danger-soft:active:not(:disabled) { background: var(--danger-solid-hover); border-color: var(--danger-solid-hover); }
+
+/* Small */
+.btn-sm,
+.btn-primary.btn-sm,
+.btn-secondary.btn-sm,
+.btn-danger.btn-sm,
+.job-open-btn,
+.job-duplicate-btn {
+  min-height: var(--control-h-sm);
+  padding: 0 var(--btn-pad-x-sm);
+  font-size: var(--control-font-sm);
+}
+
+/* Square icon buttons (filter, theme) */
+.filter-toggle-btn,
+.theme-toggle-btn {
+  width: var(--control-h);
+  min-width: var(--control-h);
+  min-height: var(--control-h);
+  padding: 0;
+  border-radius: var(--control-radius);
+}
+.theme-toggle-btn { border-color: var(--control-border); }
+.filter-toggle-btn.has-active-filters {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary-text);
+}
+
+/* Disabled — every button type */
+button:disabled,
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-danger:disabled,
+.panel-secondary-btn:disabled,
+button[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Keyboard focus: a visible ring on every control, nothing on mouse click */
+button:focus-visible,
+a.btn-primary:focus-visible,
+a.btn-secondary:focus-visible,
+.top-nav .nav-links a:focus-visible,
+.tab-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+button:focus:not(:focus-visible) { outline: none; }
+
+/* Lucide icons inside buttons sit on the text's centre line */
+button [data-lucide],
+button svg.lucide {
+  width: 16px;
+  height: 16px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* Text links that act as buttons stay links (no box) */
+.link-btn {
+  background: none;
+  border: none;
+  padding: 4px 2px;
+  min-height: 0;
+  color: var(--primary-text);
+  font-weight: 600;
+  font-size: var(--control-font-sm);
+  cursor: pointer;
+}
+
+/* Compact controls for dense, repeated rows (existing services and costs,
+   filter/sort bar, category table). Add-rows below them stay full size. */
+.job-service-row :is(input, select),
+.job-expense-row :is(input, select),
+.filter-row :is(input, select),
+.sort-row select:not([hidden]),
+.expense-cat-table input {
+  min-height: var(--control-h-sm);
+  padding-top: 5px;
+  padding-bottom: 5px;
+  font-size: var(--control-font-sm);
+}
+
+/* Phones and touch screens: 44px targets; 16px text stops iOS zooming in. */
+@media (max-width: 768px), (pointer: coarse) {
+  :root {
+    --control-h: 44px;
+    --control-h-sm: 40px;
+  }
+}
+@media (max-width: 768px) {
+  input:not([type="checkbox"], [type="radio"], [type="file"], [type="color"], [type="range"], [type="hidden"], [type="button"], [type="submit"]),
+  select:not([hidden]),
+  textarea:not([hidden]) { font-size: 16px; }
+}
+
+/* Page header (Clients, Finance): centred over the centred content, with
+   normal-weight subtitle (it inherited #Main_header's 900 weight). */
+#Main_header.page-header {
+  font-weight: 400;
+  text-align: center;
+  justify-content: center;
+}
+#Main_header .page-header-copy {
+  width: 100%;
+  align-items: center;
+}
+#Main_header .page-title { font-size: 1.5rem; }
+#Main_header .page-subtitle { font-weight: 400; margin-inline: auto; }
+@media (max-width: 768px) {
+  #Main_header .page-title { font-size: clamp(1.15rem, 5vw, 1.4rem); }
+}
+
+/* ---------- Close buttons (client panel, job workspace, modals) ----------
+   One square, quiet icon button in the top-right corner. */
+.close-x,
+.job-modal-close,
+.email-settings-close,
+#pdfModalClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.close-x:hover,
+.job-modal-close:hover,
+.email-settings-close:hover,
+#pdfModalClose:hover {
+  background: var(--surface-muted);
+  border-color: var(--border-soft);
+  color: var(--text-main);
+}
+.close-x { top: 14px; right: 14px; }
+.job-modal-close { top: 14px; right: 14px; }
+/* Keep the "Saved" chip clear of the close button. */
+#projectPanel .panel-header,
+.job-workspace-top { padding-right: 44px; }
+@media (max-width: 768px), (pointer: coarse) {
+  .close-x, .job-modal-close, .email-settings-close, #pdfModalClose,
+  #projectPanel .close-x { width: var(--tap-size); height: var(--tap-size); }
+  #projectPanel .panel-header, .job-workspace-top { padding-right: 52px; }
+}
+
+/* ---------- Client details: label beside its field ----------
+   Labels were in a 50% column far from their fields and top-aligned
+   against vertically centred inputs. */
+@media (min-width: 769px) {
+  #projectPanel .details-grid {
+    grid-template-columns: minmax(120px, 170px) minmax(0, 1fr);
+    column-gap: 20px;
+    row-gap: 12px;
+    align-items: start;
+  }
+  #projectPanel .details-grid > label {
+    padding-top: 10px;
+  }
+}
+#projectPanel .details-grid > label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+.save-status-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--primary-text);
+}
+
+/* Filter panel spans the client list; its Clear button matches the
+   compact filter controls. */
+.filter-panel { align-self: stretch; margin-inline: 0; }
+.filter-actions .btn-secondary { min-height: var(--control-h-sm); font-size: var(--control-font-sm); }
+
+/* Colour pickers (Settings -> Branding) match the other fields. */
+input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: var(--control-h);
+  min-height: var(--control-h);
+  padding: 4px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  cursor: pointer;
+}
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 5px; }
+input[type="color"]::-moz-color-swatch { border: none; border-radius: 5px; }
+
+/* Narrow phones: keep nav links, role badge and theme toggle on one row. */
+@media (max-width: 480px) {
+  .top-nav .nav-links { gap: 2px; }
+  .top-nav .nav-links a { padding: 6px 9px; }
+  .role-badge { margin-left: 2px; }
+}
+
+/* Placeholders inside read-only fields sit on the tinted background, so
+   they use the darker muted colour to stay readable (4.5:1+). */
+input[readonly]::placeholder,
+textarea[readonly]::placeholder { color: var(--text-muted); }

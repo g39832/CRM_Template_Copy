@@ -6,7 +6,7 @@
   <title>Dashboard | CRM Template</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
   <script src="/js/theme.js"></script>
-  <link rel="stylesheet" href="/style.css?v=8">
+  <link rel="stylesheet" href="/style.css?v=9">
   <style>
     .page-header {
       display: flex;
@@ -36,7 +36,7 @@
 
     .page-title {
       font-size: 1.5rem;
-      font-weight: 800;
+      font-weight: 700;
       line-height: 1.1;
       color: var(--text-main);
     }
@@ -54,37 +54,8 @@
       gap: 10px;
     }
 
-    .page-header-actions button:not(.secondary) {
-      padding: 10px 14px;
-      border: 1px solid var(--primary);
-      border-radius: var(--radius-md);
-      cursor: pointer;
-      color: #fff;
-      font-weight: 600;
-      background: var(--primary);
-    }
-
-    .page-header-actions button.secondary {
-      background: var(--surface);
-      border: 1px solid var(--border-strong);
-      box-shadow: none;
-    }
-
-    .email-settings-actions button {
-      padding: 10px 14px;
-      border: 1px solid var(--primary);
-      border-radius: var(--radius-md);
-      cursor: pointer;
-      color: #fff;
-      font-weight: 600;
-      background: var(--primary);
-    }
-
-    .email-settings-actions button.secondary {
-      background: var(--surface);
-      border: 1px solid var(--border-strong);
-      box-shadow: none;
-    }
+    /* Header and modal action buttons use the shared button styles
+       (style.css, "CONTROLS"). */
 
     /* .email-settings-modal/.email-settings-card layer onto the shared
        .modal-overlay/.modal-card base (style.css) — only page-specific
@@ -128,11 +99,6 @@
     .email-settings-grid select {
       width: 100%;
       box-sizing: border-box;
-      padding: 11px 12px;
-      border-radius: 10px;
-      border:1px solid var(--border-strong);
-      background: var(--surface);
-      color: var(--text-main);
     }
 
     .email-settings-check {
@@ -178,16 +144,6 @@
       grid-column: 1 / -1;
     }
 
-    #companyProfileModal input,
-    #companyProfileModal textarea,
-    #companyProfileModal select,
-    #emailSettingsModal input,
-    #emailSettingsModal textarea,
-    #emailSettingsModal select {
-      color: var(--text-main);
-      background: var(--surface-muted);
-      border: 1px solid var(--border-strong);
-    }
 
     body.dashboard-body {
       margin: 0;
@@ -281,11 +237,6 @@
       margin-bottom: 10px;
     }
 
-    .sidebar form input,
-    .sidebar form button {
-      padding: 8px;
-      font-size: 0.9rem;
-    }
 
     .sidebar .search-bar {
       margin-top: 15px;
@@ -294,18 +245,6 @@
       align-items: stretch;
     }
     .sidebar .search-bar input { flex: 1; }
-    .filter-toggle-btn {
-      background: var(--surface-muted);
-      border: 1px solid var(--border-strong);
-      color: var(--text-main);
-      border-radius: var(--radius-md);
-      cursor: pointer;
-      font-size: 1rem;
-      padding: 0 10px;
-      line-height: 1;
-      transition: background 0.2s;
-    }
-    .filter-toggle-btn:hover { background: var(--border-soft); }
     .filter-panel {
       padding: 10px 8px;
       margin: 0 8px 6px;
@@ -315,16 +254,7 @@
     }
     .filter-row { display:flex; gap:6px; margin-bottom:6px; }
     .filter-row:last-child { margin-bottom:0; }
-    .filter-row select, .filter-row input {
-      flex: 1;
-      padding: 6px 8px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border-strong);
-      background: var(--surface);
-      color: var(--text-main);
-      font-size: 0.82rem;
-    }
-    .filter-row select option { background: var(--surface); color: var(--text-main); }
+    .filter-row select, .filter-row input { flex: 1; min-width: 0; }
     .sort-row {
       display: flex;
       align-items: center;
@@ -340,14 +270,7 @@
     .sort-row select {
       flex: 1;
       min-width: 0;
-      padding: 6px 8px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border-strong);
-      background: var(--surface);
-      color: var(--text-main);
-      font-size: 0.85rem;
     }
-    .filter-actions button { padding: 6px 10px; border-radius: 6px; font-size: 0.82rem; }
     /* .btn-secondary now comes from the shared style.css */
 
     .client-list {
@@ -419,10 +342,6 @@
       font-size: 1.5rem;
     }
 
-    header#Main_header .page-header-actions button {
-      padding: 10px 14px;
-      font-size: 0.92rem;
-    }
 
     @media (max-width: 768px) {
       .input-row {
@@ -451,7 +370,7 @@
     .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
     .stat-card { background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-md); padding: 16px 18px; box-shadow: var(--shadow-soft); }
     .stat-card .stat-label { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; margin-bottom: 4px; }
-    .stat-card .stat-value { font-size: 1.65rem; font-weight: 800; color: var(--text-main); line-height: 1.1; }
+    .stat-card .stat-value { font-size: 1.65rem; font-weight: 700; color: var(--text-main); line-height: 1.1; }
     .stat-card .stat-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
     .dashboard-panels { display: block; margin-bottom: 20px; }
     .dashboard-panel { background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-md); padding: 16px 18px; box-shadow: var(--shadow-soft); }
@@ -459,7 +378,7 @@
     .kanban-board { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
     .kanban-col { flex: 1; min-width: 100px; background: var(--surface-muted); border-radius: 10px; padding: 8px 10px; border: 1px solid var(--border-soft); }
     .kanban-col .kanban-header { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; text-align: center; }
-    .kanban-col .kanban-count { font-size: 1.2rem; font-weight: 800; text-align: center; }
+    .kanban-col .kanban-count { font-size: 1.2rem; font-weight: 700; text-align: center; }
     .recurring-manager { display: flex; flex-direction: column; gap: 6px; }
     .recurring-manager .empty { color: var(--text-muted); font-size: 0.82rem; text-align: center; padding: 16px 0; }
     .client-type-badge { display: inline-block; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 7px; border-radius: var(--radius-sm); margin-left: 5px; vertical-align: middle; }
@@ -738,7 +657,7 @@
 
   <!-- Renderer script -->
   <script src="/js/money-input.js" defer></script>
-  <script src="/main-renderer.js?v=4" defer></script>
+  <script src="/main-renderer.js?v=5" defer></script>
   <script>
     // Toggle button to finance page (if element exists)
     const toggleBtn = document.getElementById('toggleFinance');

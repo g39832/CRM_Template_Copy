@@ -303,6 +303,26 @@ user out once, because their session exists only in Postgres.
   relies on the server-side service role key plus its own `api/access-control.js` checks
   rather than RLS, so RLS is optional defense-in-depth, not currently required for it to work.
 
+## Buttons, dropdowns and inputs
+
+Every control's look (height, border, radius, colours, focus ring, hover,
+disabled) comes from one section at the end of `style.css` headed
+**CONTROLS**, driven by tokens on `:root` (`--control-h`, `--control-radius`,
+`--control-border`, ...) that switch automatically in dark mode. Page
+`<style>` blocks and component rules only handle layout (width, flex, grid).
+
+- **Buttons**: `.btn-primary` (main action), `.btn-secondary` (everything
+  else), `.btn-danger` (destructive: outlined red, solid red on hover). Add
+  `.btn-sm` for small row actions (Edit / Delete / Deactivate). Default height
+  40px, small 34px; 44px / 40px on phones and touch screens.
+- **Inputs, selects, textareas** share one style; selects get a single
+  chevron and theme-aware option lists (`color-scheme`). Dense rows (existing
+  services and costs, filters, sort) use the compact 34px size.
+- **Read-only** fields keep full-contrast text on a tinted background;
+  **disabled** fields are dimmed.
+- One font stack everywhere (`--font-ui`, Segoe UI / system UI).
+- Avoid inline `style="background:..."` on buttons; it blocks the hover state.
+
 ## Mobile / Responsive Layout
 
 Styling is plain CSS, with no framework. Shared rules live in `style.css`, and

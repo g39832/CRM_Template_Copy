@@ -416,8 +416,8 @@
             '<td style="padding:10px 8px;">' + roleBadge + '</td>' +
             '<td style="padding:10px 8px;color:var(--text-muted);font-size:0.82rem;">' + created + '</td>' +
             '<td style="padding:10px 8px;text-align:center;white-space:nowrap;">' +
-            '<button type="button" class="role-toggle-btn" data-id="' + u.id + '" data-role="' + roleToggleTarget + '" style="background:var(--primary-soft);color:var(--primary);border:1px solid var(--primary);padding:4px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:0.78rem;margin-right:6px;">' + roleToggleLabel + '</button>' +
-            '<button type="button" class="delete-user-btn" data-id="' + u.id + '" data-email="' + escapeHtml(u.email) + '" style="background:var(--danger-soft);color:var(--danger);border:1px solid var(--danger);padding:4px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:0.78rem;">Delete</button>' +
+            '<button type="button" class="btn-secondary btn-sm role-toggle-btn" data-id="' + u.id + '" data-role="' + roleToggleTarget + '" style="margin-right:6px;">' + roleToggleLabel + '</button>' +
+            '<button type="button" class="btn-danger btn-sm delete-user-btn" data-id="' + u.id + '" data-email="' + escapeHtml(u.email) + '">Delete</button>' +
             '</td></tr>';
         });
         tbody.innerHTML = html;
@@ -890,11 +890,11 @@
         '<td class="expense-cat-usage">' + used + '</td>' +
         '<td><span class="expense-cat-status ' + (c.is_active ? 'active' : 'inactive') + '">' + (c.is_active ? 'Active' : 'Deactivated') + '</span></td>' +
         '<td class="expense-cat-actions-cell"><div class="expense-cat-actions">' +
-          '<button type="button" class="btn-secondary exp-cat-rename" hidden>Save name</button>' +
+          '<button type="button" class="btn-primary btn-sm exp-cat-rename" hidden>Save name</button>' +
           (c.is_active
-            ? '<button type="button" class="btn-secondary exp-cat-toggle" data-active="false">Deactivate</button>'
-            : '<button type="button" class="btn-secondary exp-cat-toggle" data-active="true">Reactivate</button>') +
-          (c.expense_count ? '' : '<button type="button" class="btn-danger exp-cat-delete">Delete</button>') +
+            ? '<button type="button" class="btn-secondary btn-sm exp-cat-toggle" data-active="false">Deactivate</button>'
+            : '<button type="button" class="btn-secondary btn-sm exp-cat-toggle" data-active="true">Reactivate</button>') +
+          (c.expense_count ? '' : '<button type="button" class="btn-danger btn-sm exp-cat-delete">Delete</button>') +
         '</div></td>' +
       '</tr>';
     }).join('');
