@@ -1266,3 +1266,114 @@ test.describe('calendar', () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+test.describe('estimate & invoice pricing display', () => {
+  // Text drawn on a pdfkit page (same decoding as tests/api/workflows.test.js).
+  function pdfText(buffer) {
+    const zlib = require('zlib');
+    const raw = buffer.toString('latin1');
+    let out = '';
+    const re = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+    let m;
+    while ((m = re.exec(raw))) {
+      let content;
+      try { content = zlib.inflateSync(Buffer.from(m[1], 'latin1')).toString('latin1'); } catch (e) { continue; }
+      for (const piece of content.match(/\[[^\]]*\]\s*TJ|<[0-9a-fA-F]*>\s*Tj/g) || []) {
+        const hex = (piece.match(/<([0-9a-fA-F]*)>/g) || []).map((h) => h.slice(1, -1)).join('');
+        out += Buffer.from(hex, 'hex').toString('latin1') + '\n';
+      }
+    }
+    return out;
+  }
+  async function downloadText(page, job, buttonId) {
+    const download = page.waitForEvent('download');
+    await job.locator(buttonId).click();
+    const file = await (await download).path();
+    return pdfText(require('fs').readFileSync(file));
+  }
+  const pricingBtn = (job, which) => job.locator(`[data-pricing="${which}"]`);
+
+  test('switch between one total and line-item pricing; the PDFs follow and the job money never changes', async ({ page }) => {
+    onlyOn([DESKTOP, 'phone-390']);
+    const errors = trackErrors(page);
+    await resetDb({ migrated: true });
+    await loginAs(page, 'owner@example.com', 'admin');
+    await openClient(page, 'Bob Both');
+    let job = await openJob(page, 'Roof Replacement');
+
+    // Existing job: the original one-total format is selected.
+    await expect(pricingBtn(job, 'total')).toHaveAttribute('aria-pressed', 'true');
+    await expect(pricingBtn(job, 'items')).toHaveAttribute('aria-pressed', 'false');
+    await expect(job.locator('#job-pricing-hint')).toHaveText('The estimate and invoice show only the total.');
+    await expect(page.locator('#job-total-display')).toHaveText('$2,000.00');
+    let text = await downloadText(page, job, '#job-estimate-btn');
+    expect(text).toContain('2,000.00');
+    expect(text).not.toContain('Shingles');
+
+    // Line-item pricing: saved straight away, no money changes.
+    await pricingBtn(job, 'items').click();
+    await expect(pricingBtn(job, 'items')).toHaveAttribute('aria-pressed', 'true');
+    await expect(job.locator('#job-pricing-hint')).toContainText('list each service with its price');
+    await expect.poll(async () => (await dump()).tables.jobs.find((j) => j.id === 1).show_line_item_prices).toBe(true);
+    await expect(page.locator('#job-total-display')).toHaveText('$2,000.00');
+    text = await downloadText(page, job, '#job-estimate-btn');
+    for (const shown of ['SERVICES', 'Tear-off labor', '800.00', 'Shingles', '1,200.00', 'Total', '2,000.00']) expect(text).toContain(shown);
+    text = await downloadText(page, job, '#job-invoice-btn');
+    for (const shown of ['Tear-off labor', '800.00', 'Shingles', '1,200.00', 'Balance Due', '1,500.00']) expect(text).toContain(shown);
+
+    // The choice is kept when the job is reopened.
+    await closeJob(page);
+    job = await openJob(page, 'Roof Replacement');
+    await expect(pricingBtn(job, 'items')).toHaveAttribute('aria-pressed', 'true');
+
+    // Back to one total.
+    await pricingBtn(job, 'total').click();
+    text = await downloadText(page, job, '#job-invoice-btn');
+    expect(text).toContain('2,000.00');
+    expect(text).not.toContain('1,200.00');
+    const row = (await dump()).tables.jobs.find((j) => j.id === 1);
+    expect(row).toMatchObject({ show_line_item_prices: false, total_due: 2000, amount_paid: 500, balance: 1500 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    expect(errors).toEqual([]);
+  });
+
+  test('a job with no services says only the total is shown until services are added', async ({ page }) => {
+    onlyOn([DESKTOP]);
+    await resetDb({ migrated: true });
+    await loginAs(page, 'owner@example.com', 'admin');
+    await openClient(page, 'Bob Both');
+    const job = await openJob(page, 'Gutter Job');
+    await pricingBtn(job, 'items').click();
+    await expect(job.locator('#job-pricing-hint')).toContainText('Add services with “+ Service”');
+  });
+
+  test('before the database update the toggle is not shown', async ({ page }) => {
+    onlyOn([DESKTOP]);
+    await loginAs(page, 'owner@example.com', 'admin');
+    await openClient(page, 'Bob Both');
+    const job = await openJob(page, 'Roof Replacement');
+    await expect(job.locator('[data-pricing]')).toHaveCount(0);
+    await expect(job.locator('#job-estimate-btn')).toBeVisible();
+  });
+
+  for (const theme of ['light', 'dark']) {
+    test(`${theme} mode: the pricing toggle is readable (WCAG AA 4.5:1)`, async ({ page }) => {
+      onlyOn([DESKTOP, 'phone-small-320']);
+      await page.addInitScript((t) => { try { localStorage.setItem('crm-theme', t); } catch (e) { /* ignore */ } }, theme);
+      await resetDb({ migrated: true });
+      await loginAs(page, 'owner@example.com', 'admin');
+      await openClient(page, 'Bob Both');
+      const job = await openJob(page, 'Roof Replacement');
+      const toggle = job.locator('.segmented-toggle');
+      await toggle.scrollIntoViewIfNeeded();
+      const box = await toggle.boundingBox();
+      const vw = page.viewportSize().width;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(vw);
+      expect(await findLowContrast(page, { minRatio: 4.5, scope: '.job-pricing-display' })).toEqual([]);
+      await pricingBtn(job, 'items').click();
+      expect(await findLowContrast(page, { minRatio: 4.5, scope: '.job-pricing-display' })).toEqual([]);
+    });
+  }
+});

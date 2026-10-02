@@ -10,7 +10,7 @@ const {
   sanitizeJobs
 } = require('./access-control');
 const { refreshFinanceYearsFor } = require('./finance-totals');
-const { hasPaymentJobId, hasExpenseTables, hasJobSchedule, markColumnAbsent, isMissingColumnError } = require('./schema-features');
+const { hasPaymentJobId, hasExpenseTables, hasJobSchedule, hasJobPricingDisplay, markColumnAbsent, isMissingColumnError } = require('./schema-features');
 const { itemizedJobCost, copyExpensesToJob } = require('./expenses');
 
 const router = express.Router();
@@ -115,6 +115,26 @@ async function saveJobSchedule(req, job) {
   if (sendsDuration) updates.duration_days = parseDuration(req.body.duration_days);
   const { data, error } = await requireSupabase().from('jobs').update(updates).eq('id', job.id).select().maybeSingle();
   if (error) throw new AppError(500, 'Failed to save the job schedule: ' + error.message);
+  return data;
+}
+
+// show_line_item_prices (v10) only chooses how the job's estimate/invoice
+// shows its price: each service with its amount, or one total. It is a
+// display preference — nothing about the job's money depends on it.
+function parsePricingDisplay(value) {
+  if (value === true || value === false) return value;
+  throw new AppError(400, 'show_line_item_prices must be true or false');
+}
+
+// Applies show_line_item_prices from a request body to a job. Returns the
+// updated row, or null when it wasn't sent or the column doesn't exist yet.
+async function saveJobPricingDisplay(req, jobId) {
+  if (req.body.show_line_item_prices === undefined) return null;
+  if (!(await hasJobPricingDisplay())) return null;
+  const { data, error } = await requireSupabase().from('jobs')
+    .update({ show_line_item_prices: parsePricingDisplay(req.body.show_line_item_prices) })
+    .eq('id', jobId).select().maybeSingle();
+  if (error) throw new AppError(500, 'Failed to save the pricing display: ' + error.message);
   return data;
 }
 
@@ -270,6 +290,7 @@ router.post('/', asyncHandler(async (req, res) => {
   const totalDue = isAdmin(req) ? parseNumberField(req.body.total_due ?? 0, 'total_due', { required: false, defaultValue: 0 }) : 0;
   const jobCost = isAdmin(req) ? parseNumberField(req.body.job_cost ?? 0, 'job_cost', { required: false, defaultValue: 0 }) : 0;
   const createdAt = new Date().toISOString();
+  if (req.body.show_line_item_prices !== undefined) parsePricingDisplay(req.body.show_line_item_prices);
 
   let lineItems = [];
   if (req.body.line_items !== undefined && isAdmin(req)) {
@@ -295,6 +316,7 @@ router.post('/', asyncHandler(async (req, res) => {
   if (isAdmin(req) && Array.isArray(req.body.expenses) && req.body.expenses.length) {
     await copyExpensesToJob(req, job, req.body.expenses);
   }
+  job = (await saveJobPricingDisplay(req, job.id)) || job;
   if (lineItems.length || (isAdmin(req) && Array.isArray(req.body.expenses) && req.body.expenses.length)) {
     const refreshed = await db.query('SELECT * FROM jobs WHERE id = $1', [job.id]);
     job = refreshed.rows[0] || job;
@@ -341,6 +363,7 @@ router.put('/:jobId', asyncHandler(async (req, res) => {
   // Check the schedule first, so a bad date changes nothing.
   if (req.body.scheduled_start !== undefined) parseDateOnly(req.body.scheduled_start, 'scheduled_start');
   if (req.body.duration_days !== undefined) parseDuration(req.body.duration_days);
+  if (req.body.show_line_item_prices !== undefined) parsePricingDisplay(req.body.show_line_item_prices);
 
   const { rows } = await db.query(
     `UPDATE jobs SET title=$1, status=$2, scope_of_work=$3, total_due=$4, balance=$5, job_cost=$6
@@ -348,9 +371,10 @@ router.put('/:jobId', asyncHandler(async (req, res) => {
     [title, VALID_STATUSES.includes(status) ? status : job.status, scopeOfWork, totalDue, balance, jobCost, jobId]
   );
   const scheduled = await saveJobSchedule(req, job);
+  const displayed = await saveJobPricingDisplay(req, jobId);
 
   await refreshFinanceYearsFor(job.created_at, 'job update');
-  res.json({ success: true, job: sanitizeJob(req, scheduled || rows[0]) });
+  res.json({ success: true, job: sanitizeJob(req, displayed || scheduled || rows[0]) });
 }));
 
 // ======================================================

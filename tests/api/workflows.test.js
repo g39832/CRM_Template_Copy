@@ -844,3 +844,157 @@ test('regular users see only scheduled jobs of their own clients', async () => {
   assert.equal((await sam('PUT', '/api/jobs/1', { scheduled_start: '2026-12-05' })).status, 200, 'can schedule their own job');
   assert.equal((await sam('PUT', '/api/jobs/3', { scheduled_start: '2026-12-05' })).status, 403, "not someone else's");
 });
+
+// ---------------------------------------------------------------------------
+// Line-item pricing on estimates/invoices (v10): a per-job display choice.
+// The services stay the only prices; the toggle never changes any money.
+// ---------------------------------------------------------------------------
+function jobMoney(job) {
+  return [job.total_due, job.amount_paid, job.balance, job.job_cost].map(Number);
+}
+
+test('line-item pricing before the v10 migration: ignored, documents keep one total', async () => {
+  const admin = await login('owner@example.com', 'admin');
+  const res = await admin('PUT', '/api/jobs/1', { show_line_item_prices: true });
+  assert.equal(res.status, 200);
+  assert.ok(!('show_line_item_prices' in res.data.job), 'no column, nothing saved');
+  const text = pdfText((await admin('POST', '/api/jobs/1/estimate', {})).data);
+  assert.match(text, /2,000\.00/);
+  assert.ok(!text.includes('Shingles') && !text.includes('1,200.00'), 'still one total');
+});
+
+test('existing jobs default to one total; both formats show the same total and never change the job money', async () => {
+  await resetDb({ migrated: true });
+  const admin = await login('owner@example.com', 'admin');
+  const before = (await admin('GET', '/api/jobs/1')).data.job;
+  assert.equal(before.show_line_item_prices, false, 'existing job keeps the original format');
+  const services = (await admin('GET', '/api/jobs/1/line-items')).data.lineItems;
+  const paymentsBefore = (await dump()).tables.payments.length;
+
+  // One total (default): scope and the total, no service prices.
+  for (const mode of ['estimate', 'invoice']) {
+    const text = pdfText((await admin('POST', `/api/jobs/1/${mode}`, {})).data);
+    assert.match(text, /Tear off and replace roof/);
+    assert.match(text, /2,000\.00/);
+    for (const hidden of ['SERVICES', 'Shingles', '1,200.00', '800.00']) assert.ok(!text.includes(hidden), `${mode}: no "${hidden}"`);
+  }
+
+  // Line-item pricing: each service and its amount, then the total.
+  let res = await admin('PUT', '/api/jobs/1', { show_line_item_prices: true });
+  assert.equal(res.data.job.show_line_item_prices, true);
+  assert.deepEqual(jobMoney(res.data.job), jobMoney(before), 'toggle changes no money');
+  const est = pdfText((await admin('POST', '/api/jobs/1/estimate', {})).data);
+  for (const shown of ['Tear off and replace roof', 'SERVICES', 'Tear-off labor', '800.00', 'Shingles', '1,200.00', 'Total', '2,000.00']) {
+    assert.ok(est.includes(shown), `estimate shows "${shown}"`);
+  }
+  for (const hidden of ['Materials', '40.00', 'ESTIMATE TOTAL']) assert.ok(!est.includes(hidden), `estimate: no "${hidden}"`);
+  const inv = pdfText((await admin('POST', '/api/jobs/1/invoice', {})).data);
+  for (const shown of ['Tear-off labor', '800.00', 'Shingles', '1,200.00', 'Contract Price', '2,000.00', 'Amount Paid', '500.00', 'Balance Due', '1,500.00']) {
+    assert.ok(inv.includes(shown), `invoice shows "${shown}"`);
+  }
+
+  // Back to one total, without recreating anything.
+  res = await admin('PUT', '/api/jobs/1', { show_line_item_prices: false });
+  assert.equal(res.data.job.show_line_item_prices, false);
+  const off = pdfText((await admin('POST', '/api/jobs/1/invoice', {})).data);
+  assert.ok(!off.includes('Shingles') && !off.includes('1,200.00') && off.includes('2,000.00'));
+
+  const after = (await admin('GET', '/api/jobs/1')).data.job;
+  assert.deepEqual(jobMoney(after), jobMoney(before), 'job total, payments, balance and cost unchanged');
+  assert.deepEqual((await admin('GET', '/api/jobs/1/line-items')).data.lineItems, services, 'service prices unchanged');
+  assert.equal((await dump()).tables.payments.length, paymentsBefore, 'no payments created');
+});
+
+test('a commercial job: every service and its price, totals stay right as services are added, edited and removed', async () => {
+  await resetDb({ migrated: true });
+  const admin = await login('owner@example.com', 'admin');
+  const created = await admin('POST', '/api/jobs', {
+    client_id: 2, title: 'Commercial roof', scope_of_work: '',
+    line_items: [
+      { description: 'Roof repair', quantity: 1, unit_price: 2500, category: 'Labor' },
+      { description: 'Materials', quantity: 1, unit_price: 1200, category: 'Materials' },
+      { description: 'Labor', quantity: 1, unit_price: 1800, category: 'Labor' }
+    ]
+  });
+  assert.equal(created.status, 200);
+  const job = created.data.job;
+  assert.equal(Number(job.total_due), 5500, 'job total is the services sum');
+  assert.equal(job.show_line_item_prices, false, 'new jobs start with one total');
+  const items = (await admin('GET', `/api/jobs/${job.id}/line-items`)).data.lineItems;
+  assert.deepEqual(items.map((i) => [i.description, i.amount]), [['Roof repair', 2500], ['Materials', 1200], ['Labor', 1800]]);
+
+  async function docs() {
+    return {
+      estimate: pdfText((await admin('POST', `/api/jobs/${job.id}/estimate`, {})).data),
+      invoice: pdfText((await admin('POST', `/api/jobs/${job.id}/invoice`, {})).data)
+    };
+  }
+  function expectItemized(texts, lines, total) {
+    for (const [mode, text] of Object.entries(texts)) {
+      assert.ok(text.includes('SERVICES'), `${mode}: service price list`);
+      for (const [name, amount] of lines) {
+        assert.ok(text.includes(name) && text.includes(amount), `${mode}: ${name} ${amount}`);
+      }
+      assert.ok(text.includes(total), `${mode}: total ${total}`);
+    }
+  }
+  function expectOneTotal(texts, amounts, total) {
+    for (const [mode, text] of Object.entries(texts)) {
+      assert.ok(text.includes(total), `${mode}: total ${total}`);
+      for (const amount of amounts) assert.ok(!text.includes(amount), `${mode}: no "${amount}"`);
+      assert.ok(!text.includes('SERVICES'), `${mode}: no service price list`);
+    }
+  }
+
+  // One total: blank scope lists the service names, but no prices.
+  let texts = await docs();
+  expectOneTotal(texts, ['2,500.00', '1,200.00', '1,800.00'], '5,500.00');
+  assert.ok(texts.estimate.includes('Roof repair'), 'names still listed as the scope');
+
+  await admin('PUT', `/api/jobs/${job.id}`, { show_line_item_prices: true });
+  texts = await docs();
+  expectItemized(texts, [['Roof repair', '2,500.00'], ['Materials', '1,200.00'], ['Labor', '1,800.00']], '5,500.00');
+  assert.ok(!texts.estimate.includes('SCOPE OF WORK'), 'scope that only repeats service names is not printed twice');
+  assert.equal(texts.estimate.split('Roof repair').length - 1, 1, 'each service listed once');
+
+  // Edit a price, remove one service, add one.
+  const labor = items.find((i) => i.description === 'Labor');
+  const materials = items.find((i) => i.description === 'Materials');
+  assert.equal((await admin('PUT', `/api/jobs/${job.id}/line-items/${labor.id}`, { unit_price: 2000 })).status, 200);
+  assert.equal((await admin('DELETE', `/api/jobs/${job.id}/line-items/${materials.id}`)).status, 200);
+  assert.equal((await admin('POST', `/api/jobs/${job.id}/line-items`, { description: 'Permit', quantity: 2, unit_price: 150, category: 'Permits' })).status, 200);
+  assert.equal(Number((await admin('GET', `/api/jobs/${job.id}`)).data.job.total_due), 4800);
+
+  texts = await docs();
+  expectItemized(texts, [['Roof repair', '2,500.00'], ['Labor', '2,000.00'], ['Permit', '300.00']], '4,800.00');
+  assert.ok(!texts.invoice.includes('1,200.00') && !texts.invoice.includes('Materials'), 'removed service gone');
+  assert.ok(!texts.invoice.includes('150.00'), 'unit price is never shown, only the amount');
+
+  await admin('PUT', `/api/jobs/${job.id}`, { show_line_item_prices: false });
+  expectOneTotal(await docs(), ['2,500.00', '2,000.00', '300.00'], '4,800.00');
+  assert.equal(Number((await admin('GET', `/api/jobs/${job.id}`)).data.job.total_due), 4800, 'total unchanged by the toggle');
+});
+
+test('line-item pricing: own scope text is kept, bad values change nothing, regular users can set it on their own jobs', async () => {
+  await resetDb({ migrated: true });
+  const admin = await login('owner@example.com', 'admin');
+  await admin('PUT', '/api/jobs/1', { scope_of_work: 'Tear off and replace roof\n- Shingles', show_line_item_prices: true });
+  const text = pdfText((await admin('POST', '/api/jobs/1/estimate', {})).data);
+  assert.ok(text.includes('Tear off and replace roof'), 'custom scope text still printed');
+  assert.equal(text.split('Shingles').length - 1, 1, 'a scope line that is a service name is not repeated');
+
+  for (const value of ['yes', 1, null, 'true']) {
+    const res = await admin('PUT', '/api/jobs/1', { title: 'Changed', show_line_item_prices: value });
+    assert.equal(res.status, 400, JSON.stringify(value));
+  }
+  const job = (await admin('GET', '/api/jobs/1')).data.job;
+  assert.deepEqual([job.title, job.show_line_item_prices, Number(job.total_due)], ['Roof Replacement', true, 2000], 'a rejected save changes nothing');
+  assert.equal((await admin('POST', '/api/jobs', { client_id: 2, show_line_item_prices: 'yes' })).status, 400);
+  const copy = await admin('POST', '/api/jobs', { client_id: 2, title: 'Copy', show_line_item_prices: true });
+  assert.equal(copy.data.job.show_line_item_prices, true, 'a duplicated job keeps the choice');
+
+  const sam = await login('sam@example.com', 'user');
+  assert.equal((await sam('PUT', '/api/jobs/1', { show_line_item_prices: false })).status, 200, 'own job');
+  assert.equal((await sam('PUT', '/api/jobs/3', { show_line_item_prices: true })).status, 403, "not someone else's");
+  assert.equal(Number((await admin('GET', '/api/jobs/1')).data.job.total_due), 2000);
+});

@@ -137,7 +137,9 @@ async function handleJobDocumentGeneration(req, res, mode) {
 
     // This job's services (line items): their sum is the document total and,
     // when the scope text is blank, their names are the scope. Quantities,
-    // unit prices and categories never appear on the customer's document.
+    // unit prices and categories never appear on the customer's document;
+    // each service's amount is listed only when the job is set to show
+    // line-item pricing (jobs.show_line_item_prices, v10).
     let lineItems = [];
     try {
       const dbV2 = getClient();
@@ -179,6 +181,7 @@ async function handleJobDocumentGeneration(req, res, mode) {
         id: `${client.id}-J${job.id}`
       },
       lineItems,
+      showLineItemPrices: job.show_line_item_prices === true,
       companyProfile: normalizedProfile,
       mode
     });
@@ -196,10 +199,11 @@ async function handleJobDocumentGeneration(req, res, mode) {
   }
 }
 
-// Job-scoped invoice/estimate PDFs only ever show the scope of work and
-// total_due/amount_paid/balance (see buildInvoiceData/generateInvoicePDF) —
-// never line-item pricing, categories, job_cost, profit, or margin — so a regular
-// user with access to the job may generate one. Ownership is still
+// Job-scoped invoice/estimate PDFs only ever show the scope of work,
+// total_due/amount_paid/balance and, when the job is set to, each service's
+// amount (see buildInvoiceData/generateInvoicePDF) — never categories,
+// job_cost, profit, or margin — so a regular user with access to the job may
+// generate one (they can already see the job's service prices). Ownership is still
 // enforced inside handleJobDocumentGeneration via canAccessClient.
 router.post('/jobs/:jobId/invoice', asyncHandler((req, res) =>
   handleJobDocumentGeneration(req, res, 'invoice')

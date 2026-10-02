@@ -219,6 +219,27 @@ section of `supabase-schema.sql` in the SQL editor): two new tables, `expense_ca
 and `job_expenses`, plus the default categories. Until it is run, jobs keep their single
 Job Cost field and the new screens show a notice.
 
+### Line-item pricing on estimates and invoices
+
+Inside a job, **Estimate & invoice pricing** (under Services & Scope of Work) chooses
+how that job's estimate and invoice PDFs show the price:
+
+- **Show one total** (the default, and the original format) — the scope of work and one
+  total; service prices are not shown.
+- **Show line-item pricing** — each service added with **+ Service** (or as a custom line
+  item) with its amount, then the total. Quantities, unit prices and categories are still
+  never printed, and a scope line that just repeats a service's name isn't printed twice.
+
+The services are the only prices: the total on both formats is their sum, exactly as the
+Job Total is. The choice is saved on the job the moment it's switched
+(`jobs.show_line_item_prices`) and only changes what the PDFs show — never the Job
+Total, cost, payments, balance, profit or service prices. Switch it at any time and
+download again; nothing has to be recreated. Duplicated jobs keep the choice.
+
+This needs the **v10 database update** (the "TEMPLATE UPGRADE v10" section at the end of
+`supabase-schema.sql`): one column that defaults to `false`, so every existing job keeps
+the one-total format. Until it is run the option is hidden and PDFs show one total.
+
 **Optional migration (v6)** — `node scripts/migrate-v6-client-overview.js`, or run the
 "TEMPLATE UPGRADE v6" section at the end of `supabase-schema.sql` in the SQL editor.
 It only adds `clients.technician` and `payments.job_id` (plus an index). Everything

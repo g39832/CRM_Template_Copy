@@ -156,33 +156,69 @@ function generateInvoicePDF(data, mode) {
     drawRule(doc, M, cursorY, contentWidth);
     cursorY += 16;
 
+    // Line-item pricing: each service with its amount, then the total. The
+    // amounts come from the job's services, the same numbers the total is
+    // the sum of, so the list always adds up to the total shown.
+    const priceLines = Array.isArray(data.priceLines) ? data.priceLines : [];
+    const itemized = priceLines.length > 0;
+
     // ---- Scope of Work ----
+    // When itemized, the services are listed with their prices below, so the
+    // scope keeps only the lines that aren't just a service's name.
+    const serviceNames = new Set(priceLines.map(function(p) { return p.description.toLowerCase(); }));
+    const workLines = normalizeWorkLines(data.workDescription)
+      .filter(function(line) { return !itemized || !serviceNames.has(line.toLowerCase()); })
+      .filter(function(line) { return !itemized || line !== 'No scope of work provided.'; });
+
     const workHeading = isEstimate ? 'SCOPE OF WORK' : 'WORK COMPLETED';
-    doc.fontSize(8).fillColor('#9ca3af').text(workHeading, M, cursorY, { width: contentWidth });
-    cursorY += 14;
+    if (workLines.length) {
+      doc.fontSize(8).fillColor('#9ca3af').text(workHeading, M, cursorY, { width: contentWidth });
+      cursorY += 14;
 
-    normalizeWorkLines(data.workDescription).forEach(function(line) {
-      const lineText = '\u2022  ' + line;
-      const lineH = doc.heightOfString(lineText, { width: contentWidth - 12, lineGap: 2 });
-      if (cursorY + lineH > pageBottom) {
-        doc.addPage();
-        cursorY = doc.page.margins.top;
-      }
-      doc.fontSize(10).fillColor('#374151')
-        .text(lineText, M + 4, cursorY, { width: contentWidth - 12, lineGap: 2 });
-      cursorY += lineH + 4;
-    });
+      workLines.forEach(function(line) {
+        const lineText = '•  ' + line;
+        const lineH = doc.heightOfString(lineText, { width: contentWidth - 12, lineGap: 2 });
+        if (cursorY + lineH > pageBottom) {
+          doc.addPage();
+          cursorY = doc.page.margins.top;
+        }
+        doc.fontSize(10).fillColor('#374151')
+          .text(lineText, M + 4, cursorY, { width: contentWidth - 12, lineGap: 2 });
+        cursorY += lineH + 4;
+      });
 
-    cursorY += 16;
+      cursorY += 16;
+
+      // ---- Divider ----
+      if (cursorY + 20 > pageBottom) { doc.addPage(); cursorY = doc.page.margins.top; }
+      drawRule(doc, M, cursorY, contentWidth);
+      cursorY += 16;
+    }
 
     // Customer-facing document: the scope of work above and one total
-    // below. Service quantities/unit prices, categories and job costs are
+    // below (or, when itemized, each service's amount and the total).
+    // Service quantities/unit prices, categories and job costs are
     // business-side information and are never drawn here.
 
-    // ---- Divider ----
-    if (cursorY + 20 > pageBottom) { doc.addPage(); cursorY = doc.page.margins.top; }
-    drawRule(doc, M, cursorY, contentWidth);
-    cursorY += 16;
+    // ---- Services with prices (line-item pricing only) ----
+    if (itemized) {
+      doc.fontSize(8).fillColor('#9ca3af').text('SERVICES', M, cursorY, { width: contentWidth });
+      cursorY += 14;
+      priceLines.forEach(function(p) {
+        const rowH = Math.max(22, doc.fontSize(10).heightOfString(p.description, { width: contentWidth * 0.65 }) + 8);
+        if (cursorY + rowH > pageBottom) { doc.addPage(); cursorY = doc.page.margins.top; }
+        drawSummaryRow(doc, p.description, p.amount, M, cursorY, contentWidth, false);
+        cursorY += rowH;
+      });
+      if (isEstimate) {
+        if (cursorY + 28 > pageBottom) { doc.addPage(); cursorY = doc.page.margins.top; }
+        cursorY = drawSummaryRow(doc, 'Total', data.total, M, cursorY + 4, contentWidth, true);
+      }
+      cursorY += 8;
+      if (cursorY + 20 > pageBottom) { doc.addPage(); cursorY = doc.page.margins.top; }
+      drawRule(doc, M, cursorY, contentWidth);
+      cursorY += 16;
+    }
 
     // ---- Summary ----
     const summaryTotal = Number(data.total || 0);
@@ -190,10 +226,13 @@ function generateInvoicePDF(data, mode) {
     const summaryBalance = Number(data.balance || 0);
 
     if (isEstimate) {
-      doc.fontSize(8).fillColor('#9ca3af').text('ESTIMATE TOTAL', M, cursorY, { width: contentWidth });
-      cursorY += 14;
-      doc.fontSize(26).fillColor('#111827').text('$' + formatMoney(summaryTotal), M, cursorY, { width: contentWidth });
-      cursorY += 38;
+      // Itemized estimates already end their service list with the total.
+      if (!itemized) {
+        doc.fontSize(8).fillColor('#9ca3af').text('ESTIMATE TOTAL', M, cursorY, { width: contentWidth });
+        cursorY += 14;
+        doc.fontSize(26).fillColor('#111827').text('$' + formatMoney(summaryTotal), M, cursorY, { width: contentWidth });
+        cursorY += 38;
+      }
       doc.fontSize(8).fillColor('#9ca3af')
         .text('This estimate is valid for 30 days. Prices subject to change based on final inspection.', M, cursorY, { width: contentWidth });
       cursorY += 20;
@@ -263,9 +302,13 @@ function buildInvoiceData(opts) {
   const client = opts.client;
   const companyProfile = opts.companyProfile || {};
   const mode = opts.mode || 'invoice';
-  // Line items are only used to work out the total; they are not passed
-  // on to the document (no quantities, unit prices or categories).
+  // Line items work out the total. With line-item pricing on, each one's
+  // description and amount is also passed on; quantities, unit prices and
+  // categories never are.
   const lineItems = Array.isArray(opts.lineItems) ? opts.lineItems : [];
+  const priceLines = opts.showLineItemPrices
+    ? lineItems.map((i) => ({ description: safeText(i.description, 'Service'), amount: Number(i.amount || 0) }))
+    : [];
 
   const workDescription = client.scope_of_work || 'No scope of work provided.';
   const company = normalizeCompanyProfile(companyProfile, process.env);
@@ -294,6 +337,7 @@ function buildInvoiceData(opts) {
     clientEmail: client.email || '',
     workDescription: workDescription,
     total: total,
+    priceLines: priceLines,
     paid: client.paid != null ? client.paid : (client.amount_paid != null ? client.amount_paid : 0),
     balance: client.balance != null ? client.balance : 0
   };

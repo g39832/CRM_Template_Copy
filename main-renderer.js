@@ -3090,6 +3090,7 @@ async function openNewJobModal(clientId) {
         if (sourceItems.length) payload.line_items = sourceItems;
         if (sourceExpenses.length) payload.expenses = sourceExpenses;
         if (sourceJob) {
+          if (typeof sourceJob.show_line_item_prices === 'boolean') payload.show_line_item_prices = sourceJob.show_line_item_prices;
           if (!sourceExpenses.length) payload.job_cost = Number(sourceJob.job_cost || 0);
           if (!sourceItems.length) payload.total_due = Number(sourceJob.total_due || 0);
         }
@@ -3781,6 +3782,12 @@ function openJobPanel(job, clientId, onSave) {
   // Scheduling (v9): the job row only has these columns once the database
   // update has been run; before that the fields are simply not shown.
   const scheduleSupported = Object.prototype.hasOwnProperty.call(job, 'scheduled_start');
+  // Line-item pricing (v10): whether the estimate/invoice lists each
+  // service's price or one total. Only a display choice — the services stay
+  // the job's prices and the total is still their sum. Jobs without a saved
+  // choice keep the one-total format.
+  const pricingDisplaySupported = Object.prototype.hasOwnProperty.call(job, 'show_line_item_prices');
+  let showLineItemPrices = job.show_line_item_prices === true;
 
   const panel = document.createElement('div');
   panel.id = 'jobPanelOverlay';
@@ -3888,10 +3895,19 @@ function openJobPanel(job, clientId, onSave) {
           <input id="li-unit-price" type="text" inputmode="decimal" placeholder="Price" aria-label="Unit price">
           <button type="button" id="li-add-btn" class="btn-primary">Add</button>
         </div>` : ''}
+        ${pricingDisplaySupported ? `
+        <div class="job-modal-field job-pricing-display">
+          <span class="job-pricing-label" id="job-pricing-label">Estimate &amp; invoice pricing</span>
+          <div class="segmented-toggle" role="group" aria-labelledby="job-pricing-label">
+            <button type="button" class="segmented-toggle-btn" data-pricing="total" aria-pressed="false">Show one total</button>
+            <button type="button" class="segmented-toggle-btn" data-pricing="items" aria-pressed="false">Show line-item pricing</button>
+          </div>
+          <span class="field-hint" id="job-pricing-hint" role="status"></span>
+        </div>` : ''}
         <div class="job-modal-field">
           <label for="job-scope">Scope of work</label>
           <textarea id="job-scope" rows="4" placeholder="Describe the work for this job...">${escapeHtml(job.scope_of_work || '')}</textarea>
-          <span class="field-hint">This is what the customer sees on the estimate and invoice. “+ Service” adds each service here; quantities, prices and categories stay internal. If left blank, the services above are listed instead.</span>
+          <span class="field-hint">This is what the customer sees on the estimate and invoice. “+ Service” adds each service here; quantities and categories stay internal${pricingDisplaySupported ? ', and prices show only with line-item pricing' : ', and so do prices'}. If left blank, the services above are listed instead.</span>
         </div>
       </section>
 
@@ -4024,6 +4040,7 @@ function openJobPanel(job, clientId, onSave) {
       payload.scheduled_start = startEl.value || null;
       payload.duration_days = durationEl.value.trim() === '' ? null : Number(durationEl.value);
     }
+    if (pricingDisplaySupported) payload.show_line_item_prices = showLineItemPrices;
     if (admin) {
       if (!lineItems.length && totalEl) payload.total_due = parseMoney(totalEl.value) || 0;
       // The job's cost is controlled only by Job Costs (the server keeps
@@ -4270,6 +4287,7 @@ function openJobPanel(job, clientId, onSave) {
 
   // ---------- services (line items) ----------
   function renderLineItems() {
+    renderPricingDisplay();
     const list = $('#job-line-items-list');
     if (!list) return;
     if (!lineItems.length) {
@@ -4308,6 +4326,35 @@ function openJobPanel(job, clientId, onSave) {
         </div>`;
     }
   }
+
+  // ---------- estimate/invoice pricing display ----------
+  function renderPricingDisplay() {
+    if (!pricingDisplaySupported) return;
+    panel.querySelectorAll('[data-pricing]').forEach((btn) => {
+      const on = (btn.dataset.pricing === 'items') === showLineItemPrices;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-pressed', String(on));
+    });
+    const hint = $('#job-pricing-hint');
+    if (!hint) return;
+    if (!showLineItemPrices) {
+      hint.textContent = 'The estimate and invoice show only the total.';
+    } else if (lineItemsLoaded && !lineItems.length) {
+      hint.textContent = 'Add services with “+ Service” to list their prices. Until then the estimate and invoice show only the total.';
+    } else {
+      hint.textContent = 'The estimate and invoice list each service with its price, then the total.';
+    }
+  }
+  panel.querySelectorAll('[data-pricing]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const next = btn.dataset.pricing === 'items';
+      if (next === showLineItemPrices) return;
+      showLineItemPrices = next;
+      renderPricingDisplay();
+      saveScopeNow();
+    });
+  });
+  renderPricingDisplay();
 
   async function loadLineItems() {
     try {
@@ -4909,6 +4956,7 @@ function openJobPanel(job, clientId, onSave) {
         status: 'Prospect',
         scope_of_work: current.scope_of_work || ''
       };
+      if (pricingDisplaySupported) payload.show_line_item_prices = showLineItemPrices;
       if (admin) {
         if (lineItems.length) payload.line_items = copyLineItems(lineItems);
         else payload.total_due = Number(current.total_due || 0);

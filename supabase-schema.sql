@@ -670,3 +670,23 @@ CREATE INDEX IF NOT EXISTS jobs_scheduled_start_idx
   ON public.jobs (scheduled_start) WHERE scheduled_start IS NOT NULL;
 
 NOTIFY pgrst, 'reload schema';
+
+-- =============================================================
+-- TEMPLATE UPGRADE v10: line-item pricing on estimates/invoices.
+--
+-- Some customers (often commercial) want the estimate/invoice to list each
+-- service with its own price instead of one total. This stores that choice
+-- per job:
+--   jobs.show_line_item_prices  BOOLEAN  false = one total (the original
+--                                        format), true = each service and
+--                                        its price, then the total
+-- It only changes what the document shows. The services (job_line_items)
+-- stay the one source of prices, and the job total is still their sum.
+--
+-- Purely ADDITIVE: one column defaulting to false, so every existing job
+-- keeps the one-total format. Nothing is changed, dropped or deleted. Safe
+-- to run multiple times.
+-- =============================================================
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS show_line_item_prices BOOLEAN NOT NULL DEFAULT false;
+
+NOTIFY pgrst, 'reload schema';

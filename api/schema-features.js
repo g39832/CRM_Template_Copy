@@ -80,6 +80,8 @@ module.exports = {
   hasExpenseTables: async () => (await hasTable('expense_categories')) && (await hasTable('job_expenses')),
   // v9: a job's schedule (estimated start date + duration in days).
   hasJobSchedule: async () => (await hasColumn('jobs', 'scheduled_start')) && (await hasColumn('jobs', 'duration_days')),
+  // v10: whether a job's estimate/invoice itemizes its services' prices.
+  hasJobPricingDisplay: () => hasColumn('jobs', 'show_line_item_prices'),
   hasClientTechnician: () => hasColumn('clients', 'technician'),
   hasPaymentJobId: () => hasColumn('payments', 'job_id')
 };

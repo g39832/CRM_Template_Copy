@@ -3314,6 +3314,15 @@ body.dashboard-body {
   gap: 8px;
 }
 .job-services-actions .btn-primary { padding: 8px 14px; font-size: 0.9rem; }
+/* Estimate & invoice pricing: one total, or each service with its price. */
+.job-pricing-display { align-items: flex-start; }
+.job-pricing-label { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; }
+.job-pricing-display .segmented-toggle { max-width: 100%; }
+.job-pricing-display .segmented-toggle-btn { flex: 1 1 auto; font-size: 0.9rem; line-height: 1.2; padding: 6px 14px; }
+@media (max-width: 480px) {
+  .job-pricing-display .segmented-toggle { width: 100%; }
+  .job-pricing-display .segmented-toggle-btn { flex: 1 1 0; padding: 6px 8px; }
+}
 .job-line-item-add-grid[hidden] { display: none; }
 .job-line-item-add-grid input,
 .job-line-item-add-grid select {
@@ -4154,13 +4163,13 @@ textarea[readonly]::placeholder { color: var(--text-muted); }
 .cal-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .cal-arrow { padding: 0 10px; min-width: var(--control-h, 40px); }
 .cal-title { margin: 0 0 0 6px; font-size: 1.2rem; font-weight: 700; color: var(--text-main); }
-.cal-views { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--control-radius, 8px); overflow: hidden; }
-.cal-view-btn {
+.cal-views, .segmented-toggle { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--control-radius, 8px); overflow: hidden; }
+.cal-view-btn, .segmented-toggle-btn {
   border: none; background: var(--surface); color: var(--text-main); padding: 0 16px;
   min-height: var(--control-h, 40px); font-weight: 600; cursor: pointer;
 }
-.cal-view-btn + .cal-view-btn { border-left: 1px solid var(--border-strong); }
-.cal-view-btn.is-active { background: var(--primary); color: #fff; }
+.cal-view-btn + .cal-view-btn, .segmented-toggle-btn + .segmented-toggle-btn { border-left: 1px solid var(--border-strong); }
+.cal-view-btn.is-active, .segmented-toggle-btn.is-active { background: var(--primary); color: #fff; }
 .cal-notice { padding: 10px 14px; border-radius: var(--radius-md); margin-bottom: 12px; background: var(--surface-muted); color: var(--text-main); border: 1px solid var(--border-soft); }
 .cal-notice.is-warning { background: var(--warning-soft); color: var(--warning-text); }
 .cal-notice.is-error { background: var(--danger-soft); color: var(--danger-text); }
