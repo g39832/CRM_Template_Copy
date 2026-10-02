@@ -6,7 +6,7 @@
   <title>Dashboard | CRM Template</title>
   <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
   <script src="/js/theme.js"></script>
-  <link rel="stylesheet" href="/style.css?v=9">
+  <link rel="stylesheet" href="/style.css?v=10">
   <style>
     .page-header {
       display: flex;
@@ -429,6 +429,7 @@
     </div>
     <div class="nav-links">
       <a href="/main" class="active">Dashboard</a>
+      <a href="/calendar" id="navCalendarLink">Calendar</a>
       <a href="/finance" id="navFinanceLink">Finance</a>
       <a href="/settings" id="userSettingsNavLink">Settings</a>
       <a href="/settings" id="adminNavLink" style="display:none;"><i data-lucide="settings"></i> Admin Settings</a>
@@ -657,7 +658,7 @@
 
   <!-- Renderer script -->
   <script src="/js/money-input.js" defer></script>
-  <script src="/main-renderer.js?v=5" defer></script>
+  <script src="/main-renderer.js?v=6" defer></script>
   <script>
     // Toggle button to finance page (if element exists)
     const toggleBtn = document.getElementById('toggleFinance');

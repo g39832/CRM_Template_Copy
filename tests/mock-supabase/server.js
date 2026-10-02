@@ -393,6 +393,14 @@ async function handleRest(req, res, table, url) {
   const wantsCount = prefer.some((p) => p.startsWith('count='));
   const returnRep = prefer.includes('return=representation');
   const selectTokens = parseSelect(params.get('select') || '*');
+  // Like PostgREST, an unknown column is an error even when no rows match
+  // (feature probes select a column with limit 0).
+  const knownCols = columnsFor(table);
+  for (const tok of selectTokens) {
+    if (!tok.embed && tok.column !== '*' && !knownCols[tok.column]) {
+      throw new PgError(400, '42703', `column ${table}.${tok.column} does not exist`);
+    }
+  }
   const filter = buildFilters(table, params);
 
   function respondRows(rows, status, totalCount) {

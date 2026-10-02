@@ -479,6 +479,18 @@ function getMainHtmlWithUser(req) {
   );
 }
 
+var _calendarHtmlCache = null;
+function getCalendarHtmlWithUser(req) {
+  if (!_calendarHtmlCache) {
+    _calendarHtmlCache = fs.readFileSync(path.join(__dirname, 'calendar.html'), 'utf8');
+  }
+  var userData = JSON.stringify(req.session && req.session.user ? req.session.user : {});
+  return _calendarHtmlCache.replace(
+    '</head>',
+    '<script>window.__USER__ = ' + userData + ';</script></head>'
+  );
+}
+
 var _settingsHtmlCache = null;
 function getSettingsHtmlWithUser(req) {
   if (!_settingsHtmlCache) {
@@ -510,6 +522,14 @@ function requireAdminPage(req, res, next) {
   if (req.session && req.session.user && req.session.user.role === 'admin') return next();
   return res.redirect('/main');
 }
+
+// Calendar — every signed-in user (each sees the jobs of clients they can
+// open; the data comes from /api/jobs/schedule).
+app.get('/calendar', (req, res) => {
+  if (!isAuthenticated(req)) return res.redirect('/');
+  res.send(getCalendarHtmlWithUser(req));
+});
+app.get('/calendar.html', (req, res) => res.redirect('/calendar'));
 
 app.get('/finance', requireAdminPage, (req, res) => {
   res.sendFile(path.join(__dirname, 'finance.html'));

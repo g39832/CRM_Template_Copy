@@ -638,3 +638,35 @@ WHERE NOT EXISTS (
 );
 
 NOTIFY pgrst, 'reload schema';
+
+-- =============================================================
+-- TEMPLATE UPGRADE v9: job scheduling (the Calendar).
+-- (v8 — customer tags — is on its own branch; the two are independent.)
+--
+-- A job's schedule is stored on the job itself, so the job stays the one
+-- source of truth and nothing can drift out of sync:
+--   jobs.scheduled_start  DATE  estimated start date
+--   jobs.duration_days    INT   how many days the job takes (1-365)
+-- The Calendar shows every Approved job that has both: a 3-day job starting
+-- Oct 10 covers Oct 10-12. Changing the date, the duration or the status,
+-- or deleting the job, changes the calendar straight away.
+--
+-- Purely ADDITIVE: two nullable columns and an index. Existing jobs simply
+-- have no schedule. Nothing is changed, dropped or deleted. Safe to run
+-- multiple times.
+-- =============================================================
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS scheduled_start DATE;
+ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS duration_days INT;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'jobs_duration_days_check') THEN
+    ALTER TABLE public.jobs ADD CONSTRAINT jobs_duration_days_check
+      CHECK (duration_days IS NULL OR duration_days BETWEEN 1 AND 365);
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS jobs_scheduled_start_idx
+  ON public.jobs (scheduled_start) WHERE scheduled_start IS NOT NULL;
+
+NOTIFY pgrst, 'reload schema';

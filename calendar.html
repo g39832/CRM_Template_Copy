@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRM Template - Calendar</title>
+  <link rel="icon" href="/favicon.ico" type="image/svg+xml" sizes="any">
+  <script src="/js/theme.js"></script>
+  <link rel="stylesheet" href="/style.css?v=10">
+  <script src="https://cdn.jsdelivr.net/npm/lucide@1.47.0/dist/umd/lucide.min.js"></script>
+</head>
+
+<body class="dashboard-body calendar-page">
+
+  <nav class="top-nav">
+    <div class="nav-brand">
+      <span style="font-weight:700;font-size:1rem;color:var(--text-main);">CRM Template</span>
+    </div>
+    <div class="nav-links">
+      <a href="/main">Dashboard</a>
+      <a href="/calendar" class="active">Calendar</a>
+      <a href="/finance" id="navFinanceLink" style="display:none;">Finance</a>
+      <a href="/settings">Settings</a>
+      <button type="button" id="themeToggleBtn" class="theme-toggle-btn" title="Toggle dark mode" aria-label="Toggle dark mode"><i data-lucide="moon"></i></button>
+    </div>
+  </nav>
+
+  <header id="Main_header" class="page-header">
+    <div class="page-header-copy">
+      <span class="page-kicker">CRM Template</span>
+      <span class="page-title">Calendar</span>
+      <p class="page-subtitle">Approved jobs, from their estimated start date for as many days as they take. Click a job to open it.</p>
+    </div>
+  </header>
+
+  <main class="cal-page">
+    <div class="cal-toolbar">
+      <div class="cal-nav">
+        <button type="button" class="btn-secondary" id="calTodayBtn">Today</button>
+        <button type="button" class="btn-secondary cal-arrow" id="calPrevBtn" aria-label="Previous"><i data-lucide="chevron-left"></i></button>
+        <button type="button" class="btn-secondary cal-arrow" id="calNextBtn" aria-label="Next"><i data-lucide="chevron-right"></i></button>
+        <h1 class="cal-title" id="calTitle" aria-live="polite">Calendar</h1>
+      </div>
+      <div class="cal-views" role="group" aria-label="Calendar view">
+        <button type="button" class="cal-view-btn" data-view="month" aria-pressed="false">Month</button>
+        <button type="button" class="cal-view-btn" data-view="week" aria-pressed="false">Week</button>
+        <button type="button" class="cal-view-btn" data-view="day" aria-pressed="false">Day</button>
+      </div>
+    </div>
+
+    <div id="calNotice" class="cal-notice" role="status" hidden></div>
+    <div id="calBody" class="cal-body" aria-busy="true">
+      <div class="cal-loading">Loading the schedule...</div>
+    </div>
+  </main>
+
+  <script src="/js/calendar.js?v=1"></script>
+</body>
+</html>

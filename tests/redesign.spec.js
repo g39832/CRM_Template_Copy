@@ -1121,3 +1121,148 @@ test.describe('second round: costs, services, inputs, uploads, settings, clients
     })).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Calendar (job scheduling)
+// ---------------------------------------------------------------------------
+test.describe('calendar', () => {
+  const slot = (page, title) => page.locator('.cal-event-slot', { has: page.locator('.cal-event-title', { hasText: title }) });
+
+  test('approve a job, give it a start date and duration: it shows on the calendar, opens the job, and follows every change', async ({ page }) => {
+    onlyOn([DESKTOP, 'phone-390']);
+    const errors = trackErrors(page);
+    await resetDb({ migrated: true });
+    await loginAs(page, 'owner@example.com', 'admin');
+    await openClient(page, 'Bob Both');
+    let job = await openJob(page, 'Gutter Job');
+
+    // Prospect: no schedule fields yet, just the hint.
+    await expect(job.locator('#job-start')).toBeHidden();
+    await expect(job.locator('#job-schedule-hint')).toContainText('Set the status to Approved');
+    await job.locator('#job-status').selectOption('Approved');
+    await expect(job.locator('#job-start')).toBeVisible();
+    await job.locator('#job-start').fill('2026-10-10');
+    await job.locator('#job-duration').fill('3');
+    await expect(job.locator('#job-schedule-hint')).toContainText('Oct 10 – Oct 12, 2026 (3 days)');
+    await closeJob(page);
+    let db = await dump();
+    expect(db.tables.jobs.find((j) => j.id === 2)).toMatchObject({ status: 'Approved', scheduled_start: '2026-10-10', duration_days: 3 });
+
+    // Month view: Oct 10, 2026 is a Saturday, so Oct 10-12 is one day at the
+    // end of one week row and two days at the start of the next.
+    await page.goto('/calendar?view=month&date=2026-10-10', { waitUntil: 'networkidle' });
+    await expect(page.locator('#calTitle')).toHaveText('October 2026');
+    const parts = slot(page, 'Gutter Job');
+    await expect(parts).toHaveCount(2);
+    await expect(parts.first()).toContainText('Bob Both');
+    expect(await parts.nth(0).getAttribute('style')).toContain('grid-column:7 / span 1');
+    expect(await parts.nth(1).getAttribute('style')).toContain('grid-column:1 / span 2');
+    await expect(parts.nth(0).locator('.cal-event')).toHaveClass(/cont-after/);
+
+    // Week and day views.
+    await page.locator('.cal-view-btn[data-view="week"]').click();
+    await expect(page.locator('#calTitle')).toHaveText('Oct 4 – Oct 10, 2026');
+    await expect(slot(page, 'Gutter Job')).toContainText('Oct 10 – Oct 12 · 3 days');
+    await page.locator('#calNextBtn').click();
+    await expect(page.locator('#calTitle')).toHaveText('Oct 11 – Oct 17, 2026');
+    await expect(slot(page, 'Gutter Job').locator('.cal-event')).toHaveClass(/cont-before/);
+    await page.locator('.cal-day-num[data-day="2026-10-11"]').click();
+    await expect(page.locator('.cal-day-card')).toContainText('Day 2 of 3');
+
+    // Clicking the job opens that job.
+    await page.locator('.cal-day-card').click();
+    await expect(page.locator('#jobPanelOverlay #job-title')).toHaveValue('Gutter Job');
+    job = page.locator('#jobPanelOverlay');
+    await expect(job.locator('#job-start')).toHaveValue('2026-10-10');
+
+    // Move it and make it longer.
+    await job.locator('#job-start').fill('2026-10-20');
+    await job.locator('#job-duration').fill('5');
+    await closeJob(page);
+    await page.goto('/calendar?view=month&date=2026-10-10', { waitUntil: 'networkidle' });
+    const bars = slot(page, 'Gutter Job');
+    await expect(bars).toHaveCount(1); // Oct 20-24 is Tuesday to Saturday: one row
+    expect(await bars.getAttribute('style')).toContain('grid-column:3 / span 5');
+    await page.goto('/calendar?view=day&date=2026-10-24', { waitUntil: 'networkidle' });
+    await expect(page.locator('.cal-day-card')).toContainText('Day 5 of 5');
+
+    // Out of Approved: off the calendar, dates kept on the job.
+    await openClient(page, 'Bob Both');
+    job = await openJob(page, 'Gutter Job');
+    await job.locator('#job-status').selectOption('Completed');
+    await expect(job.locator('#job-schedule-hint')).toContainText('shows on the Calendar while the job is Approved');
+    await closeJob(page);
+    await page.goto('/calendar?view=month&date=2026-10-10', { waitUntil: 'networkidle' });
+    await expect(page.locator('.cal-event')).toHaveCount(0);
+    await expect(page.locator('.cal-empty-hint')).toBeVisible();
+    db = await dump();
+    expect(db.tables.jobs.find((j) => j.id === 2)).toMatchObject({ status: 'Completed', scheduled_start: '2026-10-20', duration_days: 5 });
+    expect(errors).toEqual([]);
+  });
+
+  test('overlapping jobs each get their own row; deleting a job removes it; older jobs are unaffected', async ({ page }) => {
+    onlyOn([DESKTOP]);
+    await resetDb({ migrated: true });
+    await loginAs(page, 'owner@example.com', 'admin');
+    const put = (id, data) => page.request.put(`/api/jobs/${id}`, { data });
+    await put(1, { scheduled_start: '2026-11-02', duration_days: 4 });
+    await put(2, { status: 'Approved', scheduled_start: '2026-11-03', duration_days: 1 });
+    await put(3, { status: 'Approved', scheduled_start: '2026-11-01', duration_days: 6 });
+    await page.goto('/calendar?view=week&date=2026-11-03', { waitUntil: 'networkidle' });
+    await expect(page.locator('.cal-event-slot')).toHaveCount(3);
+    const rows = await page.locator('.cal-event-slot').evaluateAll((els) => els.map((e) => e.style.gridRow));
+    expect(new Set(rows).size).toBe(3);
+
+    // Older job without a schedule still opens and saves normally.
+    await openClient(page, 'Carla Jobs');
+    const job = await openJob(page, 'September Maintenance');
+    await expect(job.locator('#job-start')).toBeHidden();
+    await job.locator('#job-title').fill('September Visit');
+    await closeJob(page);
+    expect((await dump()).tables.jobs.find((j) => j.id === 4)).toMatchObject({ title: 'September Visit', scheduled_start: null });
+
+    await page.request.delete('/api/jobs/2');
+    await page.goto('/calendar?view=week&date=2026-11-03', { waitUntil: 'networkidle' });
+    await expect(page.locator('.cal-event-slot')).toHaveCount(2);
+  });
+
+  test('before the database update: no schedule fields, and the calendar explains why', async ({ page }) => {
+    onlyOn([DESKTOP]);
+    await loginAs(page, 'owner@example.com', 'admin');
+    await openClient(page, 'Bob Both');
+    const job = await openJob(page, 'Roof Replacement');
+    await expect(job.locator('#job-start')).toHaveCount(0);
+    await closeJob(page);
+    await page.goto('/calendar', { waitUntil: 'networkidle' });
+    await expect(page.locator('#calNotice')).toContainText('database update');
+  });
+
+  test('regular users can open the calendar and see their own clients’ jobs', async ({ page }) => {
+    onlyOn([DESKTOP]);
+    await resetDb({ migrated: true });
+    await loginAs(page, 'owner@example.com', 'admin');
+    await page.request.put('/api/jobs/1', { data: { scheduled_start: '2026-12-01', duration_days: 2 } });
+    await page.request.put('/api/jobs/3', { data: { status: 'Approved', scheduled_start: '2026-12-01', duration_days: 2 } });
+    await page.context().clearCookies();
+    await loginAs(page, 'sam@example.com', 'user');
+    await page.goto('/calendar?view=month&date=2026-12-01', { waitUntil: 'networkidle' });
+    await expect(page.locator('.cal-event-client')).toHaveText(['Bob Both']);
+    await expect(page.locator('#navFinanceLink')).toBeHidden();
+  });
+
+  for (const theme of ['light', 'dark']) {
+    test(`${theme} mode: the calendar is readable (WCAG AA 4.5:1)`, async ({ page }) => {
+      onlyOn([DESKTOP, 'phone-390']);
+      await page.addInitScript((t) => { try { localStorage.setItem('crm-theme', t); } catch (e) { /* ignore */ } }, theme);
+      await resetDb({ migrated: true });
+      await loginAs(page, 'owner@example.com', 'admin');
+      await page.request.put('/api/jobs/1', { data: { scheduled_start: '2026-10-05', duration_days: 3 } });
+      for (const view of ['month', 'week', 'day']) {
+        await page.goto(`/calendar?view=${view}&date=2026-10-06`, { waitUntil: 'networkidle' });
+        await expect(page.locator('.cal-event').first()).toBeVisible();
+        expect(await findLowContrast(page, { minRatio: 4.5 }), view).toEqual([]);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `${view} has no sideways scroll`).toBeLessThanOrEqual(1);
+      }
+    });
+  }
+});

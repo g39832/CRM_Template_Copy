@@ -3626,6 +3626,21 @@ function openManageServicesModal(onSave, { onClose } = {}) {
 // so nothing typed is ever lost.
 // ======================================================
 const JOB_STATUSES = ['Prospect', 'Approved', 'Completed', 'Invoice', 'Closed'];
+
+// Job schedule dates are calendar dates ("YYYY-MM-DD") with no time zone.
+function scheduleDate(value) {
+  return value ? String(value).slice(0, 10) : '';
+}
+// "Oct 10 – Oct 12, 2026 (3 days)" for a start date and a number of days.
+function scheduleRangeText(start, days) {
+  const first = new Date(start + 'T00:00:00Z');
+  if (Number.isNaN(first.getTime())) return '';
+  const last = new Date(first);
+  last.setUTCDate(last.getUTCDate() + Number(days) - 1);
+  const fmt = (d, withYear) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: withYear ? 'numeric' : undefined, timeZone: 'UTC' });
+  const span = Number(days) === 1 ? fmt(first, true) : `${fmt(first, false)} – ${fmt(last, true)}`;
+  return `${span} (${days} day${Number(days) === 1 ? '' : 's'})`;
+}
 const JOB_LINE_ITEM_CATEGORIES = ['Labor', 'Materials', 'Commissions', 'Meals/Drinks', 'Miscellaneous', 'Permits'];
 const DEFAULT_SERVICE_CATEGORY = 'Labor';
 
@@ -3763,6 +3778,9 @@ function openJobPanel(job, clientId, onSave) {
   let userEdited = false;
   let notesApi = null;
   let expenseState = { supported: false, loaded: false, message: '', expenses: [], breakdown: [], categories: [] };
+  // Scheduling (v9): the job row only has these columns once the database
+  // update has been run; before that the fields are simply not shown.
+  const scheduleSupported = Object.prototype.hasOwnProperty.call(job, 'scheduled_start');
 
   const panel = document.createElement('div');
   panel.id = 'jobPanelOverlay';
@@ -3786,6 +3804,18 @@ function openJobPanel(job, clientId, onSave) {
             ${JOB_STATUSES.map(s => `<option value="${s}" ${job.status === s ? 'selected' : ''}>${s}</option>`).join('')}
           </select>
         </div>
+        ${scheduleSupported ? `
+        <div class="job-modal-field" data-schedule-field hidden>
+          <label for="job-start">Estimated start date</label>
+          <input id="job-start" type="date" value="${escapeHtml(scheduleDate(job.scheduled_start))}">
+        </div>
+        <div class="job-modal-field" data-schedule-field hidden>
+          <label for="job-duration">Job duration</label>
+          <div class="job-duration-row">
+            <input id="job-duration" type="number" min="1" max="365" step="1" inputmode="numeric" value="${job.duration_days ? Number(job.duration_days) : ''}" aria-describedby="job-schedule-hint">
+            <span>days</span>
+          </div>
+        </div>` : ''}
         <div class="job-modal-field">
           <label>Created</label>
           <div class="job-modal-readout">${formatShortDate(job.created_at) || '—'}</div>
@@ -3796,6 +3826,7 @@ function openJobPanel(job, clientId, onSave) {
           <input id="job-tag-input" type="text" placeholder="Add a tag, press Enter" maxlength="40">
         </div>
       </div>
+      ${scheduleSupported ? '<p class="field-hint job-schedule-hint" id="job-schedule-hint" role="status"></p>' : ''}
 
       <section class="job-section" aria-labelledby="jobMoneyHeading">
         <h4 class="job-section-title" id="jobMoneyHeading">Money</h4>
@@ -3922,6 +3953,8 @@ function openJobPanel(job, clientId, onSave) {
   const paymentEl = $('#job-payment-input');
   const noteInput = $('#job-new-note-input');
   const lineForm = $('#job-line-item-form');
+  const startEl = $('#job-start');
+  const durationEl = $('#job-duration');
   [totalEl, costEl, paymentEl, $('#li-unit-price')].forEach(el => applyMoneyInputBehavior(el));
   applyMoneyInputBehavior($('#li-quantity'), { decimals: 'auto' });
 
@@ -3930,6 +3963,31 @@ function openJobPanel(job, clientId, onSave) {
     const done = () => { pending.delete(promise); refreshDirtyChip(); };
     promise.then(done, done);
     return promise;
+  }
+
+  // ---------- schedule (Approved jobs go on the Calendar) ----------
+  // The schedule is part of the job: it is saved with the job's other fields
+  // and the Calendar reads it from the job, so there is nothing separate to
+  // create or keep in step. Dates are kept when the job leaves Approved and
+  // come back on the calendar if it is approved again.
+  function renderSchedule() {
+    if (!startEl || !durationEl) return;
+    const approved = statusEl.value === 'Approved';
+    panel.querySelectorAll('[data-schedule-field]').forEach((el) => { el.hidden = !approved; });
+    const hint = $('#job-schedule-hint');
+    if (!hint) return;
+    const start = startEl.value;
+    const days = Number(durationEl.value);
+    const range = start && days >= 1 ? scheduleRangeText(start, days) : '';
+    if (approved) {
+      hint.innerHTML = range
+        ? `On the <a href="/calendar?date=${encodeURIComponent(start)}" target="_blank" rel="noopener">Calendar</a>: ${escapeHtml(range)}.`
+        : 'Add an estimated start date and duration to put this job on the Calendar.';
+    } else {
+      hint.textContent = range
+        ? `Scheduled ${range}. It shows on the Calendar while the job is Approved.`
+        : 'Set the status to Approved to schedule this job on the Calendar.';
+    }
   }
 
   // ---------- status chip ----------
@@ -3962,6 +4020,10 @@ function openJobPanel(job, clientId, onSave) {
       status: statusEl.value,
       scope_of_work: scopeEl.value
     };
+    if (startEl && durationEl) {
+      payload.scheduled_start = startEl.value || null;
+      payload.duration_days = durationEl.value.trim() === '' ? null : Number(durationEl.value);
+    }
     if (admin) {
       if (!lineItems.length && totalEl) payload.total_due = parseMoney(totalEl.value) || 0;
       // The job's cost is controlled only by Job Costs (the server keeps
@@ -4887,6 +4949,9 @@ function openJobPanel(job, clientId, onSave) {
   };
 
   // ---------- load ----------
+  renderSchedule();
+  statusEl.addEventListener('change', renderSchedule);
+  [startEl, durationEl].forEach((el) => { if (el) el.addEventListener('input', renderSchedule); });
   renderMoney();
   setupJobNotesSection(panel, current.id).then(api => { notesApi = api; });
   setupJobFilesSection(panel, current.id, 'document');
@@ -6013,6 +6078,32 @@ loadDashboardStats();
     return;
   }
   params.delete('open');
+  var query = params.toString();
+  window.history.replaceState({}, document.title, window.location.pathname + (query ? '?' + query : ''));
+})();
+
+// Opens a job's workspace (its client first) — used by the Calendar, whose
+// events link to /main?job=<id>.
+async function openJobById(jobId) {
+  try {
+    const res = await fetch(`/api/jobs/${jobId}`);
+    if (!res.ok) throw new Error(res.status === 404 ? 'That job no longer exists' : 'That job could not be opened');
+    const { job } = await res.json();
+    await openClient(job.client_id);
+    const loaded = activeClientJobs.find(j => Number(j.id) === Number(job.id)) || job;
+    openJobPanel(loaded, job.client_id, refreshOpenClientJobs);
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || 'That job could not be opened', 'error');
+  }
+}
+
+(function openJobFromQueryParam() {
+  var params = new URLSearchParams(window.location.search);
+  var jobId = Number(params.get('job'));
+  if (!Number.isInteger(jobId) || jobId <= 0) return;
+  openJobById(jobId);
+  params.delete('job');
   var query = params.toString();
   window.history.replaceState({}, document.title, window.location.pathname + (query ? '?' + query : ''));
 })();

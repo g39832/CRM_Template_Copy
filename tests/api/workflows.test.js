@@ -739,3 +739,108 @@ test('Operational Model saves and reloads (stored preference)', async () => {
   assert.equal(got.data.data.company.business_workflow, 'returning');
   assert.equal((await admin('PATCH', '/api/v2/admin/settings', { company: { business_workflow: 'bogus' } })).status, 400);
 });
+
+// ---------------------------------------------------------------------------
+// Job scheduling / Calendar (v9): the schedule lives on the job.
+test('calendar before the v9 migration: reported as unavailable; saving a job still works', async () => {
+  const admin = await login('owner@example.com', 'admin');
+  const sched = await admin('GET', '/api/jobs/schedule');
+  assert.equal(sched.status, 200, JSON.stringify(sched.data));
+  assert.equal(sched.data.supported, false);
+  const res = await admin('PUT', '/api/jobs/1', { title: 'Roof Replacement', scheduled_start: '2026-10-10', duration_days: 3 });
+  assert.equal(res.status, 200, 'schedule fields are ignored, not an error');
+  assert.equal(res.data.job.title, 'Roof Replacement');
+});
+
+test('an approved job with a start date and duration is on the calendar and follows every change to the job', async () => {
+  await resetDb({ migrated: true });
+  const admin = await login('owner@example.com', 'admin');
+  const events = async (q = '') => (await admin('GET', '/api/jobs/schedule' + q)).data.events;
+
+  // Older job with no schedule: works as before, not on the calendar.
+  assert.deepEqual(await events(), []);
+  const plain = await admin('GET', '/api/jobs/1');
+  assert.equal(plain.data.job.scheduled_start, null);
+
+  // Job 2 is a Prospect: dates are saved but it isn't on the calendar yet.
+  let res = await admin('PUT', '/api/jobs/2', { scheduled_start: '2026-10-10', duration_days: 3 });
+  assert.equal(res.status, 200);
+  assert.equal(res.data.job.scheduled_start, '2026-10-10');
+  assert.deepEqual(await events(), []);
+
+  // Approved -> on the calendar Oct 10-12.
+  res = await admin('PUT', '/api/jobs/2', { status: 'Approved' });
+  assert.equal(res.data.job.status, 'Approved');
+  let ev = await events();
+  assert.equal(ev.length, 1);
+  assert.deepEqual(
+    { job: ev[0].job_id, client: ev[0].client_name, title: ev[0].title, start: ev[0].start, end: ev[0].end, days: ev[0].duration_days },
+    { job: 2, client: 'Bob Both', title: 'Gutter Job', start: '2026-10-10', end: '2026-10-12', days: 3 }
+  );
+
+  // Move the start date, then change the duration.
+  await admin('PUT', '/api/jobs/2', { scheduled_start: '2026-10-20' });
+  ev = await events();
+  assert.deepEqual([ev[0].start, ev[0].end], ['2026-10-20', '2026-10-22']);
+  await admin('PUT', '/api/jobs/2', { duration_days: 5 });
+  ev = await events();
+  assert.deepEqual([ev[0].start, ev[0].end, ev[0].duration_days], ['2026-10-20', '2026-10-24', 5]);
+
+  // Renaming the job keeps it the same calendar entry.
+  await admin('PUT', '/api/jobs/2', { title: 'Gutter Replacement' });
+  ev = await events();
+  assert.deepEqual([ev[0].job_id, ev[0].title], [2, 'Gutter Replacement']);
+
+  // Range filter: only jobs overlapping the requested days.
+  assert.equal((await events('?from=2026-10-24&to=2026-10-31')).length, 1, 'overlaps its last day');
+  assert.equal((await events('?from=2026-10-25&to=2026-10-31')).length, 0, 'ended before the range');
+  assert.equal((await events('?from=2026-10-01&to=2026-10-19')).length, 0, 'starts after the range');
+
+  // Leaves Approved -> off the calendar, dates kept; approved again -> back.
+  await admin('PUT', '/api/jobs/2', { status: 'Completed' });
+  assert.deepEqual(await events(), []);
+  const kept = (await admin('GET', '/api/jobs/2')).data.job;
+  assert.deepEqual([kept.scheduled_start, kept.duration_days], ['2026-10-20', 5]);
+  await admin('PUT', '/api/jobs/2', { status: 'Approved' });
+  assert.equal((await events()).length, 1);
+
+  // Clearing either field takes it off the calendar.
+  await admin('PUT', '/api/jobs/2', { duration_days: null });
+  assert.deepEqual(await events(), []);
+  await admin('PUT', '/api/jobs/2', { duration_days: 2 });
+  assert.equal((await events()).length, 1);
+
+  // Deleting the job removes it from the calendar (nothing separate to clean up).
+  assert.equal((await admin('DELETE', '/api/jobs/2')).status, 200);
+  assert.deepEqual(await events(), []);
+});
+
+test('overlapping jobs are all returned; bad dates and durations change nothing', async () => {
+  await resetDb({ migrated: true });
+  const admin = await login('owner@example.com', 'admin');
+  await admin('PUT', '/api/jobs/1', { scheduled_start: '2026-11-02', duration_days: 4 });
+  await admin('PUT', '/api/jobs/2', { status: 'Approved', scheduled_start: '2026-11-03', duration_days: 1 });
+  await admin('PUT', '/api/jobs/3', { status: 'Approved', scheduled_start: '2026-11-01', duration_days: 10 });
+  const ev = (await admin('GET', '/api/jobs/schedule?from=2026-11-01&to=2026-11-30')).data.events;
+  assert.deepEqual(ev.map((e) => e.job_id).sort(), [1, 2, 3]);
+
+  for (const body of [{ scheduled_start: '2026-02-30' }, { scheduled_start: 'next week' }, { duration_days: 0 }, { duration_days: 400 }, { duration_days: 'abc' }]) {
+    const res = await admin('PUT', '/api/jobs/1', { title: 'Changed', ...body });
+    assert.equal(res.status, 400, JSON.stringify(body));
+  }
+  const job = (await admin('GET', '/api/jobs/1')).data.job;
+  assert.deepEqual([job.title, job.scheduled_start, job.duration_days], ['Roof Replacement', '2026-11-02', 4], 'a rejected save changes nothing');
+  assert.equal(job.total_due, 2000, 'money untouched');
+});
+
+test('regular users see only scheduled jobs of their own clients', async () => {
+  await resetDb({ migrated: true });
+  const admin = await login('owner@example.com', 'admin');
+  await admin('PUT', '/api/jobs/1', { scheduled_start: '2026-12-01', duration_days: 2 });       // Bob Both (Sam)
+  await admin('PUT', '/api/jobs/3', { status: 'Approved', scheduled_start: '2026-12-01', duration_days: 2 }); // Carla (Riley)
+  const sam = await login('sam@example.com', 'user');
+  const ev = (await sam('GET', '/api/jobs/schedule')).data.events;
+  assert.deepEqual(ev.map((e) => e.client_name), ['Bob Both']);
+  assert.equal((await sam('PUT', '/api/jobs/1', { scheduled_start: '2026-12-05' })).status, 200, 'can schedule their own job');
+  assert.equal((await sam('PUT', '/api/jobs/3', { scheduled_start: '2026-12-05' })).status, 403, "not someone else's");
+});

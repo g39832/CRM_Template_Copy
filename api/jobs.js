@@ -10,7 +10,7 @@ const {
   sanitizeJobs
 } = require('./access-control');
 const { refreshFinanceYearsFor } = require('./finance-totals');
-const { hasPaymentJobId, hasExpenseTables, markColumnAbsent, isMissingColumnError } = require('./schema-features');
+const { hasPaymentJobId, hasExpenseTables, hasJobSchedule, markColumnAbsent, isMissingColumnError } = require('./schema-features');
 const { itemizedJobCost, copyExpensesToJob } = require('./expenses');
 
 const router = express.Router();
@@ -64,6 +64,108 @@ router.get('/client/:clientId', asyncHandler(async (req, res) => {
     [clientId]
   );
   res.json({ jobs: sanitizeJobs(req, rows) });
+}));
+
+// ======================================================
+// JOB SCHEDULE (v9) — the calendar
+//
+// A job's schedule lives on the job itself: jobs.scheduled_start (a date,
+// "YYYY-MM-DD") and jobs.duration_days (whole days, 1-365). There is no
+// separate calendar record: the calendar reads approved jobs that have both,
+// so moving the date, changing the duration, changing the status or deleting
+// the job shows up on the calendar immediately. A job that leaves Approved
+// keeps its dates (they come back if it is approved again) but is no longer
+// on the calendar.
+// ======================================================
+const MAX_DURATION_DAYS = 365;
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseDateOnly(value, field) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const s = String(value).trim().slice(0, 10);
+  const d = new Date(s + 'T00:00:00Z');
+  if (!DATE_ONLY.test(s) || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s) {
+    throw new AppError(400, `${field} must be a date (YYYY-MM-DD)`);
+  }
+  return s;
+}
+
+function parseDuration(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  return parseIntField(value, 'duration_days', { min: 1, max: MAX_DURATION_DAYS });
+}
+
+// Last day a job covers: a 3-day job starting Oct 10 runs Oct 10-12.
+function scheduleEnd(start, days) {
+  const d = new Date(start + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + Number(days) - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// Applies scheduled_start / duration_days from a request body to a job (only
+// the ones sent). Returns the updated row, or null when nothing was sent or
+// the schedule columns don't exist yet.
+async function saveJobSchedule(req, job) {
+  const sendsStart = req.body.scheduled_start !== undefined;
+  const sendsDuration = req.body.duration_days !== undefined;
+  if (!sendsStart && !sendsDuration) return null;
+  if (!(await hasJobSchedule())) return null;
+  const updates = {};
+  if (sendsStart) updates.scheduled_start = parseDateOnly(req.body.scheduled_start, 'scheduled_start');
+  if (sendsDuration) updates.duration_days = parseDuration(req.body.duration_days);
+  const { data, error } = await requireSupabase().from('jobs').update(updates).eq('id', job.id).select().maybeSingle();
+  if (error) throw new AppError(500, 'Failed to save the job schedule: ' + error.message);
+  return data;
+}
+
+// GET /api/jobs/schedule?from=YYYY-MM-DD&to=YYYY-MM-DD
+// Approved jobs with a start date and duration that overlap the range, with
+// their client's name. Regular users only get jobs of clients they can open.
+router.get('/schedule', asyncHandler(async (req, res) => {
+  await db.schemaReady;
+  if (!(await hasJobSchedule())) {
+    return res.json({ supported: false, message: 'Job scheduling needs the one-time database update (TEMPLATE UPGRADE v9 in supabase-schema.sql).', events: [] });
+  }
+  const from = parseDateOnly(req.query.from, 'from');
+  const to = parseDateOnly(req.query.to, 'to');
+  const supabase = requireSupabase();
+  const { data: jobs, error } = await supabase
+    .from('jobs')
+    .select('id, client_id, title, status, scheduled_start, duration_days')
+    .eq('status', 'Approved');
+  if (error) throw new AppError(500, 'Failed to load the schedule: ' + error.message);
+
+  const scheduled = (jobs || [])
+    .filter((j) => j.scheduled_start && Number(j.duration_days) >= 1)
+    .map((j) => {
+      const start = String(j.scheduled_start).slice(0, 10);
+      return { ...j, start, end: scheduleEnd(start, j.duration_days) };
+    })
+    .filter((j) => (!to || j.start <= to) && (!from || j.end >= from));
+
+  const clientIds = [...new Set(scheduled.map((j) => Number(j.client_id)))];
+  let clients = [];
+  if (clientIds.length) {
+    const { data, error: clientErr } = await supabase.from('clients').select('*').in('id', clientIds);
+    if (clientErr) throw new AppError(500, 'Failed to load clients: ' + clientErr.message);
+    clients = (data || []).filter((c) => canAccessClient(req, c));
+  }
+  const byId = new Map(clients.map((c) => [Number(c.id), c]));
+
+  const events = scheduled
+    .filter((j) => byId.has(Number(j.client_id)))
+    .map((j) => ({
+      job_id: Number(j.id),
+      client_id: Number(j.client_id),
+      client_name: byId.get(Number(j.client_id)).name || '',
+      title: j.title || 'Untitled job',
+      start: j.start,
+      end: j.end,
+      duration_days: Number(j.duration_days)
+    }))
+    .sort((a, b) => a.start.localeCompare(b.start) || b.duration_days - a.duration_days || a.job_id - b.job_id);
+
+  res.json({ supported: true, events });
 }));
 
 // ======================================================
@@ -236,14 +338,19 @@ router.put('/:jobId', asyncHandler(async (req, res) => {
       ? parseNumberField(req.body.job_cost, 'job_cost', { required: false, defaultValue: Number(job.job_cost || 0) })
       : Number(job.job_cost || 0);
 
+  // Check the schedule first, so a bad date changes nothing.
+  if (req.body.scheduled_start !== undefined) parseDateOnly(req.body.scheduled_start, 'scheduled_start');
+  if (req.body.duration_days !== undefined) parseDuration(req.body.duration_days);
+
   const { rows } = await db.query(
     `UPDATE jobs SET title=$1, status=$2, scope_of_work=$3, total_due=$4, balance=$5, job_cost=$6
      WHERE id=$7 RETURNING *`,
     [title, VALID_STATUSES.includes(status) ? status : job.status, scopeOfWork, totalDue, balance, jobCost, jobId]
   );
+  const scheduled = await saveJobSchedule(req, job);
 
   await refreshFinanceYearsFor(job.created_at, 'job update');
-  res.json({ success: true, job: sanitizeJob(req, rows[0]) });
+  res.json({ success: true, job: sanitizeJob(req, scheduled || rows[0]) });
 }));
 
 // ======================================================

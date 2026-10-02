@@ -71,7 +71,8 @@ const TABLES = {
       id: ['id'], client_id: ['int', null], title: ['text', 'New Job'], status: ['text', 'Prospect'], scope_of_work: ['text', ''],
       total_due: ['num', 0], amount_paid: ['num', 0], balance: ['num', 0], job_cost: ['num', 0], tags: ['arr', () => []],
       created_at: ['ts', now]
-    }
+    },
+    optional: { scheduled_start: ['text', null], duration_days: ['int', null] }
   },
   job_line_items: {
     pk: ['id'],
