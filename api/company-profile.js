@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('./db');
 const { asyncHandler, assertObject, AppError } = require('./request-utils');
 const { normalizeCompanyProfile } = require('../services/company-profile');
+const { requireAdmin } = require('./access-control');
 
 const router = express.Router();
 const SETTINGS_KEY = 'company_profile';
@@ -28,7 +29,9 @@ router.get('/', asyncHandler(async (req, res) => {
   });
 }));
 
-router.post('/', asyncHandler(async (req, res) => {
+// Everyone signed in can read the profile (it appears on estimates and
+// invoices); only admins can change it — enforced here on the server.
+router.post('/', requireAdmin, asyncHandler(async (req, res) => {
   assertObject(req.body);
 
   const current = await readStoredProfile();

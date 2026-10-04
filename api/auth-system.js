@@ -96,10 +96,42 @@ function buildSessionUser(userRow, company) {
 // directly with Supabase Auth (so a forged/expired token is
 // rejected) and only then create our own server session.
 //
-// First person ever to sign in becomes the company's admin. Every
-// subsequent Google sign-in becomes a regular user. An admin can
-// promote/reassign users later from User Management.
+// Access is invitation-only. A valid Google account is NOT enough:
+//   - a returning user is matched by their Google identity (auth_uid);
+//   - an invited user is matched by the email an admin added in User
+//     Management, and linked to their Google identity on first sign-in;
+//   - anyone else is refused (403) and no user row is created.
+// The very first admin of a new deployment is the one exception: while the
+// company has no admin at all, an email listed in ADMIN_EMAILS (Render
+// environment) is created as admin. Once an admin exists, ADMIN_EMAILS
+// grants nothing — every further person must be added by an admin.
 // ============================================================
+function adminBootstrapEmails() {
+  return String(process.env.ADMIN_EMAILS || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+// Only identities Google itself verified. Without this, an email/password
+// account created in Supabase Auth with someone else's address (if that
+// provider were ever switched on) could be linked to their CRM user.
+function isVerifiedGoogleUser(authUser) {
+  const appMeta = authUser.app_metadata || {};
+  const providers = [].concat(appMeta.provider || [], appMeta.providers || []);
+  (authUser.identities || []).forEach((identity) => providers.push(identity && identity.provider));
+  const confirmed = Boolean(authUser.email_confirmed_at || authUser.confirmed_at);
+  return providers.includes('google') && confirmed;
+}
+
+// PostgREST ilike pattern that matches the text exactly (case-insensitively).
+function exactIlike(value) {
+  return String(value).replace(/[\\%_]/g, (ch) => '\\' + ch);
+}
+
+const NOT_INVITED_MESSAGE =
+  'This Google account does not have access to this CRM. Ask your administrator to add your email address.';
+
 router.post('/google-session', asyncHandler(async (req, res) => {
   assertObject(req.body);
   const accessToken = parseStringField(req.body.access_token, 'access_token', { minLength: 10, maxLength: 4000 });
@@ -115,6 +147,9 @@ router.post('/google-session', asyncHandler(async (req, res) => {
   const authUser = authData.user;
   const email = String(authUser.email || '').toLowerCase().trim();
   if (!email) throw new AppError(400, 'Google account has no email address.');
+  if (!isVerifiedGoogleUser(authUser)) {
+    throw new AppError(403, 'Please sign in with a Google account.');
+  }
 
   const metadata = authUser.user_metadata || {};
   const displayName = String(metadata.full_name || metadata.name || '').trim();
@@ -126,22 +161,25 @@ router.post('/google-session', asyncHandler(async (req, res) => {
   const company = await getOrCreateDefaultCompany(supabase);
 
   // Look up an existing app user by auth_uid first (returning user),
-  // then fall back to matching by email (links a pre-existing/legacy
-  // user record to this Google identity on first sign-in).
-  let { data: userRow } = await supabase
+  // then fall back to matching by email (an invited user, or a
+  // pre-existing/legacy record, linked to this Google identity now).
+  const byUid = await supabase
     .from('users')
     .select('*')
     .eq('auth_uid', authUser.id)
     .maybeSingle();
+  if (byUid.error) throw new AppError(500, 'Failed to look up user: ' + describeSupabaseError(byUid.error));
+  let userRow = byUid.data || null;
 
   if (!userRow) {
     const byEmail = await supabase
       .from('users')
       .select('*')
-      .eq('email', email)
+      .ilike('email', exactIlike(email))
       .eq('company_id', company.id)
-      .maybeSingle();
-    userRow = byEmail.data || null;
+      .limit(1);
+    if (byEmail.error) throw new AppError(500, 'Failed to look up user: ' + describeSupabaseError(byEmail.error));
+    userRow = (byEmail.data && byEmail.data[0]) || null;
   }
 
   if (userRow) {
@@ -161,8 +199,13 @@ router.post('/google-session', asyncHandler(async (req, res) => {
     if (updateErr) throw new AppError(500, 'Failed to update user: ' + describeSupabaseError(updateErr));
     userRow = updated;
   } else {
+    // Not invited. The only way in is the first-admin bootstrap.
     const adminCount = await getCompanyAdminCount(supabase, company.id);
-    const role = adminCount === 0 ? 'admin' : 'user';
+    if (adminCount > 0 || !adminBootstrapEmails().includes(email)) {
+      console.warn('[auth] Refused sign-in for an email that has not been added to the CRM.');
+      throw new AppError(403, NOT_INVITED_MESSAGE);
+    }
+    const role = 'admin';
 
     const { data: created, error: createErr } = await supabase
       .from('users')
@@ -183,6 +226,8 @@ router.post('/google-session', asyncHandler(async (req, res) => {
     userRow = created;
   }
 
+  // Fresh session id at sign-in (prevents session fixation).
+  await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
   req.session.authenticated = true;
   req.session.user = buildSessionUser(userRow, company);
 

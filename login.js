@@ -48,7 +48,12 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         const { error } = await authClient.auth.signInWithOAuth({
           provider: "google",
-          options: { redirectTo: window.location.origin + "/auth/callback" }
+          options: {
+            redirectTo: window.location.origin + "/auth/callback",
+            // Let people pick which Google account to use (handy after a
+            // refused account, or on a shared computer).
+            queryParams: { prompt: "select_account" }
+          }
         });
         if (error) throw error;
         // Browser is being redirected to Google now.

@@ -1,56 +1,42 @@
 const express = require('express');
-const db = require('./db');
+const { getClient } = require('./db-v2');
 const { asyncHandler } = require('./request-utils');
+const { requireAdmin } = require('./access-control');
 const { isRemoteStorageEnabled } = require('../services/storage');
 
+// GET /health — public liveness check for Render / uptime monitors.
+// It answers without touching the database and says nothing about the
+// business: it used to return client counts, payment counts and total money
+// received to anyone, and ran several full-table reads on every hit.
 const router = express.Router();
 
-function requireHealthSecret(req, res, next) {
-  const required = process.env.HEALTH_SECRET;
-  if (!required) return next();
-  const provided = req.headers['x-health-secret'] || '';
-  if (provided === required) return next();
-  return res.status(401).json({ success: false, error: 'Unauthorized health check' });
-}
+router.get('/', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ status: 'ok' });
+});
 
-router.get('/', requireHealthSecret, asyncHandler(async (req, res) => {
-  const timestamp = new Date().toISOString();
-  await db.schemaReady;
+// GET /api/v2/admin/system-health — admins only (it sits behind the API
+// login guard and requireAdmin). Confirms the database answers, using one
+// tiny query; still no business figures.
+const adminRouter = express.Router();
 
-  const clientsResult = await db.query('SELECT COUNT(*)::int AS total_clients FROM clients');
-  const overdueResult = await db.query('SELECT COUNT(*)::int AS overdue_clients FROM clients WHERE balance > 0');
-  const paymentsResult = await db.query('SELECT COUNT(*)::int AS payment_count, COALESCE(SUM(amount),0) AS total_received FROM payments');
-  const todayResult = await db.query(`
-    SELECT
-      COUNT(*)::int AS new_clients,
-      COALESCE(SUM(payments.amount), 0) AS today_payments
-    FROM clients
-    LEFT JOIN payments
-      ON payments.client_id = clients.id
-      AND DATE(payments.payment_date) = CURRENT_DATE
-    WHERE DATE(clients.created_at) = CURRENT_DATE
-  `);
-
-  const clients = clientsResult.rows[0] || {};
-  const overdue = overdueResult.rows[0] || {};
-  const payments = paymentsResult.rows[0] || {};
-  const today = todayResult.rows[0] || {};
-
+adminRouter.get('/system-health', requireAdmin, asyncHandler(async (req, res) => {
+  const started = Date.now();
+  let database = 'not_configured';
+  const supabase = getClient();
+  if (supabase) {
+    const { error } = await supabase.from('settings').select('key').limit(1);
+    database = error ? 'error' : 'ok';
+  }
+  res.set('Cache-Control', 'no-store');
   res.json({
-    status: 'ok',
-    timestamp,
-    environment: process.env.NODE_ENV || 'development',
+    status: database === 'ok' ? 'ok' : 'degraded',
+    database,
+    databaseMs: Date.now() - started,
     storageMode: isRemoteStorageEnabled() ? 'supabase' : 'local',
-    databaseConfigured: Boolean(process.env.SUPABASE_URL && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)),
-    metrics: {
-      totalClients: Number(clients.total_clients || 0),
-      overdueClients: Number(overdue.overdue_clients || 0),
-      paymentCount: Number(payments.payment_count || 0),
-      totalReceived: Number(payments.total_received || 0),
-      newClientsToday: Number(today.new_clients || 0),
-      todayPayments: Number(today.today_payments || 0)
-    }
+    environment: process.env.NODE_ENV || 'development'
   });
 }));
 
 module.exports = router;
+module.exports.adminRouter = adminRouter;

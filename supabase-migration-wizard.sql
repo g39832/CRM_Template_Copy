@@ -160,3 +160,17 @@ NOTIFY pgrst, 'reload schema';
 --   AND column_name IN ('job_address', 'margin_pct');
 --
 -- SELECT id, name, margin_pct FROM public.jobs LIMIT 5;
+
+-- SECURITY: Row Level Security ON for every public table, no policies.
+-- The browser's public key gets nothing; the server's secret key bypasses
+-- RLS. Keep this last. Verify with: node scripts/verify-security.js
+DO $$
+DECLARE
+  t record;
+BEGIN
+  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND NOT rowsecurity LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.tablename);
+  END LOOP;
+END $$;
+
+NOTIFY pgrst, 'reload schema';

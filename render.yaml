@@ -27,6 +27,14 @@ services:
         sync: false
       - key: SUPABASE_STORAGE_BUCKET
         value: crm-files
+      # Public bucket for the logo only (customer files stay in the private one).
+      - key: SUPABASE_PUBLIC_BUCKET
+        value: crm-public-assets
+      # First admin's Google email — sign-in is invitation-only.
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: SESSION_COOKIE_SECURE
+        value: true
       - key: EMAIL_USER
         sync: false
       - key: EMAIL_PASS

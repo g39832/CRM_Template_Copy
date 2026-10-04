@@ -12,7 +12,10 @@ module.exports = async function globalSetup(config) {
   const ctx = await request.newContext({ baseURL });
   try {
     const res = await ctx.post('/api/v2/auth/test-login', {
-      data: { email: 'smoke-admin@example.com', role: 'admin', displayName: 'Smoke Admin' },
+      // The session is re-checked against the users table, so the account
+      // must survive the suite's database resets: the local run uses the
+      // seeded admin (SMOKE_ADMIN_EMAIL), a real deployment the smoke admin.
+      data: { email: process.env.SMOKE_ADMIN_EMAIL || 'smoke-admin@example.com', role: 'admin', displayName: 'Smoke Admin' },
     });
     if (res.status() === 404) {
       throw new Error('test-login returned 404: the server on this port is not running with NODE_ENV=test. '

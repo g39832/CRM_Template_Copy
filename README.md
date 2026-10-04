@@ -66,8 +66,40 @@ node scripts/seed-demo-data.js
 npm start
 ```
 
-Then open **http://localhost:3000** — the first person to sign in with Google
-automatically becomes the admin.
+Then open **http://localhost:3000**. Sign-in is **invitation-only**: a Google account gets in
+only if an admin added its email address. For the very first admin of a new deployment, put
+your email in `ADMIN_EMAILS` (comma-separated) before signing in — it only works while the
+company has no admin yet. Everyone else is added by an admin in Admin Settings → Users &
+Permissions (email + role, no password).
+
+## Security model (read before deploying a customer)
+
+- **Invitation-only sign-in.** Unknown Google accounts are refused and no user row is
+  created. Removing a user in User Management signs out their open sessions within a
+  minute and they cannot sign back in. Role changes apply without signing out. Only
+  Google-verified identities are accepted.
+- **The browser never touches the database.** Every table has Row Level Security ON with
+  no policies (the last block of `supabase-schema.sql`), so the public key that ships on
+  the login page reads and writes nothing. The server uses the service-role key, which
+  bypasses RLS. Never add anon/authenticated policies to "make something work".
+- **Customer files are private.** `SUPABASE_STORAGE_BUCKET` (default `crm-files`) must stay
+  private; files are served only after an access check, through 5-minute signed links.
+  Logos go to a separate public bucket, `SUPABASE_PUBLIC_BUCKET` (default
+  `crm-public-assets`), created automatically on the first logo upload.
+- **Admin-only company settings.** Email (SMTP) settings, company profile changes,
+  branding, users and finance are refused (403) for regular users on the server.
+- **`/health`** returns only `{"status":"ok"}`; admins can check the database at
+  `/api/v2/admin/system-health`.
+- **Headers.** A nonce-based Content-Security-Policy, `X-Frame-Options: DENY`,
+  `nosniff`, a referrer policy and (over HTTPS) HSTS are sent on every response.
+- **After every deploy** run the read-only check (exit code 1 on any failure):
+
+  ```bash
+  # with the deployment's .env (checks RLS, the bucket, a real file's public URL)
+  APP_URL=https://your-app.onrender.com npm run verify:security
+  # without any secrets (public surface only)
+  node scripts/verify-security.js --public-only --app-url https://your-app.onrender.com
+  ```
 
 ## Supabase Setup
 
@@ -261,11 +293,15 @@ ledger, so they show as "Recorded before payment history" inside the job.
      every boot, so every user is logged out on each restart)
    - `SUPABASE_SERVICE_ROLE_KEY` if you want server-side file upload support
    - `SUPABASE_DATABASE_URL` for durable sessions (see below)
+   - `ADMIN_EMAILS` — the first admin's Google email (only used while there is no admin)
+   - `SESSION_COOKIE_SECURE=true` (HTTPS-only session cookie)
+   - `SUPABASE_PUBLIC_BUCKET` (optional, default `crm-public-assets`) — logos only
    - Do **not** set `PORT` yourself — Render injects it, and the app binds to it on `0.0.0.0`
    - Email vars are optional and only needed if you later re-enable outbound email sending
    - Make sure the Google provider is enabled in Supabase Auth (see Setup step 6 above),
      and add your deployed URL to Supabase's Redirect URLs list.
 6. Deploy the service.
+7. Run `node scripts/verify-security.js` against it (see "Security model").
 
 The included `render.yaml` can be used as a starting point for Infrastructure as Code.
 

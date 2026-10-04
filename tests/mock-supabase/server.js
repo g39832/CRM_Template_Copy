@@ -478,6 +478,30 @@ async function handleRest(req, res, table, url) {
   throw new PgError(405, 'PGRST000', 'Method not allowed');
 }
 
+// Supabase Auth stand-in for GET /auth/v1/user (what auth.getUser(token)
+// calls). Test access tokens look like "google:<email>" (a verified Google
+// identity) or "password:<email>" (an email/password identity, which the app
+// must refuse). The auth user id is derived from the email so it is stable.
+function handleAuthUser(req, res) {
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const m = token.match(/^(google|password):(.+)$/);
+  if (!m) return send(res, 401, { code: 401, msg: 'invalid JWT' });
+  const provider = m[1];
+  const email = m[2];
+  const hex = crypto.createHash('sha256').update('auth:' + email).digest('hex');
+  const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+  return send(res, 200, {
+    id,
+    aud: 'authenticated',
+    role: 'authenticated',
+    email,
+    email_confirmed_at: new Date().toISOString(),
+    app_metadata: { provider, providers: [provider] },
+    user_metadata: { full_name: 'Test ' + email.split('@')[0] },
+    identities: [{ provider }]
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
@@ -501,6 +525,7 @@ const server = http.createServer(async (req, res) => {
       }
       return send(res, 200, { migrated: state.migrated });
     }
+    if (url.pathname === '/auth/v1/user' && req.method === 'GET') return handleAuthUser(req, res);
     const m = url.pathname.match(/^\/rest\/v1\/([a-zA-Z0-9_]+)$/);
     if (m) return await handleRest(req, res, m[1], url);
     throw new PgError(404, 'PGRST000', `No mock route for ${req.method} ${url.pathname}`);

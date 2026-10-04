@@ -16,7 +16,14 @@ const supabase = SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
     })
   : null;
 
-// TODO: If you want server-side uploads without a service-role key, switch this route to a signed-upload flow.
+// Two buckets:
+//   SUPABASE_STORAGE_BUCKET (private)  customer documents, job photos, contracts.
+//     Never public: the server checks access and hands out short-lived signed
+//     links.
+//   SUPABASE_PUBLIC_BUCKET  (public)   brand assets only (the company logo),
+//     which have to load without signing in.
+const SUPABASE_PUBLIC_BUCKET = process.env.SUPABASE_PUBLIC_BUCKET || 'crm-public-assets';
+const PUBLIC_ASSET_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
 
 let remoteBucketReady = false;
 let remoteBucketPromise = null;
@@ -85,6 +92,16 @@ async function ensureRemoteBucket() {
         throw new Error(`Failed to ensure storage bucket: ${error.message}`);
       }
 
+      // The bucket may predate this code (or have been made public by an
+      // older logo upload). Customer files must never be public — say so
+      // loudly; scripts/verify-security.js fails the deploy check too.
+      try {
+        const { data: info } = await supabase.storage.getBucket(SUPABASE_STORAGE_BUCKET);
+        if (info && info.public) {
+          console.error(`[storage] SECURITY: bucket "${SUPABASE_STORAGE_BUCKET}" is PUBLIC. Anyone with a file's path can download it. Make it private (see scripts/verify-security.js).`);
+        }
+      } catch (_) { /* informational only */ }
+
       remoteBucketReady = true;
     })().finally(() => {
       remoteBucketPromise = null;
@@ -139,7 +156,9 @@ async function remoteUploadFile(file, objectPath) {
 // Signed URL / delete-by-exact-path variants for callers (job_files) that
 // already know the precise storage path from a database row, instead of
 // having to list a whole prefix first.
-async function remoteSignedUrl(objectPath, expiresIn = 60 * 60) {
+// Short-lived: these links are only ever handed out as an immediate redirect
+// after an access check, so they do not need to outlive the request.
+async function remoteSignedUrl(objectPath, expiresIn = 5 * 60) {
   if (isLocalStorageEnabled()) return null;
   await ensureRemoteBucket();
   if (!supabase) {
@@ -307,7 +326,68 @@ async function remoteDeleteFile(prefix, fileName) {
   return true;
 }
 
+// ---- Public brand assets (company logo) -------------------------------
+let publicBucketReady = false;
+
+async function ensurePublicAssetsBucket() {
+  if (!supabase) throw new Error('Supabase storage is not configured');
+  if (publicBucketReady) return;
+  const { error } = await supabase.storage.createBucket(SUPABASE_PUBLIC_BUCKET, {
+    public: true,
+    allowedMimeTypes: PUBLIC_ASSET_MIMES,
+    fileSizeLimit: 5 * 1024 * 1024
+  });
+  if (error && !/already exists/i.test(error.message || '')) {
+    throw new Error(`Failed to ensure public assets bucket: ${error.message}`);
+  }
+  publicBucketReady = true;
+}
+
+// Uploads a brand asset to the PUBLIC bucket and returns its public URL.
+async function uploadPublicAsset(objectPath, body, contentType) {
+  if (SUPABASE_PUBLIC_BUCKET === SUPABASE_STORAGE_BUCKET) {
+    throw new Error('SUPABASE_PUBLIC_BUCKET must be different from the private SUPABASE_STORAGE_BUCKET');
+  }
+  await ensurePublicAssetsBucket();
+  const { error } = await supabase.storage
+    .from(SUPABASE_PUBLIC_BUCKET)
+    .upload(objectPath, body, { upsert: true, contentType });
+  if (error) throw new Error(`Upload failed: ${error.message}`);
+  const { data } = supabase.storage.from(SUPABASE_PUBLIC_BUCKET).getPublicUrl(objectPath);
+  return data && data.publicUrl ? data.publicUrl : null;
+}
+
+// Logos uploaded before the split live in the private bucket under a
+// "public" URL that stops working once that bucket is private. Returns the
+// object path for such a URL (or null for anything else).
+function legacyPrivateObjectPath(url) {
+  const prefix = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_STORAGE_BUCKET}/`;
+  const value = String(url || '');
+  if (!SUPABASE_URL || !value.startsWith(prefix)) return null;
+  const objectPath = decodeURIComponent(value.slice(prefix.length).split('?')[0]);
+  return objectPath && !objectPath.includes('..') ? objectPath : null;
+}
+
+// What the browser should load for a stored logo URL: legacy private-bucket
+// logos are served through the signed-in /api/v2/branding/logo route.
+function displayableLogoUrl(url) {
+  if (legacyPrivateObjectPath(url)) return '/api/v2/branding/logo';
+  return url || '';
+}
+
+async function downloadPrivateObject(objectPath) {
+  if (!supabase) throw new Error('Supabase storage is not configured');
+  const { data, error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET).download(objectPath);
+  if (error) throw new Error(`Download failed: ${error.message}`);
+  return data; // Blob
+}
+
 module.exports = {
+  SUPABASE_PUBLIC_BUCKET,
+  uploadPublicAsset,
+  legacyPrivateObjectPath,
+  displayableLogoUrl,
+  downloadPrivateObject,
   isRemoteStorageEnabled,
   isLocalStorageEnabled,
   ensureRemoteBucket,

@@ -1,4 +1,5 @@
 const express = require('express');
+const { displayableLogoUrl } = require('../services/storage');
 const { getClient } = require('./db-v2');
 const { asyncHandler, AppError } = require('./request-utils');
 
@@ -182,7 +183,7 @@ router.get('/stats', requireAdminCompanyUser, asyncHandler(async (req, res) => {
     data: {
       branding: {
         companyName: company.name || '',
-        logoUrl: company.logo_url || '',
+        logoUrl: displayableLogoUrl(company.logo_url),
         primaryColor: company.brand_primary_color || '#2563eb',
         secondaryColor: company.brand_secondary_color || '#2563eb'
       },

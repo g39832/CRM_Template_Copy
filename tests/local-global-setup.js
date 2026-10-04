@@ -9,5 +9,8 @@ module.exports = async function localGlobalSetup(config) {
   const res = await fetch(`${MOCK_URL}/__reset`, { method: 'POST' });
   if (!res.ok) throw new Error('Could not reset the mock database');
   prepareUploads();
+  // A user that exists in the seed, so database resets between tests do not
+  // remove it (removed users are signed out by the session check).
+  process.env.SMOKE_ADMIN_EMAIL = process.env.SMOKE_ADMIN_EMAIL || 'owner@example.com';
   await loginAsAdmin(config);
 };

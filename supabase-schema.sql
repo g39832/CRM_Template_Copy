@@ -94,8 +94,9 @@ create index if not exists finance_margin_entries_client_id_idx on public.financ
 create index if not exists finance_margin_entries_expense_date_idx on public.finance_margin_entries (expense_date desc);
 create index if not exists finance_margin_entries_category_idx on public.finance_margin_entries (category);
 
--- Optional: leave Row Level Security off if you want the server-side service role
--- to handle all access without policies.
+-- Row Level Security is switched ON for every table at the END of this file
+-- (see "SECURITY: Row Level Security"). Keep that block last so it also
+-- covers tables added by later upgrade sections.
 
 -- =============================================
 -- Multi-tenant onboarding system tables
@@ -688,5 +689,34 @@ NOTIFY pgrst, 'reload schema';
 -- to run multiple times.
 -- =============================================================
 ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS show_line_item_prices BOOLEAN NOT NULL DEFAULT false;
+
+NOTIFY pgrst, 'reload schema';
+
+-- =============================================================
+-- SECURITY: Row Level Security on every table (keep this block LAST).
+--
+-- The browser receives the public (anon / publishable) key — it is shipped
+-- on the login page by design. Any table without RLS can be read AND
+-- written by anyone holding that key through Supabase's REST API.
+--
+-- This app never lets the browser touch tables: every read and write goes
+-- through the server, which uses the secret / service-role key, and that key
+-- bypasses RLS. So the safe setting is RLS ON with NO policies:
+--   public key  -> no rows, no writes
+--   the server  -> works exactly as before
+-- Do not add policies for anon/authenticated to "make something work"; send
+-- it through the server instead.
+--
+-- Safe to run multiple times. Verify after every deploy with:
+--   node scripts/verify-security.js
+-- =============================================================
+DO $$
+DECLARE
+  t record;
+BEGIN
+  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND NOT rowsecurity LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.tablename);
+  END LOOP;
+END $$;
 
 NOTIFY pgrst, 'reload schema';

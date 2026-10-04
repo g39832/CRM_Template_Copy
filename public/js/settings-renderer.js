@@ -509,7 +509,6 @@
       saveNewUser.addEventListener('click', function () {
         var email = document.getElementById('newUserEmail');
         var displayName = document.getElementById('newUserDisplayName');
-        var password = document.getElementById('newUserPassword');
         var role = document.getElementById('newUserRole');
         var feedback = document.getElementById('addUserFeedback');
 
@@ -517,15 +516,10 @@
           if (feedback) { feedback.style.display = 'block'; feedback.className = 'error'; feedback.textContent = 'Email is required'; }
           return;
         }
-        if (!password || !password.value.trim() || password.value.length < 6) {
-          if (feedback) { feedback.style.display = 'block'; feedback.className = 'error'; feedback.textContent = 'Password must be at least 6 characters'; }
-          return;
-        }
 
         var payload = {
           email: email.value.trim(),
           displayName: displayName ? displayName.value.trim() : '',
-          password: password.value,
           role: role ? role.value : 'user'
         };
 
@@ -534,10 +528,9 @@
         xhr.setRequestHeader('Content-Type', 'application/json');
         xhr.onload = function () {
           if (xhr.status >= 200 && xhr.status < 300) {
-            if (feedback) { feedback.style.display = 'block'; feedback.className = 'success'; feedback.textContent = 'User created successfully'; }
+            if (feedback) { feedback.style.display = 'block'; feedback.className = 'success'; feedback.textContent = 'Added. They can now sign in with Google.'; }
             if (email) email.value = '';
             if (displayName) displayName.value = '';
-            if (password) password.value = '';
             setTimeout(function () {
               addUserModal.style.display = 'none';
               loadUsers();

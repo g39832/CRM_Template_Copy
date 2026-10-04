@@ -310,3 +310,17 @@ SELECT EXISTS (
 -- SELECT * FROM public.clients LIMIT 0;
 -- SELECT * FROM public.company_components LIMIT 0;
 -- ===============================================================
+
+-- SECURITY: Row Level Security ON for every public table, no policies.
+-- The browser's public key gets nothing; the server's secret key bypasses
+-- RLS. Keep this last. Verify with: node scripts/verify-security.js
+DO $$
+DECLARE
+  t record;
+BEGIN
+  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND NOT rowsecurity LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.tablename);
+  END LOOP;
+END $$;
+
+NOTIFY pgrst, 'reload schema';

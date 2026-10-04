@@ -24,9 +24,10 @@
     "test:responsive:report": "playwright show-report",
     "migrate:v6": "node scripts/migrate-v6-client-overview.js",
     "test:local": "playwright test -c playwright.local.config.js",
-    "test:local:api": "node --test tests/api/workflows.test.js",
+    "test:local:api": "node --test tests/api/*.test.js",
     "dev:local": "node scripts/dev-local.js",
-    "migrate:v7": "node scripts/migrate-v7-expense-categories.js"
+    "migrate:v7": "node scripts/migrate-v7-expense-categories.js",
+    "verify:security": "node scripts/verify-security.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

@@ -26,6 +26,8 @@ const APP_ENV = {
   ENABLE_DB_BACKUPS: 'false',
   SESSION_SECRET: 'local-test-session-secret',
   DISABLE_AUTH: 'false',
+  // Never inherit a real ADMIN_EMAILS from .env (tests set their own).
+  ADMIN_EMAILS: '',
   // Re-check optional tables/columns on every request so tests can switch
   // the mock between "before" and "after" the migrations.
   SCHEMA_CACHE_MS: '0'

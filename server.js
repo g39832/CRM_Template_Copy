@@ -41,6 +41,55 @@ const faviconSvg = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
   <path d="M18 22h28v6H18zm0 10h20v6H18zm0 10h24v6H18z" fill="#ffffff"/>
 </svg>`);
 
+// ===== SECURITY HEADERS =====
+// What the pages actually load: scripts from this site plus two pinned CDN
+// libraries (lucide icons from cdn.jsdelivr.net, pdf.js + its worker from
+// cdnjs.cloudflare.com); inline <script> blocks carry a per-request nonce
+// (see sendPage). Sign-in talks to Supabase Auth, and file previews/photos
+// redirect to short-lived signed links on the Supabase project, so that one
+// origin is allowed for connect/img/media. Inline style attributes are used
+// throughout the UI, so style-src keeps 'unsafe-inline' (styles cannot run
+// script). Nothing may frame the app (clickjacking).
+function originOf(url) {
+  try { return new URL(url).origin; } catch (_) { return ''; }
+}
+const supabaseOrigin = originOf(process.env.SUPABASE_URL || '');
+
+function contentSecurityPolicy(nonce) {
+  const supabase = supabaseOrigin ? ' ' + supabaseOrigin : '';
+  return [
+    "default-src 'self'",
+    "script-src 'self' 'nonce-" + nonce + "' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https://*.googleusercontent.com" + supabase,
+    "media-src 'self' blob:" + supabase,
+    "font-src 'self' data:",
+    "connect-src 'self' https://cdnjs.cloudflare.com" + supabase,
+    "worker-src 'self' blob: https://cdnjs.cloudflare.com",
+    "frame-src 'self' blob:" + supabase,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'"
+  ].join('; ');
+}
+
+app.use((req, res, next) => {
+  const nonce = crypto.randomBytes(16).toString('base64');
+  res.locals.cspNonce = nonce;
+  res.setHeader('Content-Security-Policy', contentSecurityPolicy(nonce));
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  // HSTS only when the request really arrived over HTTPS (Render's proxy
+  // sets X-Forwarded-Proto; trust proxy is on), never for local http.
+  if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+  res.removeHeader('X-Powered-By');
+  next();
+});
+app.disable('x-powered-by');
+
 // ===== BODY PARSING =====
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
@@ -237,6 +286,10 @@ app.use(
   })
 );
 
+// Re-check the signed-in user against the users table (at most once a
+// minute per user), so removed users lose access and role changes apply.
+app.use(require('./api/session-guard').createSessionGuard({ disableAuth }));
+
 function isAuthenticated(req) {
   if (disableAuth) return true;
   return Boolean(req.session && req.session.authenticated === true);
@@ -282,6 +335,11 @@ app.use('/api', (req, res, next) => {
   const hasBodyMethod = bodyMethods.has(req.method);
   if (!hasBodyMethod) return next();
 
+  // A request with no body (e.g. Sign Out) has nothing to check. req.is()
+  // can't see a type without a body, so these used to be refused with 415 —
+  // which left Sign Out on the Settings page not signing anyone out.
+  const hasBody = Number(req.headers['content-length'] || 0) > 0 || Boolean(req.headers['transfer-encoding']);
+  if (!hasBody) return next();
   if (req.is('multipart/form-data')) return next();
   if (!req.is('application/json')) {
     return next(new AppError(415, 'Content-Type must be application/json'));
@@ -346,6 +404,8 @@ app.use('/api/v2', servicesRoutes);
 // ===== ADMIN SETTINGS =====
 var adminSettingsRoutes = require('./api/admin-settings');
 app.use('/api/v2/admin', adminSettingsRoutes);
+app.use('/api/v2', adminSettingsRoutes.brandingRouter);
+app.use('/api/v2/admin', healthRoutes.adminRouter);
 
 // ===== BLOCK SENSITIVE FILES FROM STATIC ACCESS =====
 const blockedStaticPaths = [
@@ -422,95 +482,81 @@ app.get('/favicon.ico', (req, res) => {
   res.send(faviconSvg);
 });
 
-// ===== AUTH CONFIG INJECTION (Google sign-in via Supabase Auth) =====
+// ===== HTML PAGES =====
+// Every page goes through sendPage(), which:
+//   - stamps this request's CSP nonce on each <script> tag (the CSP allows
+//     only scripts from this site, the two pinned CDNs, and nonce-stamped
+//     inline scripts — an injected <script> without the nonce never runs);
+//   - injects page data (sign-in config / the signed-in user) as JSON that
+//     cannot break out of its <script> tag;
+//   - marks the page no-cache, as the static middleware used to.
+var _pageCache = {};
+function readPage(fileName) {
+  if (!_pageCache[fileName]) {
+    _pageCache[fileName] = fs.readFileSync(path.join(__dirname, fileName), 'utf8');
+  }
+  return _pageCache[fileName];
+}
+
+// JSON for inside <script>: "<" is escaped so a value such as a display name
+// containing "</script>" cannot close the tag and inject markup.
+function scriptJson(value) {
+  return JSON.stringify(value).replace(/[<>&]/g, function (ch) { return '\\u00' + ch.charCodeAt(0).toString(16); });
+}
+
+function sendPage(res, fileName, globals) {
+  var nonce = res.locals.cspNonce;
+  var inject = '';
+  Object.keys(globals || {}).forEach(function (name) {
+    inject += '<script>window.' + name + ' = ' + scriptJson(globals[name]) + ';</script>';
+  });
+  var html = readPage(fileName).replace('</head>', inject + '</head>');
+  if (nonce) html = html.replace(/<script\b/gi, '<script nonce="' + nonce + '"');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('text/html');
+  res.send(html);
+}
+
 // SUPABASE_URL and the anon key are meant to be public (the anon key is
 // safe to ship to the browser by design), so injecting them into the
 // login/callback pages does not expose anything sensitive.
-function authConfigScript() {
-  var config = {
+function authConfig() {
+  return {
     supabaseUrl: process.env.SUPABASE_URL || '',
     supabaseAnonKey: process.env.SUPABASE_ANON_KEY || ''
   };
-  return '<script>window.__AUTH_CONFIG__ = ' + JSON.stringify(config) + ';</script>';
 }
 
-function sendHtmlWithAuthConfig(res, filePath) {
-  var html = fs.readFileSync(filePath, 'utf8');
-  // These pages are rewritten per request (auth config is injected), so they
-  // must never be cached — matching what the static middleware used to send
-  // for .html files.
-  res.setHeader('Cache-Control', 'no-cache');
-  res.type('text/html');
-  res.send(html.replace('</head>', authConfigScript() + '</head>'));
+function sessionUser(req) {
+  return req.session && req.session.user ? req.session.user : {};
 }
 
 // ===== PAGE ROUTES (must be before root static middleware) =====
 app.get('/', (req, res) => {
-  if (disableAuth) return res.sendFile(path.join(__dirname, 'main.html'));
+  if (disableAuth) return sendPage(res, 'main.html', { __USER__: sessionUser(req) });
   if (isAuthenticated(req)) {
     return res.redirect('/main');
   }
-  sendHtmlWithAuthConfig(res, path.join(__dirname, 'login.html'));
+  sendPage(res, 'login.html', { __AUTH_CONFIG__: authConfig() });
 });
 
-app.get('/auth/callback', (req, res) => {
-  sendHtmlWithAuthConfig(res, path.join(__dirname, 'auth-callback.html'));
+app.get(['/auth/callback', '/auth-callback.html'], (req, res) => {
+  sendPage(res, 'auth-callback.html', { __AUTH_CONFIG__: authConfig() });
 });
 
 // Direct visits to /login.html (bookmarks, shared links like the deployed
 // /login.html URL) must receive the same injected Supabase config as "/",
-// otherwise the sign-in buttons can never initialize. Without this route the
-// file is served as a plain static asset and window.__AUTH_CONFIG__ is absent.
+// otherwise the sign-in buttons can never initialize.
 app.get('/login.html', (req, res) => {
   if (isAuthenticated(req)) return res.redirect('/main');
-  sendHtmlWithAuthConfig(res, path.join(__dirname, 'login.html'));
+  sendPage(res, 'login.html', { __AUTH_CONFIG__: authConfig() });
 });
 
-// Cache main.html for user-data injection
-var _mainHtmlCache = null;
-function getMainHtmlWithUser(req) {
-  if (!_mainHtmlCache) {
-    _mainHtmlCache = fs.readFileSync(path.join(__dirname, 'main.html'), 'utf8');
-  }
-  var userData = JSON.stringify(req.session && req.session.user ? req.session.user : {});
-  return _mainHtmlCache.replace(
-    '</head>',
-    '<script>window.__USER__ = ' + userData + ';</script></head>'
-  );
-}
+app.get('/index.html', (req, res) => res.redirect('/'));
 
-var _calendarHtmlCache = null;
-function getCalendarHtmlWithUser(req) {
-  if (!_calendarHtmlCache) {
-    _calendarHtmlCache = fs.readFileSync(path.join(__dirname, 'calendar.html'), 'utf8');
-  }
-  var userData = JSON.stringify(req.session && req.session.user ? req.session.user : {});
-  return _calendarHtmlCache.replace(
-    '</head>',
-    '<script>window.__USER__ = ' + userData + ';</script></head>'
-  );
-}
-
-var _settingsHtmlCache = null;
-function getSettingsHtmlWithUser(req) {
-  if (!_settingsHtmlCache) {
-    _settingsHtmlCache = fs.readFileSync(path.join(__dirname, 'settings.html'), 'utf8');
-  }
-  var userData = JSON.stringify(req.session && req.session.user ? req.session.user : {});
-  return _settingsHtmlCache.replace(
-    '</head>',
-    '<script>window.__USER__ = ' + userData + ';</script></head>'
-  );
-}
-
-app.get('/main', (req, res) => {
+app.get(['/main', '/main.html'], (req, res) => {
   if (!isAuthenticated(req)) return res.redirect('/');
-  res.send(getMainHtmlWithUser(req));
-});
-
-app.get('/main.html', (req, res) => {
-  if (!isAuthenticated(req)) return res.redirect('/');
-  res.send(getMainHtmlWithUser(req));
+  sendPage(res, 'main.html', { __USER__: sessionUser(req) });
 });
 
 // Financial Overview / margin tracker page — admin only (Section 8).
@@ -527,21 +573,17 @@ function requireAdminPage(req, res, next) {
 // open; the data comes from /api/jobs/schedule).
 app.get('/calendar', (req, res) => {
   if (!isAuthenticated(req)) return res.redirect('/');
-  res.send(getCalendarHtmlWithUser(req));
+  sendPage(res, 'calendar.html', { __USER__: sessionUser(req) });
 });
 app.get('/calendar.html', (req, res) => res.redirect('/calendar'));
 
-app.get('/finance', requireAdminPage, (req, res) => {
-  res.sendFile(path.join(__dirname, 'finance.html'));
-});
-
-app.get('/finance.html', requireAdminPage, (req, res) => {
-  res.sendFile(path.join(__dirname, 'finance.html'));
+app.get(['/finance', '/finance.html'], requireAdminPage, (req, res) => {
+  sendPage(res, 'finance.html');
 });
 
 // ===== V2 PAGE ROUTES =====
 function requireV2Auth(req, res, next) {
-  if (req.session && req.session.user) return next();
+  if (isAuthenticated(req)) return next();
   return res.redirect('/');
 }
 
@@ -551,9 +593,12 @@ app.get('/register', (req, res) => res.redirect('/'));
 app.get('/login-v2', (req, res) => res.redirect('/'));
 app.get('/dashboard', (req, res) => res.redirect('/main'));
 
-app.get('/settings', requireV2Auth, (req, res) => {
-  res.send(getSettingsHtmlWithUser(req));
+app.get(['/settings', '/settings.html'], requireV2Auth, (req, res) => {
+  sendPage(res, 'settings.html', { __USER__: sessionUser(req) });
 });
+
+// Any other .html file is not a page of this app.
+app.get(/\.html$/i, (req, res) => res.status(404).end());
 
 app.use(express.static(path.join(__dirname), {
   index: false,

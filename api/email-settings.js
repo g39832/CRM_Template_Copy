@@ -2,9 +2,15 @@ const express = require('express');
 const db = require('./db');
 const { asyncHandler, assertObject, AppError } = require('./request-utils');
 const { maskEmailConfig, normalizeEmailConfig } = require('../services/email-config');
+const { requireAdmin } = require('./access-control');
 
 const router = express.Router();
 const SETTINGS_KEY = 'email_delivery_config';
+
+// The sending account, sender and reply-to address decide where the CRM's
+// email goes and who it appears to come from, so only admins may read or
+// change them — enforced here, whatever the page shows.
+router.use(requireAdmin);
 
 async function readStoredConfig() {
   await db.schemaReady;

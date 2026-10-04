@@ -738,64 +738,12 @@ window.api = {
     return res.json();
   },
 
-  async getSupabaseConfig() {
-    if (this._supabaseConfig) return this._supabaseConfig;
-    const res = await fetch('/api/supabase-config');
-    if (!res.ok) throw new Error('Failed to load Supabase config');
-    this._supabaseConfig = await res.json();
-    return this._supabaseConfig;
-  },
-
-  async getSupabaseClient() {
-    if (this._supabaseClient) return this._supabaseClient;
-    const config = await this.getSupabaseConfig();
-    if (!config.supabaseUrl || !config.supabaseAnonKey) {
-      throw new Error('Supabase direct upload is not configured');
-    }
-    if (!window.supabase || typeof window.supabase.createClient !== 'function') {
-      throw new Error('Supabase client library is not available');
-    }
-    this._supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
-    return this._supabaseClient;
-  },
-
-  async uploadPDFToSupabaseDirect(files, clientId) {
-    const supabaseClient = await this.getSupabaseClient();
-    const config = await this.getSupabaseConfig();
-    const uploaded = [];
-
-    for (const file of files) {
-      const cleanName = String(file.name || 'file').split('/').pop().split('\\').pop();
-      const objectPath = `${clientId}/${Date.now()}-${cleanName}`;
-      const { error } = await supabaseClient.storage
-        .from(config.storageBucket || 'crm-files')
-        .upload(objectPath, file, {
-          upsert: true,
-          contentType: file.type || 'application/pdf'
-        });
-
-      if (error) {
-        throw error;
-      }
-
-      uploaded.push({
-        name: cleanName,
-        path: objectPath,
-        url: '',
-        ext: `.${cleanName.split('.').pop()}`
-      });
-    }
-
-    return { success: true, files: uploaded };
-  },
-
+  // Files always go through the server, which checks access and stores them
+  // in the private bucket with the server-side key. (The browser used to try
+  // uploading straight to Supabase Storage with the public key first; that
+  // only works if the bucket lets the public key write, which it must not.)
   async uploadPDFsWithFallback(files, clientId) {
-    try {
-      return await this.uploadPDFToSupabaseDirect(files, clientId);
-    } catch (err) {
-      console.warn('Direct supabase upload failed, falling back to backend upload:', err);
-      return await this.uploadPDFs(files, clientId);
-    }
+    return this.uploadPDFs(files, clientId);
   },
 
   async listPDFs(clientId) {

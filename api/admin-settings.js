@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const { getClient } = require('./db-v2');
 const { asyncHandler, assertObject, parseStringField, AppError } = require('./request-utils');
+const { uploadPublicAsset, legacyPrivateObjectPath, displayableLogoUrl, downloadPrivateObject } = require('../services/storage');
 const router = express.Router();
 
 // ============================================================
@@ -69,7 +70,7 @@ router.get('/settings', requireAdmin, asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: {
-      company: company || null,
+      company: company ? { ...company, logo_url: displayableLogoUrl(company.logo_url) } : null,
       features: components || []
     }
   });
@@ -160,30 +161,14 @@ router.patch('/settings', requireAdmin, (req, res, next) => {
     var ext = path.extname(req.file.originalname) || '.png';
     var objectPath = 'company-logos/' + companyId + ext;
 
-    var { error: bucketError } = await supabase.storage.createBucket(
-      process.env.SUPABASE_STORAGE_BUCKET || 'crm-files',
-      { public: true }
-    );
-    if (bucketError && !/already exists/i.test(bucketError.message || '')) {
-      throw new AppError(500, 'Failed to configure storage: ' + bucketError.message);
+    // Logos go to the PUBLIC brand-assets bucket, never the private bucket
+    // that holds customer files (an older version created/used the private
+    // bucket as public for this, which exposed every customer file).
+    try {
+      logoUrl = await uploadPublicAsset(objectPath, req.file.buffer, req.file.mimetype);
+    } catch (err) {
+      throw new AppError(500, 'Failed to upload logo: ' + err.message);
     }
-
-    var { error: uploadError } = await supabase.storage
-      .from(process.env.SUPABASE_STORAGE_BUCKET || 'crm-files')
-      .upload(objectPath, req.file.buffer, {
-        upsert: true,
-        contentType: req.file.mimetype
-      });
-
-    if (uploadError) {
-      throw new AppError(500, 'Failed to upload logo: ' + uploadError.message);
-    }
-
-    var { data: publicUrlData } = supabase.storage
-      .from(process.env.SUPABASE_STORAGE_BUCKET || 'crm-files')
-      .getPublicUrl(objectPath);
-
-    logoUrl = publicUrlData.publicUrl || null;
   }
 
   // ---- Build company update object ----
@@ -321,4 +306,45 @@ router.post('/reset-demo', requireAdmin, asyncHandler(async (req, res) => {
   });
 }));
 
+// ============================================================
+// GET /api/v2/branding/logo  (any signed-in user)
+// Serves a logo uploaded before logos moved to the public bucket — it still
+// lives in the private bucket, so it is streamed through the server instead
+// of a public URL. Logos uploaded now have a normal public URL.
+// ============================================================
+var brandingRouter = express.Router();
+
+brandingRouter.get('/branding/logo', asyncHandler(async (req, res) => {
+  if (!req.session || !req.session.user) throw new AppError(401, 'Not authenticated');
+  var supabase = getClient();
+  if (!supabase) throw new AppError(503, 'Database not configured');
+
+  var { data: company, error } = await supabase
+    .from('companies')
+    .select('logo_url')
+    .eq('id', req.session.user.companyId)
+    .maybeSingle();
+  if (error) throw new AppError(500, 'Failed to load logo');
+
+  var logoUrl = company && company.logo_url;
+  var objectPath = legacyPrivateObjectPath(logoUrl);
+  if (!objectPath) {
+    if (logoUrl && /^https:\/\//i.test(logoUrl)) return res.redirect(logoUrl);
+    throw new AppError(404, 'No logo');
+  }
+  // Only the company's own logo object, never an arbitrary path.
+  if (!/^company-logos\//.test(objectPath)) throw new AppError(404, 'No logo');
+
+  var blob = await downloadPrivateObject(objectPath);
+  var type = String(blob.type || '').toLowerCase();
+  if (ALLOWED_MIMES.indexOf(type) === -1) type = 'application/octet-stream';
+  res.set('Content-Type', type);
+  res.set('Cache-Control', 'private, max-age=300');
+  res.set('X-Content-Type-Options', 'nosniff');
+  // An SVG opened directly must not be able to run script on this site.
+  res.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+  res.send(Buffer.from(await blob.arrayBuffer()));
+}));
+
 module.exports = router;
+module.exports.brandingRouter = brandingRouter;

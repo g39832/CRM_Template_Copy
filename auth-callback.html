@@ -59,8 +59,9 @@
         return null;
       }
 
+      var authClient = null;
       try {
-        var authClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+        authClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
         var session = await waitForSession(authClient);
 
         if (!session) {
@@ -82,6 +83,9 @@
         window.location.href = '/main';
       } catch (err) {
         console.error('Auth callback error:', err);
+        // Drop the browser's Google/Supabase session too, so a refused
+        // account isn't stuck and another account can be chosen.
+        try { if (authClient) await authClient.auth.signOut(); } catch (_) {}
         window.location.href = '/?error=' + encodeURIComponent(err.message || 'auth_failed');
       }
     })();

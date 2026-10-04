@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const { getClient } = require('./db-v2');
 const { asyncHandler, assertObject, parseStringField, AppError } = require('./request-utils');
+const { uploadPublicAsset } = require('../services/storage');
 
 const router = express.Router();
 
@@ -164,31 +165,13 @@ router.post('/branding', requireOnboardingAdmin, function (req, res, next) {
     const ext = path.extname(req.file.originalname) || '.png';
     const objectPath = 'company-logos/' + req.session.user.companyId + ext;
 
-    // Ensure the bucket exists and is public so the logo is accessible
-    const { error: bucketError } = await supabase.storage.createBucket(
-      process.env.SUPABASE_STORAGE_BUCKET || 'crm-files',
-      { public: true }
-    );
-    if (bucketError && !/already exists/i.test(bucketError.message || '')) {
-      throw new AppError(500, 'Failed to configure storage: ' + bucketError.message);
+    // Logos go to the PUBLIC brand-assets bucket, never the private bucket
+    // that holds customer files.
+    try {
+      logoUrl = (await uploadPublicAsset(objectPath, req.file.buffer, req.file.mimetype)) || '';
+    } catch (err) {
+      throw new AppError(500, 'Failed to upload logo: ' + err.message);
     }
-
-    const { error: uploadError } = await supabase.storage
-      .from(process.env.SUPABASE_STORAGE_BUCKET || 'crm-files')
-      .upload(objectPath, req.file.buffer, {
-        upsert: true,
-        contentType: req.file.mimetype
-      });
-
-    if (uploadError) {
-      throw new AppError(500, 'Failed to upload logo: ' + uploadError.message);
-    }
-
-    const { data: publicUrlData } = supabase.storage
-      .from(process.env.SUPABASE_STORAGE_BUCKET || 'crm-files')
-      .getPublicUrl(objectPath);
-
-    logoUrl = publicUrlData.publicUrl || '';
   }
 
   // ---- Update company record ----

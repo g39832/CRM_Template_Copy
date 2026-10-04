@@ -4,6 +4,7 @@ const { getClient } = require('./db-v2');
 const db = require('./db');
 const { asyncHandler, AppError, assertObject, parseStringField, parseIntField } = require('./request-utils');
 const { logActivity } = require('./activity-log');
+const { forgetUser } = require('./session-guard');
 
 const router = express.Router();
 
@@ -11,6 +12,14 @@ function requireAdmin(req, res, next) {
   if (!req.session.user) return res.status(401).json({ success: false, error: 'Not authenticated' });
   if (req.session.user.role !== 'admin') return res.status(403).json({ success: false, error: 'Admin only' });
   next();
+}
+
+// users.id is a uuid. (It used to go through parseIntField, which turned
+// a uuid into NaN or a wrong number, so editing or removing a user failed.)
+function parseUserId(value) {
+  var id = String(value || '').trim();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) || /^\d+$/.test(id)) return id;
+  throw new AppError(400, 'Invalid user id');
 }
 
 // Multiple admins per company are allowed, but a company must always keep
@@ -45,11 +54,16 @@ router.get('/users', requireAdmin, asyncHandler(async (req, res) => {
 router.post('/users', requireAdmin, asyncHandler(async (req, res) => {
   assertObject(req.body);
   var email = parseStringField(req.body.email, 'email', { maxLength: 255 }).toLowerCase();
-  var password = parseStringField(req.body.password, 'password', { minLength: 6, maxLength: 128 });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError(400, 'Enter a valid email address');
+  // Everyone signs in with Google, so adding a user is an invitation for
+  // that email address. A password is optional (legacy field, never used to
+  // sign in).
+  var password = parseStringField(req.body.password, 'password', { required: false, maxLength: 128, defaultValue: '' });
+  if (password && password.length < 6) throw new AppError(400, 'password must be at least 6 characters');
   var displayName = parseStringField(req.body.displayName || req.body.display_name || '', 'displayName', { required: false, maxLength: 100, defaultValue: '' });
   var role = req.body.role === 'admin' ? 'admin' : 'user';
 
-  var passwordHash = bcrypt.hashSync(password, 10);
+  var passwordHash = password ? bcrypt.hashSync(password, 10) : null;
 
   const supabase = getClient();
   if (!supabase) throw new AppError(503, 'Database not configured');
@@ -78,7 +92,7 @@ router.post('/users', requireAdmin, asyncHandler(async (req, res) => {
 
 router.put('/users/:id', requireAdmin, asyncHandler(async (req, res) => {
   assertObject(req.body);
-  var id = parseIntField(req.params.id, 'id', { min: 1 });
+  var id = parseUserId(req.params.id);
 
   const supabase = getClient();
   if (!supabase) throw new AppError(503, 'Database not configured');
@@ -126,13 +140,14 @@ router.put('/users/:id', requireAdmin, asyncHandler(async (req, res) => {
     throw new AppError(500, 'Failed to update user: ' + error.message);
   }
   if (!data) throw new AppError(404, 'User not found');
+  forgetUser(id);
 
   await logActivity(req.session.user.companyId, req.session.user.id, 'Updated user', 'user', data.id, Object.keys(updates));
   res.json({ success: true, data: data });
 }));
 
 router.delete('/users/:id', requireAdmin, asyncHandler(async (req, res) => {
-  var id = parseIntField(req.params.id, 'id', { min: 1 });
+  var id = parseUserId(req.params.id);
 
   const supabase = getClient();
   if (!supabase) throw new AppError(503, 'Database not configured');
@@ -159,6 +174,10 @@ router.delete('/users/:id', requireAdmin, asyncHandler(async (req, res) => {
     .eq('company_id', req.session.user.companyId);
 
   if (error) throw new AppError(500, 'Failed to delete user: ' + error.message);
+  // Removing the row is what revokes access: the user's open sessions are
+  // signed out on their next request (session-guard), and Google sign-in
+  // refuses them because they are no longer invited.
+  forgetUser(id);
 
   await logActivity(req.session.user.companyId, req.session.user.id, 'Deleted user', 'user', id, {});
   res.json({ success: true });

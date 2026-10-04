@@ -1,7 +1,8 @@
 node_modules/
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+*.env
 uploads/
 backups/
 *.db
@@ -19,3 +20,18 @@ tmp-*
 stdout.txt
 stderr.txt
 test-*.pdf
+
+# Secrets, keys and database dumps (never commit: they hold credentials or
+# customer data)
+*.pem
+*.key
+*.p12
+*.pfx
+*.dump
+*.backup
+*.bak
+*.sql.gz
+*.tar.gz
+prod-snapshot/
+golive-backup/
+*-backup/
