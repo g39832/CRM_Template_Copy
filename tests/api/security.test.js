@@ -378,7 +378,7 @@ test('pages send security headers and every <script> carries this response\'s CS
     const nonce = (csp.match(/'nonce-([^']+)'/) || [])[1];
     assert.ok(nonce, `${url}: CSP has a nonce`);
     assert.match(csp, /frame-ancestors 'none'/);
-    assert.match(csp, /object-src 'none'/);
+    assert.match(csp, /object-src 'self'/);
     assert.doesNotMatch(csp, /script-src[^;]*'unsafe-inline'/, 'no unsafe-inline scripts');
     assert.equal(r.headers.get('x-frame-options'), 'DENY');
     assert.equal(r.headers.get('x-content-type-options'), 'nosniff');

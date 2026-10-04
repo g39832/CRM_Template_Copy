@@ -74,3 +74,22 @@ test.describe('signed in as admin', () => {
     expect(problems).toEqual([]);
   });
 });
+
+test.describe('embedded PDFs (Finance page viewer)', () => {
+  test.use({ storageState: STATE_FILE });
+  test('a PDF from this site or the Supabase project can be shown in an <embed>', async ({ page }) => {
+    const { MOCK_URL } = require('./local-env');
+    await visit(page, '/finance');
+    await page.evaluate((supabase) => {
+      for (const src of ['/api/pdf/file/1?name=1690000000000-signed-estimate.pdf', supabase + '/storage/v1/object/sign/crm-files/x.pdf?token=t']) {
+        const el = document.createElement('embed');
+        el.type = 'application/pdf';
+        el.src = src;
+        document.body.appendChild(el);
+      }
+    }, MOCK_URL);
+    await page.waitForTimeout(800);
+    const violations = await page.evaluate(() => window.__cspViolations || []);
+    expect(violations.filter((v) => /object-src/.test(v))).toEqual([]);
+  });
+});

@@ -49,7 +49,8 @@ const faviconSvg = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
 // redirect to short-lived signed links on the Supabase project, so that one
 // origin is allowed for connect/img/media. Inline style attributes are used
 // throughout the UI, so style-src keeps 'unsafe-inline' (styles cannot run
-// script). Nothing may frame the app (clickjacking).
+// script). PDFs may be embedded from this site / the Supabase project only.
+// Nothing may frame the app (clickjacking).
 function originOf(url) {
   try { return new URL(url).origin; } catch (_) { return ''; }
 }
@@ -67,10 +68,12 @@ function contentSecurityPolicy(nonce) {
     "connect-src 'self' https://cdnjs.cloudflare.com" + supabase,
     "worker-src 'self' blob: https://cdnjs.cloudflare.com",
     "frame-src 'self' blob:" + supabase,
-    "object-src 'none'",
+    // The Finance page shows uploaded PDFs in an <embed> (signed Supabase link).
+    "object-src 'self'" + supabase,
     "base-uri 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'"
+    "frame-ancestors 'none'",
+    'report-uri /csp-report'
   ].join('; ');
 }
 
@@ -89,6 +92,34 @@ app.use((req, res, next) => {
   next();
 });
 app.disable('x-powered-by');
+
+// ===== CSP VIOLATION REPORTS =====
+// Browsers POST here when the Content-Security-Policy blocks something, so a
+// blocked resource shows up in the logs instead of silently breaking a
+// feature. Public by necessity (reports carry no cookies); bodies are tiny and
+// logging is capped. CSP_REPORT_FILE (tests only) also appends each report.
+let cspReportsThisMinute = 0;
+setInterval(() => { cspReportsThisMinute = 0; }, 60 * 1000).unref();
+app.post(
+  '/csp-report',
+  express.json({ type: ['application/csp-report', 'application/json', 'application/reports+json'], limit: '16kb' }),
+  (req, res) => {
+    res.status(204).end();
+    if (cspReportsThisMinute >= 30) return;
+    cspReportsThisMinute++;
+    const body = req.body || {};
+    const items = Array.isArray(body) ? body.map((r) => r && r.body) : [body['csp-report'] || body];
+    items.filter(Boolean).forEach((r) => {
+      const line = '[csp] blocked ' + String(r['blocked-uri'] || r.blockedURL || '?').slice(0, 200) +
+        ' (' + String(r['violated-directive'] || r.effectiveDirective || '?') + ') on ' +
+        String(r['document-uri'] || r.documentURL || '?').replace(/\?.*$/, '').slice(0, 200);
+      console.warn(line);
+      if (process.env.CSP_REPORT_FILE) {
+        try { fs.appendFileSync(process.env.CSP_REPORT_FILE, line + '\n'); } catch (_) { /* ignore */ }
+      }
+    });
+  }
+);
 
 // ===== BODY PARSING =====
 app.use(express.json({ limit: '5mb' }));

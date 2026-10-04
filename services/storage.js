@@ -156,9 +156,7 @@ async function remoteUploadFile(file, objectPath) {
 // Signed URL / delete-by-exact-path variants for callers (job_files) that
 // already know the precise storage path from a database row, instead of
 // having to list a whole prefix first.
-// Short-lived: these links are only ever handed out as an immediate redirect
-// after an access check, so they do not need to outlive the request.
-async function remoteSignedUrl(objectPath, expiresIn = 5 * 60) {
+async function remoteSignedUrl(objectPath, expiresIn = 60 * 60) {
   if (isLocalStorageEnabled()) return null;
   await ensureRemoteBucket();
   if (!supabase) {

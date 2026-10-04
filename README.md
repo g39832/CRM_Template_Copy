@@ -83,7 +83,7 @@ Permissions (email + role, no password).
   the login page reads and writes nothing. The server uses the service-role key, which
   bypasses RLS. Never add anon/authenticated policies to "make something work".
 - **Customer files are private.** `SUPABASE_STORAGE_BUCKET` (default `crm-files`) must stay
-  private; files are served only after an access check, through 5-minute signed links.
+  private; files are served only after an access check, through short-lived (1-hour) signed links.
   Logos go to a separate public bucket, `SUPABASE_PUBLIC_BUCKET` (default
   `crm-public-assets`), created automatically on the first logo upload.
 - **Admin-only company settings.** Email (SMTP) settings, company profile changes,
