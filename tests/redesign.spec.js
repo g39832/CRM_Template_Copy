@@ -138,11 +138,13 @@ test.describe('client overview', () => {
     await loginAs(page, 'owner@example.com', 'admin');
     const panel = await openClient(page, 'Bob Both');
 
-    // Jobs 2000 + 1500 plus 1200 recorded on the client itself.
-    await expect(tileValue(page, 'totalDueTile')).toHaveText('$4,700.00');
+    // Only approved work is money owed: the Approved job (2000) plus the
+    // 1200 recorded on the client itself. The Prospect job (1500) is an
+    // estimate, so it is excluded from every total below.
+    await expect(tileValue(page, 'totalDueTile')).toHaveText('$3,200.00');
     await expect(tileValue(page, 'receivedTile')).toHaveText('$1,700.00');
-    await expect(tileValue(page, 'balanceTile')).toHaveText('$3,000.00');
-    await expect(tileValue(page, 'costTile')).toHaveText('$2,300.00');
+    await expect(tileValue(page, 'balanceTile')).toHaveText('$1,500.00');
+    await expect(tileValue(page, 'costTile')).toHaveText('$1,600.00');
 
     await expect(panel.locator('#p-assigned-user')).toHaveValue(/.+/);
     await expect(panel.locator('#p-assigned-user option:checked')).toHaveText('Sam Sales');
@@ -160,6 +162,34 @@ test.describe('client overview', () => {
     }
     await expect(panel).not.toContainText(/one-off|recurring/i);
     expect(errors).toEqual([]);
+  });
+
+  test('a not-yet-approved or cancelled job never inflates Total Amount Due; an approved one does', async ({ page }) => {
+    onlyOn([DESKTOP]);
+    await loginAs(page, 'owner@example.com', 'admin');
+    const panel = await openClient(page, 'Bob Both');
+    // Seed: the Approved job (2000) + 1200 on the client = 3200 (the Prospect
+    // job's 1500 is excluded).
+    await expect(tileValue(page, 'totalDueTile')).toHaveText('$3,200.00');
+
+    async function addCopiedJob(status) {
+      await panel.locator('#quick-add-job-btn').click();
+      const modal = page.locator('#newJobModalOverlay');
+      await modal.locator('#new-job-copy-from').selectOption({ label: 'Copy of: Roof Replacement' });
+      await expect(modal.locator('#new-job-source-summary')).toContainText('Starts with 2 services');
+      await modal.locator('#new-job-status').selectOption(status);
+      await modal.locator('#createJobBtn').click();
+      await closeJob(page);
+    }
+
+    // Cancelled estimate (2000 of services) — not money owed.
+    await addCopiedJob('Cancelled');
+    await expect(tileValue(page, 'totalDueTile')).toHaveText('$3,200.00');
+    await expect(panel.locator('#jobs-list .job-row-not-counted').first()).toContainText('Not counted in Finance');
+
+    // Approved job (2000) — now counted.
+    await addCopiedJob('Approved');
+    await expect(tileValue(page, 'totalDueTile')).toHaveText('$5,200.00');
   });
 
   test('client with no jobs and no client-level data shows just + Job', async ({ page }) => {
@@ -270,7 +300,9 @@ test.describe('+ Job workspace', () => {
     await closeJob(page);
 
     await expect(panel.locator('#jobs-list .job-row', { hasText: 'October Maintenance' })).toBeVisible();
-    await expect(tileValue(page, 'totalDueTile')).toHaveText('$360.00');
+    // The copied job starts as a Prospect, so it adds nothing to Finance:
+    // only the two earlier jobs (120 + 120) count.
+    await expect(tileValue(page, 'totalDueTile')).toHaveText('$240.00');
     const db = await dump();
     expect(db.tables.jobs.filter((j) => j.title === 'October Maintenance')).toHaveLength(1);
     expect(errors).toEqual([]);
@@ -371,20 +403,22 @@ test.describe('+ Job workspace', () => {
     onlyOn([DESKTOP, 'phone-390']);
     await loginAs(page, 'owner@example.com', 'admin');
     const panel = await openClient(page, 'Bob Both');
-    const job = await openJob(page, 'Gutter Job');
+    // Pay the APPROVED job — only approved work feeds the client totals.
+    const job = await openJob(page, 'Roof Replacement');
     await job.locator('#job-payment-input').fill('400');
     await job.locator('#job-add-payment-btn').click();
-    await expect(job.locator('#job-paid-display')).toHaveText('$400.00');
+    await expect(job.locator('#job-paid-display')).toHaveText('$900.00');
     await expect(job.locator('#job-balance-display')).toHaveText('$1,100.00');
     await job.locator('#job-payment-input').fill('100');
     await job.locator('#job-add-payment-btn').click();
-    await expect(job.locator('#job-paid-display')).toHaveText('$500.00');
+    await expect(job.locator('#job-paid-display')).toHaveText('$1,000.00');
     await job.locator('#job-undo-payment-btn').click();
-    await expect(job.locator('#job-paid-display')).toHaveText('$400.00');
+    await expect(job.locator('#job-paid-display')).toHaveText('$900.00');
     await closeJob(page);
 
+    // 900 on the counted job + 1200 recorded on the client itself.
     await expect(tileValue(page, 'receivedTile')).toHaveText('$2,100.00');
-    await expect(panel.locator('#jobs-list .job-row', { hasText: 'Gutter Job' })).toContainText('$400.00');
+    await expect(panel.locator('#jobs-list .job-row', { hasText: 'Roof Replacement' })).toContainText('$900.00');
     const pays = (await dump()).tables.payments.filter((p) => p.client_id === 2).map((p) => p.amount);
     expect(pays.sort((a, b) => a - b)).toEqual([-100, 100, 400, 1200]);
   });
@@ -577,7 +611,8 @@ test.describe('client account (client-level data before jobs)', () => {
     const job = page.locator('#jobPanelOverlay');
     await expect(job.locator('#job-total-display')).toHaveText('$430.00');
     await closeJob(page);
-    await expect(tileValue(page, 'totalDueTile')).toHaveText('$5,430.00');
+    // A new job starts as a Prospect, so its services are not money owed yet.
+    await expect(tileValue(page, 'totalDueTile')).toHaveText('$5,000.00');
   });
 });
 
@@ -592,7 +627,9 @@ test.describe('regular user', () => {
     await expect(page.locator('.client-card', { hasText: 'Carla Jobs' })).toHaveCount(0);
 
     const panel = await openClient(page, 'Bob Both');
-    await expect(tileValue(page, 'totalDueTile')).toHaveText('$3,500.00'); // jobs only — client-level money is admin-only
+    // Regular users never see client financial totals: the panel hides them
+    // and the API strips the money, so there is no Total tile at all.
+    await expect(page.locator('#totalDueTile')).toHaveCount(0);
     await expect(page.locator('#costTile')).toHaveCount(0);
     await expect(panel.locator('#p-assigned-user-readout')).toHaveText('Sam Sales');
 
@@ -637,7 +674,8 @@ test.describe('job costs with custom expense categories', () => {
     await resetDb({ migrated: true });
     await loginAs(page, 'owner@example.com', 'admin');
     const panel = await openClient(page, 'Bob Both');
-    await expect(tileValue(page, 'costTile')).toHaveText('$2,300.00');
+    // Only the Approved job's cost counts, plus the 400 on the client.
+    await expect(tileValue(page, 'costTile')).toHaveText('$1,600.00');
     const job = await openJob(page, 'Roof Replacement');
     await expect(breakdown(page)).toHaveText([/Labor\s*\$500\.00/, /Materials\s*\$700\.00/, /Total Cost\s*\$1,200\.00/]);
     // Money shows the cost read-only; it is changed only in Job Costs.
@@ -664,7 +702,7 @@ test.describe('job costs with custom expense categories', () => {
     await expect(costs(page).locator('#job-costs-total')).toHaveText('$850.00');
     await closeJob(page);
 
-    await expect(tileValue(page, 'costTile')).toHaveText('$1,950.00'); // 850 + 700 + 400 client-level
+    await expect(tileValue(page, 'costTile')).toHaveText('$1,250.00'); // 850 (this job) + 400 client-level; the Prospect job's cost is not counted
     await expect(panel.locator('#jobs-list .job-row', { hasText: 'Roof Replacement' })).toContainText('Margin 57%');
     const db = await dump();
     expect(db.tables.jobs.find((j) => j.id === 1).job_cost).toBe(850);
@@ -833,7 +871,7 @@ test.describe('second round: costs, services, inputs, uploads, settings, clients
     await expect(job.locator('#job-cost-display')).toHaveText('$725.50');
     await expect(job.locator('#job-profit-display')).toHaveText('$774.50');
     await closeJob(page);
-    await expect(tileValue(page, 'costTile')).toHaveText('$2,325.50'); // 1,200 + 725.50 + 400 client-level
+    await expect(tileValue(page, 'costTile')).toHaveText('$1,600.00'); // 1,200 (Approved job) + 400 client-level; Gutter Job is a Prospect, so its cost is not counted
     const db = await dump();
     expect(db.tables.jobs.find((j) => j.id === 2).job_cost).toBe(725.5);
     expect(errors).toEqual([]);
@@ -1120,9 +1158,11 @@ test.describe('second round: costs, services, inputs, uploads, settings, clients
       await page.goto('/finance', { waitUntil: 'networkidle' });
       await expect(page.locator('#foKpis .fo-kpi')).toHaveCount(5);
       await expect(page.locator('#foKpis')).toContainText('$7,000.00'); // same as Year Totals (override)
-      await expect(page.locator('#foProfit')).toContainText('$9,940.00');
-      await expect(page.locator('#foProfit')).toContainText('$5,880.00');
-      await expect(page.locator('#foProfit')).toContainText('40.8%');
+      // Only approved work counts (finance-rules.js): job 2 is a Prospect, so
+      // revenue is client accounts + counted jobs = 8,440 (cost 5,180, 38.6%).
+      await expect(page.locator('#foProfit')).toContainText('$8,440.00');
+      await expect(page.locator('#foProfit')).toContainText('$5,180.00');
+      await expect(page.locator('#foProfit')).toContainText('38.6%');
       await expect(page.locator('#foMonthly .fo-col')).toHaveCount(12);
       await expect(page.locator('#foSales')).toContainText('Sam Sales');
       await expect(page.locator('#foCosts')).toContainText('Materials');

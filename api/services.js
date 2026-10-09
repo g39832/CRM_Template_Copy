@@ -57,6 +57,16 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// Service prices are business money: regular users get the service names
+// (to add them to a job's scope of work) but not their rates.
+function withoutPricesForUsers(req, row) {
+  if (req.session.user.role === 'admin') return row;
+  var copy = Object.assign({}, row);
+  delete copy.defaultRate;
+  delete copy.customRate;
+  return copy;
+}
+
 // ======================================================
 // SERVICE PRESETS CRUD (Admin only for write)
 // ======================================================
@@ -88,7 +98,7 @@ router.get('/services', requireAuth, asyncHandler(async (req, res) => {
   res.json({
     success: true,
     services: (data || []).map(function (s) {
-      return {
+      return withoutPricesForUsers(req, {
         id: s.id,
         name: s.name,
         description: s.description,
@@ -96,7 +106,7 @@ router.get('/services', requireAuth, asyncHandler(async (req, res) => {
         isActive: s.is_active,
         createdAt: s.created_at,
         updatedAt: s.updated_at
-      };
+      });
     })
   });
 }));
@@ -239,7 +249,7 @@ router.get('/clients/:clientId/services', requireAuth, asyncHandler(async (req, 
   res.json({
     success: true,
     assignments: (data || []).map(function (cs) {
-      return {
+      return withoutPricesForUsers(req, {
         id: cs.id,
         clientId: cs.client_id,
         serviceId: cs.service_id,
@@ -250,7 +260,7 @@ router.get('/clients/:clientId/services', requireAuth, asyncHandler(async (req, 
         notes: cs.notes || '',
         sortOrder: cs.sort_order,
         createdAt: cs.created_at
-      };
+      });
     })
   });
 }));
@@ -308,7 +318,7 @@ router.post('/clients/:clientId/services', requireAuth, asyncHandler(async (req,
   res.json({
     success: true,
     assignments: (inserted || []).map(function (cs) {
-      return {
+      return withoutPricesForUsers(req, {
         id: cs.id,
         clientId: cs.client_id,
         serviceId: cs.service_id,
@@ -319,13 +329,14 @@ router.post('/clients/:clientId/services', requireAuth, asyncHandler(async (req,
         notes: cs.notes || '',
         sortOrder: cs.sort_order,
         createdAt: cs.created_at
-      };
+      });
     })
   });
 }));
 
 // DELETE /api/v2/clients/:clientId/services/:assignmentId — Remove a service from a client
-router.delete('/clients/:clientId/services/:assignmentId', requireAuth, asyncHandler(async (req, res) => {
+// Admin only (regular users add services; removing records is for admins).
+router.delete('/clients/:clientId/services/:assignmentId', requireAdmin, asyncHandler(async (req, res) => {
   const clientId = parseIntField(req.params.clientId, 'clientId', { min: 1 });
   const assignmentId = parseIntField(req.params.assignmentId, 'assignmentId', { min: 1 });
   await assertClientAccess(req, clientId);

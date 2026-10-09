@@ -1,19 +1,108 @@
 // api/finance-totals.js
 //
-// Year totals for the Finance page. A client's money can live in two places:
-//   - client-level fields (clients.total_due / amount_paid / balance /
-//     job_cost) — how the CRM recorded money before jobs existed, and
-//   - its jobs (jobs.total_due / amount_paid / balance / job_cost).
-// Both are counted, so the Finance page matches the totals shown on each
-// client page (client-level amounts + the sum of the client's jobs). Client-
-// level amounts are attributed to the year the client was created; job
-// amounts to the year the job was created.
+// Year totals for the Finance page (the Year Totals & Overrides table and the
+// Financial Overview cards). The figures come from finance-rules.js — the one
+// place that decides which money counts (approved jobs + client-level
+// amounts; see the rule written out at the top of that file).
 //
-// Money received comes from the payments ledger, which holds client-level
-// payments and — since this change — job payments too.
+// finance_overrides keeps one row per year. It is recalculated after every
+// change that can move a year's figures, and an admin can also type figures
+// into it by hand (Save Year Data); GET /api/finance/summary reports both the
+// stored row and the figures calculated from the records, so the page can
+// show when they differ.
 
 const db = require('./db');
 const { getClient } = require('./db-v2');
+const { AppError } = require('./request-utils');
+const { loadFinanceData, buildYearFinance, yearOf } = require('./finance-rules');
+
+// ---------------------------------------------------------------------------
+// MANUAL OVERRIDES (persistent)
+//
+// The `finance_overrides` table holds the CALCULATED snapshot for a year: every
+// job/payment change refreshes it through updateFinanceTotals(), so a figure
+// typed directly into it would be silently overwritten. Administrator intent
+// therefore lives in the settings key/value store, under
+// `finance_override:<year>` (the same no-migration pattern used for job status
+// labels and the technician fallback). Recalculation never touches that row, so
+// a manual override stays selected until an admin changes or clears it.
+//
+// A settings value of {"expected":7000,"received":3200,"remaining":3000,"clients":4}
+// is the override; its absence means "show the calculated figures".
+// ---------------------------------------------------------------------------
+const MANUAL_KEY_PREFIX = 'finance_override:';
+
+const numOr0 = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+function manualOverrideKey(year) {
+  return MANUAL_KEY_PREFIX + year;
+}
+
+// Returns { totalClients, totalExpected, totalReceived, totalRemaining } or
+// null when no manual override is active for the year.
+async function getManualOverride(year) {
+  const supabase = getClient();
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('settings').select('value').eq('key', manualOverrideKey(year)).maybeSingle();
+  if (error || !data || !data.value) return null;
+  try {
+    const parsed = JSON.parse(data.value);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return {
+      totalClients: Math.max(0, Math.round(numOr0(parsed.clients))),
+      totalExpected: numOr0(parsed.expected),
+      totalReceived: numOr0(parsed.received),
+      totalRemaining: numOr0(parsed.remaining)
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+// Stores an admin's manual figures for the year (creates or replaces).
+async function setManualOverride(year, values) {
+  const supabase = getClient();
+  if (!supabase) throw new AppError(503, 'Database not configured');
+  const payload = {
+    expected: numOr0(values && values.totalExpected),
+    received: numOr0(values && values.totalReceived),
+    remaining: numOr0(values && values.totalRemaining),
+    clients: Math.max(0, Math.round(numOr0(values && values.totalClients)))
+  };
+  const { error } = await supabase
+    .from('settings')
+    .upsert({ key: manualOverrideKey(year), value: JSON.stringify(payload) }, { onConflict: 'key' });
+  if (error) throw new AppError(500, 'Failed to save the manual override: ' + error.message);
+  return {
+    totalClients: payload.clients,
+    totalExpected: payload.expected,
+    totalReceived: payload.received,
+    totalRemaining: payload.remaining
+  };
+}
+
+// Every year that has a saved manual override (so a year with an override but
+// no records still appears in the Finance year list).
+async function listManualOverrideYears() {
+  const supabase = getClient();
+  if (!supabase) return [];
+  const { data, error } = await supabase.from('settings').select('key').like('key', MANUAL_KEY_PREFIX + '%');
+  if (error || !Array.isArray(data)) return [];
+  return data
+    .map((row) => Number(String(row.key).slice(MANUAL_KEY_PREFIX.length)))
+    .filter((y) => Number.isInteger(y) && y > 0);
+}
+
+// Removes the override so the year returns to its calculated figures.
+async function clearManualOverride(year) {
+  const supabase = getClient();
+  if (!supabase) throw new AppError(503, 'Database not configured');
+  const { error } = await supabase.from('settings').delete().eq('key', manualOverrideKey(year));
+  if (error) throw new AppError(500, 'Failed to clear the manual override: ' + error.message);
+}
 
 function getValidYear(inputYear) {
   const currentYear = new Date().getFullYear();
@@ -23,72 +112,19 @@ function getValidYear(inputYear) {
     : parsed;
 }
 
-function yearOf(value) {
-  const d = new Date(value);
-  return Number.isFinite(d.getTime()) ? d.getFullYear() : null;
-}
-
-async function fetchJobsForTotals() {
-  const supabase = getClient();
-  if (!supabase) return [];
-  const { data, error } = await supabase
-    .from('jobs')
-    .select('id, total_due, amount_paid, balance, job_cost, created_at');
-  if (error) {
-    if (/does not exist|relation/i.test(error.message || '')) return [];
-    throw error;
-  }
-  return data || [];
-}
-
 async function getFinanceTotalsForYear(year) {
-  const clientSummaryResult = await db.query(`
-    SELECT
-      COUNT(*)::int AS total_clients,
-      COALESCE(SUM(total_due), 0) AS total_expected,
-      COALESCE(SUM(balance), 0) AS total_remaining
-    FROM clients
-    WHERE EXTRACT(YEAR FROM created_at)::int = $1
-  `, [year]);
-
-  const paymentSummaryResult = await db.query(`
-    SELECT COALESCE(SUM(amount), 0) AS total_received
-    FROM payments
-    WHERE EXTRACT(YEAR FROM payment_date)::int = $1
-  `, [year]);
-
-  const jobs = (await fetchJobsForTotals()).filter((job) => yearOf(job.created_at) === Number(year));
-  const jobExpected = jobs.reduce((sum, job) => sum + Number(job.total_due || 0), 0);
-  const jobRemaining = jobs.reduce((sum, job) => sum + Number(job.balance || 0), 0);
-
-  const clientSummary = clientSummaryResult.rows[0] || {};
-  const paymentSummary = paymentSummaryResult.rows[0] || {};
-
+  const { totals } = buildYearFinance(await loadFinanceData(), year);
   return {
-    total_clients: Number(clientSummary.total_clients || 0),
-    total_expected: Number(clientSummary.total_expected || 0) + jobExpected,
-    total_received: Number(paymentSummary.total_received || 0),
-    total_remaining: Number(clientSummary.total_remaining || 0) + jobRemaining
+    total_clients: totals.clients,
+    total_expected: totals.expected,
+    total_received: totals.received,
+    total_remaining: totals.remaining
   };
 }
 
-// Average margin % across the year's priced work that has a cost recorded:
-// every client-level record and every job with total_due > 0 and job_cost > 0.
+// Average margin % across the year's counted work that has a cost recorded.
 async function getAverageMarginForYear(year) {
-  const [{ rows: clients }, jobs] = await Promise.all([
-    db.query('SELECT * FROM clients'),
-    fetchJobsForTotals()
-  ]);
-  const margins = [];
-  const collect = (row) => {
-    const total = Number(row.total_due || 0);
-    const cost = Number(row.job_cost || 0);
-    if (total > 0 && cost > 0) margins.push(((total - cost) / total) * 100);
-  };
-  (clients || []).filter((c) => yearOf(c.created_at) === Number(year)).forEach(collect);
-  jobs.filter((j) => yearOf(j.created_at) === Number(year)).forEach(collect);
-  if (!margins.length) return null;
-  return margins.reduce((a, b) => a + b, 0) / margins.length;
+  return buildYearFinance(await loadFinanceData(), year).totals.avgMarginPct;
 }
 
 async function updateFinanceTotals(year) {
@@ -136,5 +172,9 @@ module.exports = {
   getAverageMarginForYear,
   updateFinanceTotals,
   updateFinanceTotalsSafe,
-  refreshFinanceYearsFor
+  refreshFinanceYearsFor,
+  getManualOverride,
+  setManualOverride,
+  clearManualOverride,
+  listManualOverrideYears
 };

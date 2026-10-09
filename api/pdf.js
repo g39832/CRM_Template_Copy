@@ -10,7 +10,7 @@ const {
   parseStringField,
   AppError
 } = require('./request-utils');
-const { canAccessClient, isAdmin } = require('./access-control');
+const { canAccessClient, isAdmin, requireAdmin } = require('./access-control');
 const {
   isRemoteStorageEnabled,
   isLocalStorageEnabled,
@@ -176,9 +176,10 @@ router.get('/file/:clientId', asyncHandler(async (req, res) => {
 }));
 
 // ======================================================
-// DELETE FILE BY CLIENT ID (existing)
+// DELETE FILE BY CLIENT ID (existing; admin only — regular users can upload,
+// view and download client files but not remove them)
 // ======================================================
-router.delete('/delete/:clientId/:fileName', asyncHandler(async (req, res) => {
+router.delete('/delete/:clientId/:fileName', requireAdmin, asyncHandler(async (req, res) => {
   const clientId = parseStringField(req.params.clientId, 'clientId', { minLength: 1, maxLength: 128 });
   const fileName = parseStringField(req.params.fileName, 'fileName', { minLength: 1, maxLength: 512, trim: false });
 
@@ -202,7 +203,7 @@ router.delete('/delete/:clientId/:fileName', asyncHandler(async (req, res) => {
 // ======================================================
 // DELETE FILE BY GROUP-YEAR (FINANCE FIX)
 // ======================================================
-router.delete('/delete/:groupKey', asyncHandler(async (req, res) => {
+router.delete('/delete/:groupKey', requireAdmin, asyncHandler(async (req, res) => {
   const groupKey = parseStringField(req.params.groupKey, 'groupKey', { minLength: 1, maxLength: 128 });
   const fileName = parseStringField(req.query.file, 'file', { minLength: 1, maxLength: 512, trim: false });
 

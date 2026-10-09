@@ -100,7 +100,8 @@
     users: document.getElementById('tabUsers'),
     audit: document.getElementById('tabAudit'),
     workflow: document.getElementById('tabWorkflow'),
-    expenses: document.getElementById('tabExpenses')
+    expenses: document.getElementById('tabExpenses'),
+    jobstatuses: document.getElementById('tabJobStatuses')
   };
 
   tabBtns.forEach(function (btn) {
@@ -114,6 +115,7 @@
       if (tab === 'users') loadUsers();
       if (tab === 'audit') { loadAuditLog(); loadAuditActions(); }
       if (tab === 'expenses') { hideFeedback(); loadExpenseCategories(); }
+      if (tab === 'jobstatuses') { hideFeedback(); loadJobStatuses(); }
     });
   });
 
@@ -977,6 +979,105 @@
     // /settings?tab=expenses (the "Manage categories" link in a job)
     var params = new URLSearchParams(window.location.search);
     if (params.get('tab') === 'expenses') tabBtn.click();
+  })();
+
+  // ==================== JOB STATUSES (admin) ====================
+  // The workflow's status names. Jobs always store a fixed id (Prospect,
+  // Approved, ...); these are only the labels shown everywhere — the main
+  // page, the job window, the Calendar and the filters. Saving them never
+  // changes how a job behaves (api/job-statuses.js).
+  var JOB_STATUSES_API = '/api/job-statuses';
+  var jobStatuses = [];
+
+  function jobStatusRequest(method, body) {
+    return fetch(JOB_STATUSES_API, {
+      method: method,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) throw new Error(data.error || data.message || 'Request failed');
+        return data;
+      });
+    });
+  }
+
+  function renderJobStatuses() {
+    var body = document.getElementById('jobStatusesBody');
+    var notice = document.getElementById('jobStatusesNotice');
+    if (!body) return;
+    if (notice) notice.hidden = true;
+    body.innerHTML = jobStatuses.map(function (s) {
+      var finance = s.countsInFinance
+        ? '<span class="expense-cat-status active">Counts in Finance</span>'
+        : '<span class="expense-cat-status inactive">Not counted</span>';
+      return '<tr data-id="' + escapeHtml(s.id) + '">' +
+        '<td><strong>' + escapeHtml(s.id) + '</strong><div class="expense-cat-usage">' + finance + '</div></td>' +
+        '<td><input type="text" class="job-status-label" value="' + escapeHtml(s.label) + '" data-original="' + escapeHtml(s.label) + '" maxlength="30" aria-label="Name shown for ' + escapeHtml(s.id) + '"></td>' +
+        '<td class="expense-cat-usage">' + escapeHtml(s.meaning || '') + '</td>' +
+      '</tr>';
+    }).join('');
+    var approved = jobStatuses.filter(function (s) { return s.id === 'Approved'; })[0];
+    var startEl = document.getElementById('financeStartsLabel');
+    if (startEl) startEl.textContent = approved ? approved.label : 'Approved';
+  }
+
+  function loadJobStatuses() {
+    jobStatusRequest('GET')
+      .then(function (data) { jobStatuses = data.statuses || []; renderJobStatuses(); })
+      .catch(function (err) { showError(err.message || 'Failed to load job statuses'); });
+  }
+
+  function saveJobStatuses(labels) {
+    showLoading(true);
+    hideFeedback();
+    jobStatusRequest('PUT', { labels: labels })
+      .then(function (data) {
+        showLoading(false);
+        jobStatuses = data.statuses || jobStatuses;
+        renderJobStatuses();
+        showSuccess('Status names saved. Jobs keep their real status, so Finance and the Calendar are unchanged.');
+      })
+      .catch(function (err) { showLoading(false); showError(err.message || 'Failed to save status names'); });
+  }
+
+  (function wireJobStatuses() {
+    var panel = document.getElementById('tabJobStatuses');
+    var tabBtn = document.getElementById('jobStatusesTabBtn');
+    var isAdmin = window.__USER__ && window.__USER__.role === 'admin';
+    if (!panel || !tabBtn) return;
+    if (!isAdmin) { tabBtn.style.display = 'none'; panel.style.display = 'none'; return; }
+
+    var saveBtn = document.getElementById('saveJobStatusesBtn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', function () {
+        var body = document.getElementById('jobStatusesBody');
+        if (!body) return;
+        var labels = {};
+        var empty = false;
+        body.querySelectorAll('.job-status-label').forEach(function (input) {
+          var id = input.closest('tr').getAttribute('data-id');
+          labels[id] = input.value;
+          if (!input.value.trim()) empty = true;
+        });
+        if (empty) { showError('Status names cannot be empty.'); return; }
+        saveJobStatuses(labels);
+      });
+    }
+
+    var resetBtn = document.getElementById('resetJobStatusesBtn');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', function () {
+        if (!confirm('Reset every status name to its default?')) return;
+        var labels = {};
+        jobStatuses.forEach(function (s) { labels[s.id] = s.defaultLabel || s.id; });
+        saveJobStatuses(labels);
+      });
+    }
+
+    // /settings?tab=jobstatuses (a link from the job window)
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'jobstatuses') tabBtn.click();
   })();
 
   // ==================== INIT ====================

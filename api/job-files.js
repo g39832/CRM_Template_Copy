@@ -7,7 +7,7 @@ const fs = require('fs');
 const db = require('./db');
 const { getClient } = require('./db-v2');
 const { asyncHandler, parseIntField, AppError } = require('./request-utils');
-const { canAccessClient } = require('./access-control');
+const { canAccessClient, requireAdmin } = require('./access-control');
 const {
   isRemoteStorageEnabled,
   isLocalStorageEnabled,
@@ -197,9 +197,10 @@ router.get('/:jobId/:fileId/download', asyncHandler(async (req, res) => {
 }));
 
 // ======================================================
-// DELETE
+// DELETE (admin only — regular users can upload, view and download files
+// but not remove them)
 // ======================================================
-router.delete('/:jobId/:fileId', asyncHandler(async (req, res) => {
+router.delete('/:jobId/:fileId', requireAdmin, asyncHandler(async (req, res) => {
   const jobId = parseIntField(req.params.jobId, 'jobId', { min: 1 });
   const fileId = parseIntField(req.params.fileId, 'fileId', { min: 1 });
   await loadJobWithAccess(req, jobId);

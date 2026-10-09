@@ -4262,3 +4262,131 @@ textarea[readonly]::placeholder { color: var(--text-muted); }
   .cal-event { padding: 2px 4px; font-size: 0.68rem; }
   .cal-event:not(.is-tall):not(.cal-day-card) .cal-event-title { display: none; }
 }
+
+/* ======================================================
+   JOB ROW TAGS + FINANCE-ELIGIBILITY HINTS
+   A tagged job shows its tags in the client's job list; a job whose status is
+   not approved yet says so, so an estimate is never mistaken for earnings.
+   ====================================================== */
+.job-row-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.job-row-tags .job-tag-chip.is-static { padding: 1px 8px; font-size: 0.72rem; background: var(--primary-soft); border-color: var(--primary); color: var(--primary-text); }
+.job-row-not-counted { color: var(--text-muted); font-style: italic; }
+.job-row-money.is-not-counted { opacity: 0.6; }
+.job-finance-hint { color: var(--text-muted); }
+.job-file-download-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 30px; min-height: 30px; border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); background: var(--surface); color: var(--text-main);
+  cursor: pointer; padding: 0;
+}
+.job-file-download-btn:hover { background: var(--surface-muted); }
+.job-file-download-btn svg { width: 16px; height: 16px; }
+
+/* ======================================================
+   ACTIVITIES — appointments and reminders (not scheduled work)
+   Shared by the client page, the job window and the Calendar
+   (public/js/activities.js). Deliberately quiet and time-first so they never
+   read like the job bars on the Calendar.
+   ====================================================== */
+.activity-section-list { margin-bottom: 10px; }
+.activity-group + .activity-group { margin-top: 12px; }
+.activity-group-title {
+  display: flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 6px;
+}
+.activity-group-title .summary-count { font-size: 0.72rem; color: var(--text-muted); }
+.activity-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 9px 12px; margin-bottom: 6px; cursor: pointer;
+  border: 1px solid var(--border-soft); border-left: 3px solid var(--primary);
+  border-radius: var(--radius-md); background: var(--surface); color: var(--text-main);
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.activity-row:hover, .activity-row:focus-visible { background: var(--surface-muted); outline: none; transform: translateX(2px); }
+.activity-row.is-overdue { border-left-color: var(--warning); }
+.activity-row.is-completed { border-left-color: var(--success); opacity: 0.82; }
+.activity-row-when { display: flex; flex-direction: column; flex: 0 0 92px; }
+.activity-row-date { font-weight: 700; font-size: 0.82rem; }
+.activity-row-time { font-size: 0.76rem; color: var(--text-muted); }
+.activity-row-main { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.activity-row-title { font-weight: 600; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-row.is-completed .activity-row-title { text-decoration: line-through; }
+.activity-row-sub { font-size: 0.78rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-chip {
+  flex: 0 0 auto; padding: 2px 9px; border-radius: 999px; font-size: 0.7rem; font-weight: 700;
+  background: var(--warning-soft); color: var(--warning-text); border: 1px solid var(--warning);
+}
+.activity-chip.is-done { background: var(--success-soft); color: var(--success-text); border-color: var(--success); }
+.activity-add-btn { margin-top: 2px; }
+.activity-modal-card { max-width: 520px; }
+.activity-kind-note { font-weight: 500; font-size: 0.78rem; color: var(--text-muted); }
+.activity-when-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.activity-done-toggle { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; font-size: 0.86rem; color: var(--text-main); }
+.activity-done-toggle input { width: auto; }
+.activity-links { margin: 6px 0; font-size: 0.85rem; }
+.activity-links a { color: var(--primary-text); font-weight: 600; text-decoration: none; }
+.activity-links a:hover { text-decoration: underline; }
+.activity-error { color: var(--danger-text); }
+.field-optional { font-weight: 400; color: var(--text-muted); }
+@media (max-width: 600px) {
+  .activity-when-grid { grid-template-columns: minmax(0, 1fr); }
+  .activity-row-when { flex-basis: 76px; }
+}
+
+/* ======================================================
+   CALENDAR ACTIVITIES PANEL
+   Shown below the calendar grid, separate from the approved-job bars.
+   ====================================================== */
+.cal-day-act-count {
+  display: inline-block; min-width: 15px; margin-left: 4px; padding: 0 4px;
+  border-radius: 999px; font-size: 0.66rem; font-weight: 700; text-align: center;
+  background: var(--warning-soft); color: var(--warning-text); border: 1px solid var(--warning);
+  vertical-align: middle;
+}
+.cal-day-num.is-today .cal-day-act-count { background: #fff; color: var(--primary); border-color: #fff; }
+.cal-activities { margin-top: 18px; }
+.cal-activities-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.cal-activities-title { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-main); }
+.cal-activities-note { font-size: 0.82rem; color: var(--text-muted); }
+
+/* ======================================================
+   FINANCE DRILL-DOWN
+   Clicking a Financial Overview card lists the records that make up the
+   figure (GET /api/finance/breakdown), so a total can always be checked.
+   ====================================================== */
+.fo-kpi.is-clickable { cursor: pointer; transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s; }
+.fo-kpi.is-clickable:hover, .fo-kpi.is-clickable:focus-visible { transform: translateY(-2px); border-color: var(--primary); box-shadow: var(--shadow-soft); outline: none; }
+.fo-drill-overlay {
+  position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
+  padding: 20px; background: rgba(15, 23, 42, 0.5);
+}
+.fo-drill-card {
+  position: relative; width: min(560px, 100%); max-height: 82vh; overflow: auto;
+  background: var(--surface); color: var(--text-main); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-soft); padding: 22px 22px 18px;
+}
+.fo-drill-close {
+  position: absolute; top: 10px; right: 12px; border: none; background: transparent;
+  color: var(--text-muted); font-size: 1.4rem; line-height: 1; cursor: pointer; padding: 4px 8px; border-radius: var(--radius-sm);
+}
+.fo-drill-close:hover { background: var(--surface-muted); color: var(--text-main); }
+.fo-drill-heading { margin: 0 0 14px; font-size: 1.05rem; font-weight: 700; }
+.fo-drill-summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border-soft); margin-bottom: 8px; }
+.fo-drill-count { font-size: 0.82rem; color: var(--text-muted); }
+.fo-drill-total { font-size: 1.15rem; font-weight: 700; }
+.fo-drill-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border-soft); }
+.fo-drill-row:last-child { border-bottom: none; }
+.fo-drill-main { display: flex; flex-direction: column; min-width: 0; }
+.fo-drill-title { font-weight: 600; font-size: 0.9rem; }
+.fo-drill-sub { font-size: 0.78rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
+.fo-drill-amount { font-weight: 600; white-space: nowrap; }
+.fo-drill-amount.is-negative { color: var(--danger-text); }
+.fo-drill-flag { color: var(--warning-text); }
+.fo-drill-note { margin-top: 12px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--surface-muted); border: 1px solid var(--border-soft); font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; }
+/* A manual Finance override is flagged on the card, next to the figure the
+   records add up to, so a saved figure is never mistaken for the live one. */
+.fo-badge {
+  display: inline-block; padding: 1px 6px; margin: 0 2px; border-radius: 999px;
+  background: var(--warning-soft, rgba(245, 158, 11, 0.16)); color: var(--warning-text, #b45309);
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap; vertical-align: middle;
+}

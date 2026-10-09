@@ -19,7 +19,7 @@
   var bodyEl = document.getElementById('calBody');
   var titleEl = document.getElementById('calTitle');
   var noticeEl = document.getElementById('calNotice');
-  var state = { view: 'month', date: todayIso(), events: [], requestToken: 0 };
+  var state = { view: 'month', date: todayIso(), events: [], activities: [], activitiesSupported: true, activitiesMessage: '', requestToken: 0 };
 
   // ---------- dates ----------
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -56,6 +56,21 @@
     return String(str == null ? '' : str)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // Activities on one day, in time order (a blank start time - "any time that
+  // day" - sorts first). Activities never change a job: they are only drawn.
+  function activitiesOn(day) {
+    return state.activities
+      .filter(function (a) { return a.activity_date === day; })
+      .sort(function (a, b) { return String(a.start_time || '').localeCompare(String(b.start_time || '')) || a.id - b.id; });
+  }
+  // A small count on the day, so activities are visible without leaving the
+  // month/week view (clicking the day shows the full list below the calendar).
+  function activityCountBadge(day) {
+    var n = state.activitiesSupported ? activitiesOn(day).length : 0;
+    if (!n) return '';
+    return '<span class="cal-day-act-count" title="' + n + ' activit' + (n === 1 ? 'y' : 'ies') + ' this day">' + n + '</span>';
   }
 
   // The days the current view shows.
@@ -112,7 +127,7 @@
         '" style="grid-column:' + (i + 1) + ';grid-row:1 / span ' + rows + ';"></div>';
       html += '<button type="button" class="cal-day-num' + (day === today ? ' is-today' : '') + (outside ? ' is-outside' : '') +
         '" data-day="' + day + '" style="grid-column:' + (i + 1) + ';grid-row:1;" aria-label="' + escapeHtml(fmt(day, { weekday: 'long', month: 'long', day: 'numeric' })) + ', day view">' +
-        (opts.month ? Number(day.slice(8)) : '<span class="cal-day-wd">' + WEEKDAYS[i] + '</span> ' + Number(day.slice(8))) + '</button>';
+        (opts.month ? Number(day.slice(8)) : '<span class="cal-day-wd">' + WEEKDAYS[i] + '</span> ' + Number(day.slice(8))) + activityCountBadge(day) + '</button>';
     }
     layout.segs.forEach(function (x) {
       var e = x.e;
@@ -224,6 +239,55 @@
         state.events = [];
         render();
       });
+    loadActivities(r, token);
+  }
+
+  // Activities (calendar_activities, v11) are a separate stream from the
+  // schedule: they are fetched in parallel and their failure only hides the
+  // Activities panel. They never approve, schedule or price a job.
+  function loadActivities(r, token) {
+    var panel = document.getElementById('calActivityPanel');
+    if (!window.CrmActivities) { if (panel) panel.hidden = true; return; }
+    window.CrmActivities.api.listRange(r.from, r.to)
+      .then(function (data) {
+        if (token !== state.requestToken) return;
+        state.activitiesSupported = !(data && data.supported === false);
+        state.activities = state.activitiesSupported ? ((data && data.activities) || []) : [];
+        state.activitiesMessage = (data && data.message) || '';
+        renderActivityPanel();
+        render();
+      })
+      .catch(function (err) {
+        if (token !== state.requestToken) return;
+        console.error(err);
+        state.activitiesSupported = false;
+        state.activities = [];
+        state.activitiesMessage = 'Activities could not be loaded.';
+        renderActivityPanel();
+        render();
+      });
+  }
+
+  function renderActivityPanel() {
+    var panel = document.getElementById('calActivityPanel');
+    var listEl = document.getElementById('calActivityList');
+    var addBtn = document.getElementById('calAddActivityBtn');
+    if (!panel || !listEl || !window.CrmActivities) return;
+    panel.hidden = false;
+    if (!state.activitiesSupported) {
+      listEl.innerHTML = '<div class="field-hint">' + escapeHtml(state.activitiesMessage || 'Activities are not available yet.') + '</div>';
+      if (addBtn) addBtn.hidden = true;
+      return;
+    }
+    if (addBtn) addBtn.hidden = false;
+    window.CrmActivities.renderList(listEl, state.activities, {
+      showClient: true,
+      showJob: true,
+      emptyText: 'No activities in this ' + state.view + '. Use + Activity to add an appointment or reminder.',
+      onOpen: function (activity) {
+        window.CrmActivities.openEditor({ activity: activity, links: true, onChange: function () { load(); } });
+      }
+    });
   }
 
   function syncUrl() {
@@ -257,6 +321,25 @@
     var dayBtn = e.target.closest('.cal-day-num');
     if (dayBtn) go('day', dayBtn.getAttribute('data-day'));
   });
+
+  // "+ Activity": pick one of the clients this user may see (admins see all)
+  // and open the shared editor. Saving never touches a job.
+  (function wireActivityAdd() {
+    var addBtn = document.getElementById('calAddActivityBtn');
+    if (!addBtn || !window.CrmActivities) return;
+    addBtn.addEventListener('click', function () {
+      fetch('/api/search?q=', { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .catch(function () { return []; })
+        .then(function (clients) {
+          window.CrmActivities.openEditor({
+            clients: (Array.isArray(clients) ? clients : []).map(function (c) { return { id: c.id, name: c.name }; }),
+            date: state.date,
+            onChange: function () { load(); }
+          });
+        });
+    });
+  })();
   document.addEventListener('keydown', function (e) {
     if (e.target.closest && e.target.closest('input, textarea, select')) return;
     if (e.key === 'ArrowLeft') step(-1);

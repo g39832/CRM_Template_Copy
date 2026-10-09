@@ -53,10 +53,15 @@ hides such elements instead of making the page scroll, so checking
   assert that a save was attempted (for example `POST /api/update-project` when
   the panel closes) without changing data.
 - **One login per run.** `tests/global-setup.js` logs in once and shares the
-  session, because the login route is rate-limited. It gives a specific error
-  for each setup problem: 404 (the server isn't in test mode, usually because
-  another dev server is on the port), 429 (rate-limited) or 503 (Supabase not
-  configured).
+  session. It gives a specific error for each setup problem: 404 (the server
+  isn't in test mode, usually because another dev server is on the port), 429
+  (rate-limited) or 503 (Supabase not configured).
+- **Rate limiting.** Real sign-in (`/api/v2/auth/google-session`) is always
+  limited to 20 attempts / 15 min. The test-only `/api/v2/auth/test-login` and
+  `/api/v2/auth/preview-login` routes 404 outside `NODE_ENV=test`; under
+  `NODE_ENV=test` they skip the shared limiter so repeated suite runs don't
+  exhaust it and fail unrelated tests. `tests/api/security.test.js` asserts
+  both halves of this.
 - **Empty data.** Tests that need a client, a job or finance rows skip with a
   reason instead of failing when the database has none.
 - Every page test also fails on uncaught JavaScript errors (`pageerror`).

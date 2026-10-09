@@ -18,7 +18,7 @@
 
 const http = require('http');
 const crypto = require('crypto');
-const { TABLES, FOREIGN_KEYS } = require('./schema');
+const { TABLES, FOREIGN_KEYS, COMPOSITE_KEYS } = require('./schema');
 const buildSeed = require('./seed');
 
 const PORT = Number(process.argv[2] || process.env.MOCK_SUPABASE_PORT || 54329);
@@ -287,6 +287,16 @@ function checkRow(table, row) {
     if (child !== table || row[col] === null || row[col] === undefined || !cols[col]) continue;
     if (!state.tables[parent].some((p) => p.id === row[col])) {
       throw new PgError(409, '23503', `insert or update on table "${table}" violates foreign key constraint "${table}_${col}_fkey"`);
+    }
+  }
+  checkCompositeKeys(table, row);
+}
+
+function checkCompositeKeys(table, row) {
+  for (const [child, cols, parent, parentCols] of COMPOSITE_KEYS) {
+    if (child !== table || cols.some((c) => row[c] === null || row[c] === undefined)) continue;
+    if (!state.tables[parent].some((p) => parentCols.every((pc, i) => p[pc] === row[cols[i]]))) {
+      throw new PgError(409, '23503', `insert or update on table "${table}" violates foreign key constraint "${table}_${cols.join('_')}_fkey"`);
     }
   }
 }

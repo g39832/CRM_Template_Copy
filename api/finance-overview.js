@@ -1,23 +1,30 @@
 // api/finance-overview.js
 //
-// GET /api/finance/overview?year=YYYY — read-only breakdowns behind the
-// visual cards at the top of the Finance page (admin only).
+// Read-only Finance endpoints behind the Financial Overview (admin only):
+//   GET  /api/finance/overview?year=YYYY   revenue/cost/profit, money received
+//                                          by month, salespeople, cost categories
+//   GET  /api/finance/breakdown?year=YYYY&metric=expected|remaining|received|clients
+//                                          the records behind one overview card
+//   POST /api/finance/recalculate {year}   rewrites the year's stored totals row
+//                                          from the records (finance_overrides)
 //
-// It uses the same rules as the rest of Finance (see finance-totals.js), so
-// the charts agree with the year totals:
-//   - revenue  = client-level total_due for clients created that year
-//                + total_due of jobs created that year
+// Every figure comes from finance-rules.js (buildYearFinance), the same code
+// the year totals use, so a card, its drill-down list and the charts always
+// add up to the same amounts:
+//   - revenue  = Expected Earnings: approved jobs' totals + client accounts
 //   - cost     = the same records' job_cost (a job's cost is the sum of its
 //                itemized Job Costs, kept in jobs.job_cost by expenses.js)
 //   - received = payments ledger entries dated that year (client-level and
 //                job payments; corrections are negative entries)
-// Nothing here writes to the database or changes any calculation.
+// Jobs that are not approved (Prospect) or Cancelled count for nothing.
 
 const express = require('express');
+const db = require('./db');
 const { getClient } = require('./db-v2');
-const { asyncHandler, parseYear, AppError } = require('./request-utils');
+const { asyncHandler, assertObject, parseYear, AppError } = require('./request-utils');
 const { requireAdmin } = require('./access-control');
-const { getValidYear } = require('./finance-totals');
+const { getValidYear, getFinanceTotalsForYear, updateFinanceTotals, getManualOverride } = require('./finance-totals');
+const { loadFinanceData, buildYearFinance, yearOf } = require('./finance-rules');
 const { hasExpenseTables } = require('./schema-features');
 
 const router = express.Router();
@@ -48,29 +55,19 @@ router.get('/finance/overview', requireAdmin, asyncHandler(async (req, res) => {
   const supabase = getClient();
   if (!supabase) throw new AppError(503, 'Database not configured');
 
-  const [clients, jobs, payments, users] = await Promise.all([
-    selectAll(supabase, 'clients', '*'),
-    selectAll(supabase, 'jobs', 'id, client_id, total_due, amount_paid, balance, job_cost, created_at'),
-    selectAll(supabase, 'payments', '*'),
-    selectAll(supabase, 'users', 'id, display_name, email')
-  ]);
-
-  const inYear = (row) => {
-    const ym = yearMonth(row.created_at);
-    return Boolean(ym && ym.year === year);
-  };
-  const clientsY = clients.filter(inYear);
-  const jobsY = jobs.filter(inYear);
-  const paymentsY = payments.filter((p) => {
-    const ym = yearMonth(p.payment_date);
-    return Boolean(ym && ym.year === year);
-  });
+  const data = await loadFinanceData();
+  const { clients, users } = data;
+  const finance = buildYearFinance(data, year);
+  // Only counted work (approved jobs + client accounts) — see finance-rules.js.
+  const clientsY = clients.filter((c) => yearOf(c.created_at) === year);
+  const jobsY = finance.countedJobs.map((r) => ({ id: r.job_id, client_id: r.client_id, total_due: r.total, job_cost: r.cost }));
+  const paymentsY = data.payments.filter((p) => yearOf(p.payment_date) === year);
 
   // ---- Totals ----
-  const revenue = clientsY.reduce((s, c) => s + num(c.total_due), 0) + jobsY.reduce((s, j) => s + num(j.total_due), 0);
-  const cost = clientsY.reduce((s, c) => s + num(c.job_cost), 0) + jobsY.reduce((s, j) => s + num(j.job_cost), 0);
-  const outstanding = clientsY.reduce((s, c) => s + num(c.balance), 0) + jobsY.reduce((s, j) => s + num(j.balance), 0);
-  const received = paymentsY.reduce((s, p) => s + num(p.amount), 0);
+  const revenue = finance.totals.expected;
+  const cost = finance.totals.cost;
+  const outstanding = finance.totals.remaining;
+  const received = finance.totals.received;
   const profit = revenue - cost;
 
   // ---- Money received by month (payments ledger) ----
@@ -178,6 +175,85 @@ router.get('/finance/overview', requireAdmin, asyncHandler(async (req, res) => {
     salespeople,
     costByCategory
   });
+}));
+
+// ======================================================
+// DRILL-DOWN: the records behind one Financial Overview card.
+// `total` is always the sum of the listed rows (or the row count for
+// clients), and equals the figure the rules calculate for the card.
+// ======================================================
+const METRICS = ['expected', 'remaining', 'received', 'clients'];
+
+router.get('/finance/breakdown', requireAdmin, asyncHandler(async (req, res) => {
+  const year = req.query.year ? parseYear(req.query.year, 'year') : getValidYear(req.query.year);
+  const metric = String(req.query.metric || '');
+  if (!METRICS.includes(metric)) throw new AppError(400, 'metric must be one of: ' + METRICS.join(', '));
+
+  const finance = buildYearFinance(await loadFinanceData(), year);
+  let rows;
+  let total;
+  if (metric === 'expected') {
+    rows = finance.moneyRows.filter((r) => Math.abs(r.total) > 0.005);
+    total = finance.totals.expected;
+  } else if (metric === 'remaining') {
+    rows = finance.moneyRows.filter((r) => Math.abs(r.balance) > 0.005);
+    total = finance.totals.remaining;
+  } else if (metric === 'received') {
+    rows = finance.payments;
+    total = finance.totals.received;
+  } else {
+    rows = finance.clientsCreated;
+    total = finance.totals.clients;
+  }
+  if (metric !== 'received' && metric !== 'clients') {
+    rows = rows.slice().sort((a, b) => a.client_name.localeCompare(b.client_name) ||
+      (a.kind === b.kind ? new Date(a.date) - new Date(b.date) : a.kind === 'job' ? -1 : 1));
+  }
+  if (metric === 'clients') rows = rows.slice().sort((a, b) => a.client_name.localeCompare(b.client_name));
+
+  // Jobs created this year that are NOT counted (not approved / cancelled) —
+  // listed so it is clear why they are missing from Expected and Remaining.
+  const notCounted = metric === 'expected' || metric === 'remaining'
+    ? finance.notCountedJobs.slice().sort((a, b) => a.client_name.localeCompare(b.client_name))
+    : [];
+
+  // The figure the card shows may come from a persistent manual override
+  // (settings) or from a stored year row (finance_overrides) calculated before
+  // the latest rules or by hand. Report whichever is selected so the page can
+  // disclose it next to the figure the records add up to.
+  let stored = null;
+  try {
+    const manual = await getManualOverride(year);
+    if (manual) {
+      stored = {
+        expected: manual.totalExpected,
+        received: manual.totalReceived,
+        remaining: manual.totalRemaining,
+        clients: manual.totalClients
+      };
+    } else {
+      const { rows: overrideRows } = await db.query('SELECT * FROM finance_overrides WHERE year = $1', [year]);
+      if (overrideRows[0]) {
+        stored = {
+          expected: Number(overrideRows[0].total_expected || 0),
+          received: Number(overrideRows[0].total_received || 0),
+          remaining: Number(overrideRows[0].total_remaining || 0),
+          clients: Number(overrideRows[0].total_clients || 0)
+        };
+      }
+    }
+  } catch (e) { stored = null; }
+
+  res.json({ year, metric, total, count: rows.length, rows, notCounted, stored: stored ? stored[metric] : null });
+}));
+
+// Replaces the year's stored totals with the figures calculated from the
+// records (the same thing every job/payment change already does for its year).
+router.post('/finance/recalculate', requireAdmin, asyncHandler(async (req, res) => {
+  assertObject(req.body);
+  const year = parseYear(req.body.year, 'year');
+  await updateFinanceTotals(year);
+  res.json({ success: true, year, totals: await getFinanceTotalsForYear(year) });
 }));
 
 module.exports = router;

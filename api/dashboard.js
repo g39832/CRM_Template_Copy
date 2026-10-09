@@ -2,6 +2,8 @@ const express = require('express');
 const { displayableLogoUrl } = require('../services/storage');
 const { getClient } = require('./db-v2');
 const { asyncHandler, AppError } = require('./request-utils');
+const { loadFinanceData, buildAllTimeBalances, EPSILON } = require('./finance-rules');
+const { countsInFinance } = require('./job-statuses');
 
 const router = express.Router();
 
@@ -65,17 +67,18 @@ router.get('/stats', requireAdminCompanyUser, asyncHandler(async (req, res) => {
     .from('clients')
     .select('id', { count: 'exact', head: true });
 
-  // ---- Active jobs (not Closed) ----
-  var { count: activeJobs } = await supabase
-    .from('jobs')
-    .select('id', { count: 'exact', head: true })
-    .neq('status', 'Closed');
+  // Money figures follow the Finance rules (finance-rules.js): only approved
+  // jobs count, plus client-level amounts — the same as the Finance page.
+  var financeData = await loadFinanceData();
 
-  // ---- Outstanding invoices (clients with balance > 0) ----
-  var { count: outstandingInvoices } = await supabase
-    .from('clients')
-    .select('id', { count: 'exact', head: true })
-    .gt('balance', 0);
+  // ---- Active jobs (not Closed or Cancelled) ----
+  var activeJobs = financeData.jobs.filter(function (j) { return j.status !== 'Closed' && j.status !== 'Cancelled'; }).length;
+
+  // ---- Outstanding (clients that still owe money on counted work) ----
+  var outstandingInvoices = 0;
+  buildAllTimeBalances(financeData).forEach(function (balance) {
+    if (balance > EPSILON) outstandingInvoices += 1;
+  });
 
   // ---- This month's revenue ----
   var now = new Date();
@@ -91,23 +94,18 @@ router.get('/stats', requireAdminCompanyUser, asyncHandler(async (req, res) => {
     thisMonthRevenue = monthPayments.reduce(function (sum, p) { return sum + Number(p.amount || 0); }, 0);
   }
 
-  // ---- Revenue split: one-off vs recurring ----
-  var { data: splitData } = await supabase
-    .from('clients')
-    .select('id, client_type, total_due');
-
+  // ---- Revenue split: one-off vs recurring (client accounts + counted jobs) ----
   var oneOffRevenue = 0;
   var recurringRevenue = 0;
-  if (splitData) {
-    splitData.forEach(function (c) {
-      var t = Number(c.total_due || 0);
-      if (c.client_type === 'recurring') {
-        recurringRevenue += t;
-      } else {
-        oneOffRevenue += t;
-      }
-    });
-  }
+  var typeByClient = new Map();
+  var addRevenue = function (clientId, amount) {
+    var t = Number(amount || 0);
+    if (typeByClient.get(Number(clientId)) === 'recurring') recurringRevenue += t;
+    else oneOffRevenue += t;
+  };
+  financeData.clients.forEach(function (c) { typeByClient.set(Number(c.id), c.client_type); });
+  financeData.clients.forEach(function (c) { addRevenue(c.id, c.total_due); });
+  financeData.jobs.filter(countsInFinance).forEach(function (j) { addRevenue(j.client_id, j.total_due); });
 
   // ---- Retention alerts (recurring clients with no payment in 45 days) ----
   var retentionAlerts = [];

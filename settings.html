@@ -446,6 +446,7 @@
       <button class="tab-btn" data-tab="branding" role="tab" data-admin-only="true">Branding &amp; Identity</button>
       <button class="tab-btn" data-tab="users" role="tab" data-admin-only="true">Users &amp; Permissions</button>
       <button class="tab-btn" data-tab="expenses" role="tab" data-admin-only="true" id="expensesTabBtn">Expense Categories</button>
+      <button class="tab-btn" data-tab="jobstatuses" role="tab" data-admin-only="true" id="jobStatusesTabBtn">Job Statuses</button>
       <button class="tab-btn" data-tab="audit" role="tab" data-admin-only="true">System Audit</button>
       <button class="tab-btn" data-tab="workflow" role="tab" data-admin-only="true">Platform Preferences</button>
     </div>
@@ -749,6 +750,28 @@
           </tbody>
         </table>
       </div>
+    </div>
+
+    <!-- ===== Job Statuses (admin): renaming labels only ===== -->
+    <div class="settings-card" id="tabJobStatuses" role="tabpanel" data-admin-only="true">
+      <h2>Job Statuses</h2>
+      <p class="subtitle">Rename what each job status is called. The names are only labels &mdash; a job keeps its real status underneath, so Finance, the Calendar and every rule keep working exactly the same. There are six fixed statuses; they cannot be added, removed or reordered.</p>
+      <div id="jobStatusesNotice" class="expense-notice" hidden></div>
+      <div class="expense-cat-table-wrap">
+        <table class="expense-cat-table">
+          <thead>
+            <tr><th>Status</th><th>Shown as</th><th>Meaning</th></tr>
+          </thead>
+          <tbody id="jobStatusesBody">
+            <tr><td colspan="3" class="expense-cat-empty">Loading statuses...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-primary" id="saveJobStatusesBtn">Save Names</button>
+        <button type="button" class="btn-secondary" id="resetJobStatusesBtn">Reset to Defaults</button>
+      </div>
+      <div class="settings-note">Finance counts a job from the moment it reaches <strong id="financeStartsLabel">Approved</strong> and keeps counting it while it is Completed, Invoice or Closed. Prospect (not approved) and Cancelled never count.</div>
     </div>
 
     <div id="formFeedback" role="alert"></div>

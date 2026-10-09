@@ -693,6 +693,60 @@ ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS show_line_item_prices BOOLEAN N
 NOTIFY pgrst, 'reload schema';
 
 -- =============================================================
+-- TEMPLATE UPGRADE v11: calendar activities (appointments and reminders).
+--
+-- Customer-process activities that are NOT scheduled work: "Send quote",
+-- "Meet insurance adjuster 9:30 AM", "Contract signing 6:45 PM". Each one
+-- belongs to a client and, optionally, to one job OF THAT SAME CLIENT — the
+-- composite foreign key (job_id, client_id) -> jobs(id, client_id) makes it
+-- impossible to link a job from a different client. Creating an activity
+-- never schedules, approves or prices a job.
+--   activity_date  DATE   the day it happens (no time zone, as typed)
+--   start_time     TIME   optional; blank = any time that day
+--   end_time       TIME   optional; only with a start time, and later than it
+--   status         'pending' | 'completed'
+-- Deleting the client deletes its activities; deleting a job keeps its
+-- activities on the client (job_id is cleared).
+--
+-- Purely ADDITIVE: one new table, one unique index on jobs (id, client_id)
+-- — id is already unique, so it cannot fail on existing data — and indexes.
+-- Nothing existing is changed or deleted. Safe to run multiple times.
+-- Needs PostgreSQL 15+ (ON DELETE SET NULL (column)); Supabase is.
+-- Rollback: scripts/rollback-v11-calendar-activities.sql (drops the table,
+-- so every activity created since is lost — export first if needed).
+-- Job status names (Settings -> Job Statuses) need no database change: they
+-- are stored in the settings table under 'job_status_labels'.
+-- =============================================================
+CREATE UNIQUE INDEX IF NOT EXISTS jobs_id_client_id_key ON public.jobs (id, client_id);
+
+CREATE TABLE IF NOT EXISTS public.calendar_activities (
+  id BIGSERIAL PRIMARY KEY,
+  client_id BIGINT NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+  job_id BIGINT,
+  title TEXT NOT NULL CHECK (length(btrim(title)) BETWEEN 1 AND 200),
+  notes TEXT NOT NULL DEFAULT '' CHECK (length(notes) <= 5000),
+  activity_date DATE NOT NULL,
+  start_time TIME,
+  end_time TIME,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed')),
+  completed_at TIMESTAMPTZ,
+  created_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT calendar_activities_end_after_start CHECK (
+    end_time IS NULL OR (start_time IS NOT NULL AND end_time > start_time)
+  ),
+  CONSTRAINT calendar_activities_job_same_client FOREIGN KEY (job_id, client_id)
+    REFERENCES public.jobs (id, client_id) ON UPDATE CASCADE ON DELETE SET NULL (job_id)
+);
+
+CREATE INDEX IF NOT EXISTS calendar_activities_date_idx ON public.calendar_activities (activity_date);
+CREATE INDEX IF NOT EXISTS calendar_activities_client_idx ON public.calendar_activities (client_id);
+CREATE INDEX IF NOT EXISTS calendar_activities_job_idx ON public.calendar_activities (job_id) WHERE job_id IS NOT NULL;
+
+NOTIFY pgrst, 'reload schema';
+
+-- =============================================================
 -- SECURITY: Row Level Security on every table (keep this block LAST).
 --
 -- The browser receives the public (anon / publishable) key — it is shipped

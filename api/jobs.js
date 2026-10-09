@@ -6,16 +6,18 @@ const {
   isAdmin,
   requireAdmin,
   canAccessClient,
-  sanitizeJob,
-  sanitizeJobs
+  sanitizeJob: stripJobMoney,
+  sanitizeLineItems
 } = require('./access-control');
+const { STATUS_IDS, SCHEDULED_STATUS, countsInFinance } = require('./job-statuses');
 const { refreshFinanceYearsFor } = require('./finance-totals');
 const { hasPaymentJobId, hasExpenseTables, hasJobSchedule, hasJobPricingDisplay, markColumnAbsent, isMissingColumnError } = require('./schema-features');
 const { itemizedJobCost, copyExpensesToJob } = require('./expenses');
 
 const router = express.Router();
 
-const VALID_STATUSES = ['Prospect', 'Approved', 'Completed', 'Invoice', 'Closed'];
+// Internal status ids (labels are renamed in Settings — see job-statuses.js).
+const VALID_STATUSES = STATUS_IDS;
 const LINE_ITEM_CATEGORIES = ['Labor', 'Materials', 'Commissions', 'Meals/Drinks', 'Miscellaneous', 'Permits'];
 const MAX_LINE_ITEMS_PER_REQUEST = 100;
 // Payments are stored in cents-precision dollars; anything smaller than half
@@ -38,6 +40,33 @@ async function loadJobWithAccessCheck(req, jobId) {
   const client = await loadClientOrThrow(job.client_id);
   if (!canAccessClient(req, client)) throw new AppError(403, 'You do not have access to this job');
   return { job, client };
+}
+
+// Every job sent to the browser says whether its money counts in Finance
+// (the approval rule in finance-rules.js), and a regular user's copy has no
+// money fields at all.
+function sanitizeJob(req, job) {
+  if (!job) return job;
+  return stripJobMoney(req, { ...job, counts_in_finance: countsInFinance(job) });
+}
+function sanitizeJobs(req, jobs) {
+  return (jobs || []).map((j) => sanitizeJob(req, j));
+}
+
+// Job tags: short free-text labels ("Pickup: Oct 20"). At most 20 per job,
+// 40 characters each; blanks and repeats are dropped.
+function parseTags(rawTags) {
+  if (!Array.isArray(rawTags)) throw new AppError(400, 'tags must be an array of strings');
+  const seen = new Set();
+  return rawTags
+    .map((t) => String(t === null || t === undefined ? '' : t).replace(/\s+/g, ' ').trim().slice(0, 40))
+    .filter((t) => {
+      const key = t.toLowerCase();
+      if (!t || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 20);
 }
 
 function requireSupabase() {
@@ -152,7 +181,7 @@ router.get('/schedule', asyncHandler(async (req, res) => {
   const { data: jobs, error } = await supabase
     .from('jobs')
     .select('id, client_id, title, status, scheduled_start, duration_days')
-    .eq('status', 'Approved');
+    .eq('status', SCHEDULED_STATUS);
   if (error) throw new AppError(500, 'Failed to load the schedule: ' + error.message);
 
   const scheduled = (jobs || [])
@@ -291,6 +320,7 @@ router.post('/', asyncHandler(async (req, res) => {
   const jobCost = isAdmin(req) ? parseNumberField(req.body.job_cost ?? 0, 'job_cost', { required: false, defaultValue: 0 }) : 0;
   const createdAt = new Date().toISOString();
   if (req.body.show_line_item_prices !== undefined) parsePricingDisplay(req.body.show_line_item_prices);
+  const tags = req.body.tags === undefined ? null : parseTags(req.body.tags);
 
   let lineItems = [];
   if (req.body.line_items !== undefined && isAdmin(req)) {
@@ -317,6 +347,11 @@ router.post('/', asyncHandler(async (req, res) => {
     await copyExpensesToJob(req, job, req.body.expenses);
   }
   job = (await saveJobPricingDisplay(req, job.id)) || job;
+  if (tags && tags.length) {
+    const { data: tagged, error: tagErr } = await requireSupabase().from('jobs').update({ tags }).eq('id', job.id).select().maybeSingle();
+    if (tagErr) throw new AppError(500, 'Job created, but its tags could not be saved: ' + tagErr.message);
+    job = tagged || job;
+  }
   if (lineItems.length || (isAdmin(req) && Array.isArray(req.body.expenses) && req.body.expenses.length)) {
     const refreshed = await db.query('SELECT * FROM jobs WHERE id = $1', [job.id]);
     job = refreshed.rows[0] || job;
@@ -385,13 +420,7 @@ router.put('/:jobId', asyncHandler(async (req, res) => {
 router.put('/:jobId/tags', asyncHandler(async (req, res) => {
   assertObject(req.body);
   const jobId = parseIntField(req.params.jobId, 'jobId', { min: 1 });
-  const rawTags = req.body.tags;
-  if (!Array.isArray(rawTags)) throw new AppError(400, 'tags must be an array of strings');
-  const tags = rawTags
-    .map((t) => String(t || '').trim())
-    .filter(Boolean)
-    .slice(0, 20)
-    .map((t) => t.slice(0, 40));
+  const tags = parseTags(req.body.tags);
 
   await db.schemaReady;
   await loadJobWithAccessCheck(req, jobId);
@@ -472,7 +501,7 @@ router.post('/:jobId/payment', requireAdmin, asyncHandler(async (req, res) => {
   const jobId = parseIntField(req.params.jobId, 'jobId', { min: 1 });
   const amount = parseNumberField(req.body.amount, 'amount', { min: 0.01 });
   const job = await applyJobPayment(req, jobId, amount);
-  res.json({ success: true, job });
+  res.json({ success: true, job: sanitizeJob(req, job) });
 }));
 
 // Records a correction (refund / mistaken entry) against a job's payments.
@@ -481,7 +510,7 @@ router.post('/:jobId/payment/reverse', requireAdmin, asyncHandler(async (req, re
   const jobId = parseIntField(req.params.jobId, 'jobId', { min: 1 });
   const amount = parseNumberField(req.body.amount, 'amount', { min: 0.01 });
   const job = await applyJobPayment(req, jobId, -amount);
-  res.json({ success: true, job });
+  res.json({ success: true, job: sanitizeJob(req, job) });
 }));
 
 // Payment history for one job (needs payments.job_id from the v6 migration;
@@ -512,9 +541,10 @@ router.get('/:jobId/payments', requireAdmin, asyncHandler(async (req, res) => {
 }));
 
 // ======================================================
-// DELETE JOB
+// DELETE JOB (admin only — it removes the job's services, files, notes and
+// costs with it; payments stay in the ledger, unlinked from the job)
 // ======================================================
-router.delete('/:jobId', asyncHandler(async (req, res) => {
+router.delete('/:jobId', requireAdmin, asyncHandler(async (req, res) => {
   const jobId = parseIntField(req.params.jobId, 'jobId', { min: 1 });
   await db.schemaReady;
   const { job } = await loadJobWithAccessCheck(req, jobId);
@@ -547,7 +577,7 @@ router.get('/:jobId/line-items', asyncHandler(async (req, res) => {
     throw new AppError(500, 'Failed to fetch line items: ' + error.message);
   }
 
-  res.json({ lineItems: (data || []).map(normalizeLineItem), categories: LINE_ITEM_CATEGORIES });
+  res.json({ lineItems: sanitizeLineItems(req, (data || []).map(normalizeLineItem)), categories: LINE_ITEM_CATEGORIES });
 }));
 
 router.post('/:jobId/line-items', requireAdmin, asyncHandler(async (req, res) => {

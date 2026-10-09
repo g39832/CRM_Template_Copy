@@ -29,7 +29,7 @@
     <div class="page-header-copy">
       <span class="page-kicker">CRM Template</span>
       <span class="page-title">Calendar</span>
-      <p class="page-subtitle">Approved jobs, from their estimated start date for as many days as they take. Click a job to open it.</p>
+      <p class="page-subtitle">Approved jobs, from their estimated start date for as many days as they take. Activities (appointments and reminders) are shown separately — they never schedule work. Click either to open it.</p>
     </div>
   </header>
 
@@ -52,8 +52,23 @@
     <div id="calBody" class="cal-body" aria-busy="true">
       <div class="cal-loading">Loading the schedule...</div>
     </div>
+
+    <!-- Activities: appointments and reminders, deliberately separate from
+         scheduled work (no job status, money or schedule changes). -->
+    <section class="cal-activities" id="calActivityPanel" hidden aria-labelledby="calActivitiesHeading">
+      <div class="cal-activities-head">
+        <div>
+          <h2 class="cal-activities-title" id="calActivitiesHeading">Activities</h2>
+          <span class="cal-activities-note">Appointments and reminders for this view — they show here and on the client/job pages, but never schedule work or count in Finance.</span>
+        </div>
+        <button type="button" class="btn-primary btn-quiet" id="calAddActivityBtn">+ Activity</button>
+      </div>
+      <div id="calActivityList"></div>
+    </section>
   </main>
 
-  <script src="/js/calendar.js?v=1"></script>
+  <script src="/js/job-statuses.js?v=1"></script>
+  <script src="/js/activities.js?v=1"></script>
+  <script src="/js/calendar.js?v=2"></script>
 </body>
 </html>

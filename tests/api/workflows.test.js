@@ -49,8 +49,8 @@ async function dump() {
   return (await fetch(`${MOCK}/__dump`)).json();
 }
 
-// One session per role per app process — the login endpoint is rate
-// limited (20 attempts / 15 min). Cleared whenever the app restarts.
+// One session per role per app process. The test-only sign-in helper is not
+// rate limited under NODE_ENV=test; caching just avoids redundant logins.
 const sessionCookies = new Map();
 
 async function login(email, role) {
@@ -301,17 +301,24 @@ test('before the migration, job payment history reports unsupported instead of f
   assert.equal(hist.data.supported, false);
 });
 
-test('regular users keep their permissions: view job services/totals, but no prices, payments, cost or other clients', async () => {
+test('regular users see jobs and their services without any money, and cannot price, pay or open other clients', async () => {
   const sam = await login('sam@example.com', 'user');
   const jobs = await sam('GET', '/api/jobs/client/2');
   assert.equal(jobs.status, 200);
   for (const j of jobs.data.jobs) {
-    assert.equal(j.job_cost, undefined, 'job cost stays admin-only');
-    assert.equal(typeof j.total_due, 'number');
+    for (const field of ['job_cost', 'total_due', 'amount_paid', 'balance']) {
+      assert.equal(j[field], undefined, `${field} is admin-only`);
+    }
+    assert.equal(typeof j.title, 'string');
   }
   const items = await sam('GET', '/api/jobs/1/line-items');
-  assert.equal(items.status, 200, 'services visible (they are on the PDFs sam can download)');
+  assert.equal(items.status, 200, 'service names stay visible (scope of work)');
   assert.equal(items.data.lineItems.length, 2);
+  for (const i of items.data.lineItems) {
+    assert.equal(i.unit_price, undefined, 'service prices are admin-only');
+    assert.equal(i.amount, undefined);
+    assert.ok(i.description);
+  }
   assert.equal((await sam('POST', '/api/jobs/1/line-items', { description: 'x', unit_price: 1 })).status, 403);
   assert.equal((await sam('POST', '/api/jobs/1/line-items/bulk', { line_items: [{ description: 'x' }] })).status, 403);
   assert.equal((await sam('PUT', '/api/jobs/1/line-items/1', { unit_price: 1 })).status, 403);
@@ -351,7 +358,8 @@ test('+ Job with services sets the total from them; regular users cannot price a
   const sam = await login('sam@example.com', 'user');
   const userJob = await sam('POST', '/api/jobs', { client_id: 2, title: 'Rep job', total_due: 999, line_items: [{ description: 'x', unit_price: 500 }] });
   assert.equal(userJob.status, 200);
-  assert.equal(userJob.data.job.total_due, 0);
+  assert.equal(userJob.data.job.total_due, undefined, 'regular users never receive job money');
+  assert.equal((await dump()).tables.jobs.find((j) => j.id === userJob.data.job.id).total_due, 0);
   assert.equal((await dump()).tables.job_line_items.filter((i) => i.job_id === userJob.data.job.id).length, 0);
 });
 
@@ -381,12 +389,14 @@ test('+ Service, edit and remove keep the job total in sync; defaults can be rem
   assert.deepEqual(items.map((i) => i.description), ['Shingle Repair']);
 });
 
-test('Finance totals count client-level amounts plus jobs, by year', async () => {
+test('Finance totals count client-level amounts plus approved jobs, by year', async () => {
   const admin = await login('owner@example.com', 'admin');
   const db = await dump();
   const yearOf = (v) => new Date(v).getFullYear();
   const clients = db.tables.clients.filter((c) => yearOf(c.created_at) === YEAR);
-  const jobs = db.tables.jobs.filter((j) => yearOf(j.created_at) === YEAR);
+  // Only jobs whose status counts in Finance (job 2 is a Prospect).
+  const jobs = db.tables.jobs.filter((j) => yearOf(j.created_at) === YEAR && ['Approved', 'Completed', 'Invoice', 'Closed'].includes(j.status));
+  assert.deepEqual(jobs.map((j) => j.id).sort(), [1, 3, 4]);
   const expected = clients.reduce((s, c) => s + c.total_due, 0) + jobs.reduce((s, j) => s + j.total_due, 0);
   const remaining = clients.reduce((s, c) => s + c.balance, 0) + jobs.reduce((s, j) => s + j.balance, 0);
 
@@ -694,7 +704,8 @@ test('with itemized costs available, a job cost can only change through Job Cost
   const edited = await admin('PUT', `/api/jobs/2/expenses/${moved.data.expenses[0].id}`, { amount: 725.5, category_id: 2 });
   assert.equal(edited.data.job.job_cost, 725.5);
   const overview = (await admin('GET', `/api/finance/overview?year=${YEAR}`)).data;
-  assert.equal(overview.totals.cost, 3500 + 400 + 1200 + 725.5 + 40 + 40);
+  // Job 2 is a Prospect, so its cost is not in Finance (its own cost is kept).
+  assert.equal(overview.totals.cost, 3500 + 400 + 1200 + 40 + 40);
   // A job with no cost: nothing to move.
   assert.equal((await admin('POST', '/api/jobs/3/expenses/itemize-existing', {})).data.expenses.length, 1, 'job 3 keeps its $40 as one line');
   const sam = await login('sam@example.com', 'user');
@@ -707,9 +718,10 @@ test('Finance overview: revenue, cost, profit, months, salespeople and cost cate
   const res = await admin('GET', `/api/finance/overview?year=${YEAR}`);
   assert.equal(res.status, 200);
   const d = res.data;
-  // Clients created this year: Alice 5000/3500, Bob 1200/400; jobs 1-4.
-  assert.equal(d.totals.revenue, 5000 + 1200 + 2000 + 1500 + 120 + 120);
-  assert.equal(d.totals.cost, 3500 + 400 + 1200 + 700 + 40 + 40);
+  // Clients created this year: Alice 5000/3500, Bob 1200/400; approved jobs
+  // 1, 3, 4 (job 2 is a Prospect: its $1,500 / $700 cost do not count).
+  assert.equal(d.totals.revenue, 5000 + 1200 + 2000 + 120 + 120);
+  assert.equal(d.totals.cost, 3500 + 400 + 1200 + 40 + 40);
   assert.equal(d.totals.profit, d.totals.revenue - d.totals.cost);
   assert.equal(d.totals.received, 3200);
   assert.equal(d.monthly.reduce((s, m) => s + m.received, 0), d.totals.received);
@@ -717,7 +729,7 @@ test('Finance overview: revenue, cost, profit, months, salespeople and cost cate
   assert.equal(d.salespeople.reduce((s, p) => s + p.revenue, 0), d.totals.revenue);
   assert.deepEqual(d.salespeople.map((p) => p.name), ['Sam Sales', 'Riley Rep']);
   const cats = Object.fromEntries(d.costByCategory.map((c) => [c.name, c.amount]));
-  assert.deepEqual(cats, { Materials: 700, Labor: 500, 'Client account costs': 3900, 'Job costs not itemized': 780 });
+  assert.deepEqual(cats, { Materials: 700, Labor: 500, 'Client account costs': 3900, 'Job costs not itemized': 80 });
   assert.equal(d.costByCategory.reduce((s, c) => s + c.amount, 0), d.totals.cost);
   // Last year: Eve Closed and her job.
   const last = (await admin('GET', `/api/finance/overview?year=${YEAR - 1}`)).data;
@@ -1043,4 +1055,446 @@ test('line-item pricing: own scope text is kept, bad values change nothing, regu
   assert.equal((await sam('PUT', '/api/jobs/1', { show_line_item_prices: false })).status, 200, 'own job');
   assert.equal((await sam('PUT', '/api/jobs/3', { show_line_item_prices: true })).status, 403, "not someone else's");
   assert.equal(Number((await admin('GET', '/api/jobs/1')).data.job.total_due), 2000);
+});
+
+// ---------------------------------------------------------------------------
+// Configurable job-status names: renaming a label must never change behavior.
+// ---------------------------------------------------------------------------
+test('job status names: readable by everyone, editable by admins only, and renaming never changes Finance or the workflow', async () => {
+  const admin = await login('owner@example.com', 'admin');
+  const sam = await login('sam@example.com', 'user');
+
+  let res = await admin('GET', '/api/job-statuses');
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.data.statuses.map((s) => s.id), ['Prospect', 'Approved', 'Completed', 'Invoice', 'Closed', 'Cancelled']);
+  assert.deepEqual(res.data.financeStatuses, ['Approved', 'Completed', 'Invoice', 'Closed']);
+  assert.equal(res.data.scheduledStatus, 'Approved');
+  // Every job view needs the names, so any signed-in user can read them...
+  assert.equal((await sam('GET', '/api/job-statuses')).status, 200);
+  // ...but only admins may rename.
+  assert.equal((await sam('PUT', '/api/job-statuses', { labels: { Approved: 'Accepted' } })).status, 403);
+
+  // `calculated` always reflects the rules; matchesRecords compares it with the
+  // stored year row (which a hand-typed override may deliberately differ from).
+  const financeOf = async () => {
+    const r = await admin('GET', `/api/finance/summary?year=${YEAR}`);
+    assert.equal(r.status, 200);
+    return r.data.calculated;
+  };
+  const before = await financeOf();
+
+  // Rename Approved -> Accepted and Cancelled -> Dropped.
+  res = await admin('PUT', '/api/job-statuses', { labels: { Approved: 'Accepted', Cancelled: 'Dropped' } });
+  assert.equal(res.status, 200);
+  const approved = res.data.statuses.find((s) => s.id === 'Approved');
+  assert.deepEqual([approved.label, approved.countsInFinance], ['Accepted', true], 'eligibility follows the id, not the name');
+  assert.equal(res.data.statuses.find((s) => s.id === 'Cancelled').label, 'Dropped');
+
+  // Validation: empty, unknown, duplicate and over-long names are refused.
+  assert.equal((await admin('PUT', '/api/job-statuses', { labels: { Approved: '   ' } })).status, 400);
+  assert.equal((await admin('PUT', '/api/job-statuses', { labels: { Nope: 'x' } })).status, 400);
+  assert.equal((await admin('PUT', '/api/job-statuses', { labels: { Approved: 'Dropped' } })).status, 400, 'two statuses cannot share a name');
+  assert.equal((await admin('PUT', '/api/job-statuses', { labels: { Approved: 'x'.repeat(31) } })).status, 400);
+
+  // Finance is unchanged, jobs keep the internal id, and the label map is stored.
+  const after = await financeOf();
+  assert.deepEqual(after, before, 'renaming labels changes no money');
+  const db = await dump();
+  assert.ok(db.tables.jobs.some((j) => j.status === 'Approved'), 'jobs still store the fixed id');
+  const stored = JSON.parse(db.tables.settings.find((s) => s.key === 'job_status_labels').value);
+  assert.deepEqual(stored, { Approved: 'Accepted', Cancelled: 'Dropped' });
+
+  // The saved names are re-read from the database.
+  const readBack = (await admin('GET', '/api/job-statuses')).data.statuses;
+  assert.equal(readBack.find((s) => s.id === 'Approved').label, 'Accepted');
+
+  // Resetting to the default name simply stores nothing for that status.
+  await admin('PUT', '/api/job-statuses', { labels: { Approved: 'Approved', Cancelled: 'Cancelled' } });
+  const cleared = JSON.parse((await dump()).tables.settings.find((s) => s.key === 'job_status_labels').value);
+  assert.deepEqual(cleared, {});
+  assert.equal((await admin('GET', '/api/job-statuses')).data.statuses.find((s) => s.id === 'Approved').label, 'Approved');
+});
+
+// ---------------------------------------------------------------------------
+// Calendar activities (v11): appointments/reminders that are NOT jobs.
+// ---------------------------------------------------------------------------
+test('calendar activities before the v11 migration: reported as unavailable, never an error', async () => {
+  const admin = await login('owner@example.com', 'admin');
+  const list = await admin('GET', '/api/clients/1/activities');
+  assert.equal(list.status, 200);
+  assert.equal(list.data.supported, false);
+  assert.deepEqual(list.data.activities, []);
+  assert.equal((await admin('GET', '/api/activities?from=2026-10-01&to=2026-10-31')).data.supported, false);
+  assert.equal((await admin('POST', '/api/activities', { client_id: 1, title: 'x', activity_date: '2026-10-20' })).status, 409);
+  assert.equal((await admin('GET', '/api/jobs/1/activities')).data.supported, false);
+});
+
+test('calendar activities: create, read, edit, complete, admin-only delete, access control, and no effect on jobs or money', async () => {
+  await resetDb({ migrated: true });
+  const admin = await login('owner@example.com', 'admin');
+  const sam = await login('sam@example.com', 'user');
+  const financeBefore = (await admin('GET', `/api/finance/summary?year=${YEAR}`)).data.calculated;
+
+  // Create on client 2 (Bob Both — Sam's client): a time and a note, no job.
+  let res = await admin('POST', '/api/activities', { client_id: 2, title: 'Send quote', activity_date: '2026-10-20', start_time: '18:45', notes: 'Email it' });
+  assert.equal(res.status, 200);
+  const a = res.data.activity;
+  assert.deepEqual([a.client_id, a.client_name, a.title, a.activity_date, a.start_time, a.end_time, a.status], [2, 'Bob Both', 'Send quote', '2026-10-20', '18:45', null, 'pending']);
+  assert.equal(a.job_id, null);
+
+  // Read it three ways: by client, by range, by id.
+  assert.equal((await admin('GET', '/api/clients/2/activities')).data.activities.length, 1);
+  assert.equal((await admin('GET', '/api/activities?from=2026-10-01&to=2026-10-31')).data.activities.length, 1);
+  assert.equal((await admin('GET', `/api/activities/${a.id}`)).data.activity.title, 'Send quote');
+  assert.equal((await admin('GET', '/api/activities?from=2026-10-01&to=2026-10-31')).data.activities[0].client_name, 'Bob Both');
+
+  // Edit text, complete it (stamps completed_at), then reopen.
+  res = await admin('PUT', `/api/activities/${a.id}`, { notes: 'Sent', status: 'completed' });
+  assert.equal(res.data.activity.notes, 'Sent');
+  assert.ok(res.data.activity.completed_at, 'completing stamps completed_at');
+  res = await admin('PUT', `/api/activities/${a.id}`, { status: 'pending' });
+  assert.equal(res.data.activity.completed_at, null, 'reopening clears it');
+
+  // Validation: title, real date, 24-hour time, end after start, status, client.
+  const bad = [
+    { client_id: 2, title: '', activity_date: '2026-10-20' },
+    { client_id: 2, title: 'x', activity_date: '2026-02-30' },
+    { client_id: 2, title: 'x', activity_date: '2026-10-20', start_time: '25:00' },
+    { client_id: 2, title: 'x', activity_date: '2026-10-20', end_time: '10:00' },
+    { client_id: 2, title: 'x', activity_date: '2026-10-20', start_time: '10:00', end_time: '09:00' },
+    { client_id: 2, title: 'x', activity_date: '2026-10-20', status: 'nope' }
+  ];
+  for (const body of bad) assert.equal((await admin('POST', '/api/activities', body)).status, 400, JSON.stringify(body));
+  assert.equal((await admin('POST', '/api/activities', { client_id: 999, title: 'x', activity_date: '2026-10-20' })).status, 404);
+
+  // A linked job must belong to the same client (the schema enforces it too).
+  assert.equal((await admin('POST', '/api/activities', { client_id: 2, job_id: 3, title: 'x', activity_date: '2026-10-20' })).status, 400, "job 3 belongs to another client");
+  res = await admin('POST', '/api/activities', { client_id: 2, job_id: 2, title: 'Meet adjuster', activity_date: '2026-10-21' });
+  assert.equal(res.status, 200);
+  assert.deepEqual([res.data.activity.job_id, res.data.activity.job_title], [2, 'Gutter Job']);
+  const linkedId = res.data.activity.id;
+
+  // Access: Sam sees his client's activities, not another rep's.
+  assert.equal((await sam('GET', '/api/clients/2/activities')).status, 200);
+  assert.equal((await sam('GET', '/api/clients/3/activities')).status, 403);
+  const samAdd = await sam('POST', '/api/activities', { client_id: 2, title: 'Call customer', activity_date: '2026-10-22' });
+  assert.equal(samAdd.status, 200, 'a regular user can add on their own client');
+  // ...but only admins delete.
+  assert.equal((await sam('DELETE', `/api/activities/${samAdd.data.activity.id}`)).status, 403);
+  assert.equal((await sam('DELETE', `/api/activities/${a.id}`)).status, 403);
+  // Someone else's activity is invisible (same 404 as "not found").
+  const riley = await login('riley@example.com', 'user');
+  const rileyAct = await riley('POST', '/api/activities', { client_id: 3, title: 'R Call', activity_date: '2026-10-23' });
+  assert.equal(rileyAct.status, 200);
+  assert.equal((await sam('GET', `/api/activities/${rileyAct.data.activity.id}`)).status, 404);
+
+  // None of this touched a job, the schedule or any money.
+  const schedule = (await admin('GET', '/api/jobs/schedule')).data;
+  const jobsBefore = (await admin('GET', '/api/jobs/client/2')).data.jobs.length;
+  const expectedBefore = financeBefore.totalExpected;
+  const financeAfter = (await admin('GET', `/api/finance/summary?year=${YEAR}`)).data.calculated;
+  assert.equal(schedule.supported, true);
+  assert.equal((await admin('GET', '/api/jobs/2')).data.job.status, 'Prospect', 'the job is untouched by its activity');
+  assert.equal(jobsBefore, 2, 'no job was created');
+  assert.equal(financeAfter.totalExpected, expectedBefore, 'activities never change Expected Earnings');
+  assert.equal(financeAfter.totalRemaining, financeBefore.totalRemaining);
+
+  // Admin delete works. Deleting a job clears the link but keeps the activity.
+  assert.equal((await admin('DELETE', `/api/activities/${a.id}`)).status, 200);
+  await admin('DELETE', '/api/jobs/2');
+  const kept = (await admin('GET', '/api/clients/2/activities')).data.activities.find((x) => x.id === linkedId);
+  assert.ok(kept, 'the activity survives its job');
+  assert.equal(kept.job_id, null, 'the job link is cleared');
+  // Deleting the client removes its activities (cascade).
+  assert.equal((await admin('POST', '/api/delete-client', { id: 2 })).status, 200);
+  assert.equal((await dump()).tables.calendar_activities.filter((x) => x.client_id === 2).length, 0);
+  // ...and a regular user cannot delete a client at all.
+  assert.equal((await sam('POST', '/api/delete-client', { id: 5 })).status, 403);
+});
+
+// ---------------------------------------------------------------------------
+// Finance eligibility is driven by approval, and every figure reconciles.
+// ---------------------------------------------------------------------------
+test('Finance: only approved jobs count; approving, cancelling, paying off and refunds all reconcile with the drill-down', async () => {
+  await resetDb({ migrated: true });
+  const admin = await login('owner@example.com', 'admin');
+
+  const summaryOf = () => admin('GET', `/api/finance/summary?year=${YEAR}`);
+  const financeOf = async () => (await summaryOf()).data.calculated;
+
+  // A brand-new job is a Prospect: it counts for nothing yet.
+  const created = await admin('POST', '/api/jobs', { client_id: 2, title: 'Finance test job', total_due: 1000 });
+  assert.equal(created.status, 200);
+  const jobId = created.data.job.id;
+  assert.equal(created.data.job.counts_in_finance, false, 'a Prospect is not counted in Finance');
+  const base = await financeOf();
+
+  // Approve it: its total and balance count from that moment, and the change
+  // refreshes the stored year row so it agrees with the records again.
+  await admin('PUT', `/api/jobs/${jobId}`, { status: 'Approved' });
+  let f = await financeOf();
+  assert.equal(f.totalExpected, base.totalExpected + 1000);
+  assert.equal(f.totalRemaining, base.totalRemaining + 1000);
+  assert.equal((await summaryOf()).data.matchesRecords, true, 'the stored year row was refreshed');
+
+  // The Expected drill-down lists it and its rows add up to the card.
+  let bd = (await admin('GET', `/api/finance/breakdown?year=${YEAR}&metric=expected`)).data;
+  assert.equal(bd.total, f.totalExpected);
+  assert.equal(bd.rows.filter((r) => r.job_id === jobId).length, 1);
+  assert.ok(Math.abs(bd.rows.reduce((s, r) => s + r.total, 0) - bd.total) < 0.005, 'Expected rows add up to the card');
+
+  // The Received and Clients drill-downs reconcile with their cards too.
+  const receivedBd = (await admin('GET', `/api/finance/breakdown?year=${YEAR}&metric=received`)).data;
+  assert.equal(receivedBd.total, f.totalReceived);
+  assert.ok(Math.abs(receivedBd.rows.reduce((s, r) => s + r.amount, 0) - receivedBd.total) < 0.005, 'payment rows add up');
+  const clientsBd = (await admin('GET', `/api/finance/breakdown?year=${YEAR}&metric=clients`)).data;
+  assert.equal(clientsBd.total, f.totalClients);
+  assert.equal(clientsBd.rows.length, f.totalClients, 'one row per client added this year');
+  assert.equal((await admin('GET', `/api/finance/breakdown?year=${YEAR}&metric=bogus`)).status, 400);
+
+  // Pay it off: Remaining drops to base, Expected is unchanged.
+  await admin('POST', `/api/jobs/${jobId}/payment`, { amount: 1000 });
+  f = await financeOf();
+  assert.equal(f.totalExpected, base.totalExpected + 1000, 'receiving money does not change Expected');
+  assert.equal(f.totalRemaining, base.totalRemaining, 'a fully paid job adds nothing to Remaining');
+  bd = (await admin('GET', `/api/finance/breakdown?year=${YEAR}&metric=remaining`)).data;
+  assert.equal(bd.rows.filter((r) => r.job_id === jobId).length, 0, 'fully paid jobs are not in Remaining');
+  const receivedAfterPay = f.totalReceived;
+
+  // A refund lowers Money Received and makes the balance owed again.
+  await admin('POST', `/api/jobs/${jobId}/payment/reverse`, { amount: 400 });
+  f = await financeOf();
+  assert.equal(f.totalReceived, receivedAfterPay - 400, 'a refund lowers Money Received');
+  assert.equal(f.totalRemaining, base.totalRemaining + 400, 'and the amount is owed again');
+
+  // Back to Prospect: drops out of Expected and Remaining, but payments stay.
+  await admin('PUT', `/api/jobs/${jobId}`, { status: 'Prospect' });
+  f = await financeOf();
+  assert.equal(f.totalExpected, base.totalExpected);
+  assert.equal(f.totalRemaining, base.totalRemaining);
+  assert.equal(f.totalReceived, receivedAfterPay - 400, 'payment history is never hidden');
+
+  // Cancelled counts for nothing too...
+  await admin('PUT', `/api/jobs/${jobId}`, { status: 'Cancelled' });
+  f = await financeOf();
+  assert.equal(f.totalExpected, base.totalExpected);
+  assert.equal(f.totalRemaining, base.totalRemaining);
+  assert.equal((await admin('GET', `/api/jobs/${jobId}`)).data.job.counts_in_finance, false);
+
+  // ...and approving again brings it straight back, keeping its own figures.
+  await admin('PUT', `/api/jobs/${jobId}`, { status: 'Approved' });
+  f = await financeOf();
+  assert.equal(f.totalExpected, base.totalExpected + 1000);
+  assert.equal(f.totalRemaining, base.totalRemaining + 400, 'the refunded amount is owed again');
+
+  // No double counting: Expected is exactly client accounts + counted jobs.
+  const db = await dump();
+  const countedStatuses = ['Approved', 'Completed', 'Invoice', 'Closed'];
+  const inYear = (v) => new Date(v).getFullYear() === YEAR;
+  const clientAccounts = db.tables.clients.filter((c) => inYear(c.created_at)).reduce((s, c) => s + Number(c.total_due || 0), 0);
+  const countedJobs = db.tables.jobs.filter((j) => inYear(j.created_at) && countedStatuses.includes(j.status)).reduce((s, j) => s + Number(j.total_due || 0), 0);
+  assert.equal(f.totalExpected, clientAccounts + countedJobs);
+  const remainingAccounts = db.tables.clients.filter((c) => inYear(c.created_at)).reduce((s, c) => s + Number(c.balance || 0), 0);
+  const remainingJobs = db.tables.jobs.filter((j) => inYear(j.created_at) && countedStatuses.includes(j.status)).reduce((s, j) => s + Number(j.balance || 0), 0);
+  assert.equal(f.totalRemaining, remainingAccounts + remainingJobs);
+
+  // Year boundaries: this year's changes never move last year's totals.
+  const last = (await admin('GET', `/api/finance/overview?year=${YEAR - 1}`)).data;
+  assert.equal(last.totals.revenue, 800 + 900);
+});
+
+// ---------------------------------------------------------------------------
+// Admin-only deletions: a regular user is refused even on a client they can
+// open, and never by relying on the frontend hiding the button.
+// ---------------------------------------------------------------------------
+test('admin-only deletions: regular users get 403 on every delete endpoint, and the same deletes work for an admin', async () => {
+  await resetDb({ migrated: true });
+  const admin = await login('owner@example.com', 'admin');
+  const sam = await login('sam@example.com', 'user');
+
+  // Sam is assigned clients 1 and 2, so access is not the limiting factor here.
+  assert.equal((await sam('DELETE', '/api/v2/clients/1/services/1')).status, 403, 'remove a client service');
+  assert.equal((await sam('DELETE', '/api/clients/2/notes/2')).status, 403, 'client note');
+  assert.equal((await sam('DELETE', '/api/notes/delete/2/2')).status, 403, 'standalone note');
+  assert.equal((await sam('DELETE', '/api/job-files/1/1')).status, 403, 'job file');
+  assert.equal((await sam('DELETE', '/api/jobs/1')).status, 403, 'job');
+  assert.equal((await sam('POST', '/api/delete-client', { id: 1 })).status, 403, 'client');
+
+  // A client-level PDF (client 1) — the name comes from the list the user can read.
+  const files = (await admin('GET', '/api/pdf/list/1')).data.files;
+  assert.ok(files.length, 'seed has client-level PDFs');
+  const nameParam = new URLSearchParams(files[0].viewUrl.split('?')[1]).get('name');
+  assert.equal((await sam('DELETE', `/api/pdf/delete/1/${encodeURIComponent(nameParam)}`)).status, 403, 'client PDF');
+
+  // Nothing was actually removed for the regular user.
+  let db = await dump();
+  assert.equal(db.tables.client_service.some((s) => s.id === 1), true);
+  assert.equal(db.tables.notes.some((n) => n.id === 2), true);
+  assert.equal(db.tables.job_files.some((f) => f.id === 1), true);
+
+  // The same operations succeed for an admin (the gate is role-based, not broken).
+  assert.equal((await admin('DELETE', '/api/notes/delete/1/1')).status, 200);
+  assert.equal((await admin('DELETE', '/api/clients/2/notes/2')).status, 200);
+  assert.equal((await admin('DELETE', '/api/job-files/1/1')).status, 200);
+  assert.equal((await admin('DELETE', `/api/pdf/delete/1/${encodeURIComponent(nameParam)}`)).status, 200);
+  assert.equal((await admin('DELETE', '/api/v2/clients/1/services/1')).status, 200);
+  db = await dump();
+  assert.equal(db.tables.notes.some((n) => n.id === 1), false);
+  assert.equal(db.tables.notes.some((n) => n.id === 2), false);
+  assert.equal(db.tables.job_files.some((f) => f.id === 1), false);
+  assert.equal(db.tables.client_service.some((s) => s.id === 1), false);
+});
+
+// ---------------------------------------------------------------------------
+// Download authorization — reads, not deletes. The route must scope the file
+// to a client (or a job's client) the session is allowed to see, so guessing
+// an id never helps.
+// ---------------------------------------------------------------------------
+test('client file downloads: an assigned user reads them, another user is denied, and guessing an id does not help', async () => {
+  await resetDb({ migrated: true });
+  const admin = await login('owner@example.com', 'admin');
+  const sam = await login('sam@example.com', 'user');     // assigned clients 1, 2, 5
+  const riley = await login('riley@example.com', 'user');  // assigned client 3
+
+  // sam is assigned client 1: listing, viewing and downloading all work.
+  const list = (await sam('GET', '/api/pdf/list/1')).data.files;
+  assert.ok(list.length, 'assigned user can list the client’s files');
+  assert.equal((await sam('GET', list[0].viewUrl)).status, 200);
+  const dl = await sam('GET', list[0].downloadUrl);
+  assert.equal(dl.status, 200);
+  assert.match(dl.headers.get('content-disposition') || '', /attachment/);
+
+  // riley is not assigned client 1: denied on list, view and by raw name+id.
+  assert.equal((await riley('GET', '/api/pdf/list/1')).status, 403);
+  assert.equal((await riley('GET', list[0].viewUrl)).status, 403);
+  assert.equal((await riley('GET', '/api/pdf/file/1?name=' + encodeURIComponent('1690000000000-signed-estimate.pdf'))).status, 403);
+
+  // A client sam is not assigned (3) stays denied however it is requested...
+  assert.equal((await sam('GET', '/api/pdf/file/3?name=x.pdf')).status, 403);
+  assert.equal((await sam('GET', '/api/pdf/list/3')).status, 403);
+  // ...while a client sam IS assigned (2) is allowed.
+  assert.equal((await sam('GET', '/api/pdf/list/2')).status, 200);
+
+  // No path traversal: a name is reduced to its basename and cannot escape.
+  assert.equal((await sam('GET', '/api/pdf/file/1?name=' + encodeURIComponent('../server.js'))).status, 404);
+  // Only signed-in sessions may reach the route at all.
+  assert.equal((await fetch(APP + '/api/pdf/list/1', { redirect: 'manual' })).status, 401);
+  // The admin can still read every client's files.
+  assert.equal((await admin('GET', '/api/pdf/list/3')).status, 200);
+});
+
+test('job-file downloads: only a user who can access the job’s client may download, and a file id cannot be paired with another job', async () => {
+  await resetDb({ migrated: true });
+  const admin = await login('owner@example.com', 'admin');
+  const sam = await login('sam@example.com', 'user');     // assigned client 2 (jobs 1, 2)
+  const riley = await login('riley@example.com', 'user');  // assigned client 3 (jobs 3, 4)
+
+  // The seed stores files on job 1 (client 2). sam can list and download them.
+  const files = (await sam('GET', '/api/job-files/1')).data.files;
+  assert.equal(files.length, 2);
+  const pdf = files.find((f) => f.file_name === 'contract.pdf');
+  assert.ok(pdf, 'contract.pdf is on job 1');
+  const dl = await sam('GET', `/api/job-files/1/${pdf.id}/download`);
+  assert.equal(dl.status, 200);
+  assert.equal(dl.data.slice(0, 5).toString(), '%PDF-', 'real file bytes are served');
+
+  // riley cannot reach client 2's job at all — not even by id.
+  assert.equal((await riley('GET', '/api/job-files/1')).status, 403);
+  assert.equal((await riley('GET', `/api/job-files/1/${pdf.id}/download`)).status, 403);
+
+  // A file id from job 1 paired with another job sam CAN access (job 2) is
+  // scoped to the job, so it is not found — never served across jobs.
+  assert.equal((await sam('GET', `/api/job-files/2/${pdf.id}/download`)).status, 404);
+  // A job whose client sam cannot access keeps the whole route denied.
+  assert.equal((await sam('GET', '/api/job-files/3/1/download')).status, 403);
+  // Guessed, nonexistent ids are 404 (job) and 404 (file), never a leak.
+  assert.equal((await sam('GET', '/api/job-files/999/1/download')).status, 404);
+  assert.equal((await sam('GET', `/api/job-files/1/999/download`)).status, 404);
+
+  // Upload/view parity: a regular user may read a permitted job's file but not
+  // remove it — the admin-only delete gate still holds.
+  assert.equal((await sam('DELETE', `/api/job-files/1/${pdf.id}`)).status, 403);
+  assert.equal((await admin('DELETE', `/api/job-files/1/${pdf.id}`)).status, 200);
+});
+
+// ---------------------------------------------------------------------------
+// Persistent manual Finance overrides. A saved override is administrator
+// intent: recalculation must move the recorded figures without replacing it.
+// ---------------------------------------------------------------------------
+test('manual Finance overrides persist across job and payment changes while the calculated figures keep updating', async () => {
+  await resetDb({ migrated: true });
+  const admin = await login('owner@example.com', 'admin');
+  const summaryOf = () => admin('GET', `/api/finance/summary?year=${YEAR}`);
+
+  // Fresh seed: the stored year row (7000) is shown, but it is NOT a manual
+  // override, and the records add up to 8,440.
+  let s = (await summaryOf()).data;
+  assert.equal(s.totalExpected, 7000, 'the seeded year row is displayed');
+  assert.equal(s.hasOverride, false, 'no manual override is active yet');
+  assert.equal(s.override, null);
+  assert.equal(s.calculated.totalExpected, 8440, 'records add up to 8,440');
+
+  // An admin saves a manual override.
+  const save = await admin('POST', '/api/finance/save', { year: YEAR, totalExpected: 7000, totalReceived: 3200, totalRemaining: 3000, totalClients: 4 });
+  assert.equal(save.status, 200);
+  s = (await summaryOf()).data;
+  assert.equal(s.hasOverride, true);
+  assert.equal(s.totalExpected, 7000);
+  assert.deepEqual(s.override, { totalClients: 4, totalExpected: 7000, totalReceived: 3200, totalRemaining: 3000 }, 'the API separates override from calculated');
+
+  // A job change keeps the override selected while the calculated value moves.
+  const created = await admin('POST', '/api/jobs', { client_id: 2, title: 'Override persistence job', total_due: 1000 });
+  const jobId = created.data.job.id;
+  await admin('PUT', `/api/jobs/${jobId}`, { status: 'Approved' });
+  s = (await summaryOf()).data;
+  assert.equal(s.totalExpected, 7000, 'the manual override survives a job change');
+  assert.equal(s.hasOverride, true);
+  assert.equal(s.calculated.totalExpected, 9440, 'the records figure still updates');
+  assert.equal(s.matchesRecords, false, 'a displayed override differs from the records');
+
+  // ...and a payment change keeps it too (client payments are a PUT).
+  assert.equal((await admin('PUT', '/api/clients/2/payment', { payment: 250 })).status, 200);
+  s = (await summaryOf()).data;
+  assert.equal(s.totalExpected, 7000, 'the manual override survives a payment change');
+  assert.equal(s.hasOverride, true);
+
+  // Recalculation does not replace the override, but the stored snapshot moves.
+  const rec = await admin('POST', '/api/finance/recalculate', { year: YEAR });
+  assert.equal(rec.status, 200);
+  assert.equal(rec.data.totals.total_expected, 9440, 'the stored snapshot tracks the records');
+  s = (await summaryOf()).data;
+  assert.equal(s.totalExpected, 7000, 'recalculate never overwrites the override');
+
+  // Clearing returns the year to the calculated figures.
+  const clear = await admin('POST', '/api/finance/save', { year: YEAR, clear: true });
+  assert.equal(clear.status, 200);
+  assert.equal(clear.data.cleared, true);
+  s = (await summaryOf()).data;
+  assert.equal(s.hasOverride, false);
+  assert.equal(s.totalExpected, s.calculated.totalExpected, 'the cleared year shows the calculated figures');
+  assert.equal(s.matchesRecords, true);
+});
+
+test('manual Finance overrides: only admins may set or clear them', async () => {
+  await resetDb({ migrated: true });
+  const sam = await login('sam@example.com', 'user');
+  assert.equal((await sam('POST', '/api/finance/save', { year: YEAR, totalExpected: 1 })).status, 403, 'a regular user cannot set an override');
+  assert.equal((await sam('POST', '/api/finance/save', { year: YEAR, clear: true })).status, 403, 'a regular user cannot clear an override');
+  const db = await dump();
+  assert.equal(db.tables.settings.some((row) => String(row.key).startsWith('finance_override:')), false, 'nothing was written');
+});
+
+test('the Finance drill-down discloses an active manual override and keeps the calculated rows', async () => {
+  await resetDb({ migrated: true });
+  const admin = await login('owner@example.com', 'admin');
+  await admin('POST', '/api/finance/save', { year: YEAR, totalExpected: 7000, totalReceived: 3200, totalRemaining: 3000, totalClients: 4 });
+
+  const bd = (await admin('GET', `/api/finance/breakdown?year=${YEAR}&metric=expected`)).data;
+  assert.equal(bd.total, 8440, 'the rows still add up to the records figure');
+  assert.equal(bd.stored, 7000, 'the active override is disclosed');
+
+  // Client counts stay counts, not money.
+  const clientsBd = (await admin('GET', `/api/finance/breakdown?year=${YEAR}&metric=clients`)).data;
+  assert.equal(clientsBd.total, clientsBd.rows.length);
+  assert.equal(typeof clientsBd.total, 'number');
 });

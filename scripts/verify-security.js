@@ -40,6 +40,28 @@ const DB_URL = publicOnly ? '' : String(process.env.SUPABASE_DATABASE_URL || pro
 const KNOWN_OBJECT = argValue('--object');
 const BUCKET = argValue('--bucket') || process.env.SUPABASE_STORAGE_BUCKET || 'crm-files';
 
+// A reliable, explicit signal that this run is pointed at the local mock
+// backend (tests/mock-supabase) rather than a real Supabase project:
+//   - --mock, or CRM_MOCK_BACKEND=1, or
+//   - the Supabase URL is a loopback address (the local harness sets
+//     SUPABASE_URL to http://127.0.0.1:<port>; a real project is always
+//     https://<ref>.supabase.co).
+// The mock returns rows with no Row Level Security on purpose, so "can the
+// public key read rows?" must NOT be treated as a real failure — those checks
+// are SKIPPED, never reported as passing.
+function hostIsLoopback(url) {
+  try {
+    const h = new URL(url).hostname;
+    return h === '127.0.0.1' || h === 'localhost' || h === '::1' || h === '[::1]';
+  } catch (_) {
+    return false;
+  }
+}
+function isMockBackend() {
+  if (args.includes('--mock') || /^(1|true|yes)$/i.test(process.env.CRM_MOCK_BACKEND || '')) return true;
+  return hostIsLoopback(SUPABASE_URL);
+}
+
 // Tables checked with the public key when the catalog can't be read.
 const KNOWN_TABLES = [
   'settings', 'clients', 'payments', 'notes', 'finance_overrides', 'jobs', 'finance_margin_entries',
@@ -71,6 +93,7 @@ async function readPublicConfigFromApp() {
 
 async function catalogCheck() {
   console.log('\n1. Row Level Security (database catalog)');
+  if (isMockBackend()) return skip('mock backend (loopback Supabase URL) — production RLS/policies do not exist here; NOT reported as passing');
   if (!DB_URL) return skip('no SUPABASE_DATABASE_URL / DATABASE_URL — catalog not checked');
   let Client;
   try { ({ Client } = require('pg')); } catch (_) { return skip('pg module not installed'); }
@@ -110,6 +133,9 @@ async function catalogCheck() {
 
 async function anonCheck(tables) {
   console.log('\n2. Public (browser) key');
+  if (isMockBackend()) {
+    return skip('mock backend (loopback Supabase URL) — the mock returns rows without RLS by design, so this says nothing about a real project');
+  }
   if (!SUPABASE_URL || !ANON_KEY) return skip('no SUPABASE_URL / public key (set them, or pass --app-url)');
   const headers = { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` };
   let readable = 0;
@@ -162,6 +188,9 @@ async function storageCheck() {
   console.log('\n3. Private file storage');
   if (!SUPABASE_URL) return skip('no SUPABASE_URL');
   if (KNOWN_OBJECT) await headPublicUrl(KNOWN_OBJECT);
+  if (isMockBackend()) {
+    return skip('mock backend (loopback Supabase URL) — the private bucket is not enforced by the mock; run against a real project to check it');
+  }
   if (!SERVICE_KEY) {
     return skip('no SUPABASE_SERVICE_ROLE_KEY — bucket flag not checked (run with it, or check the dashboard)');
   }

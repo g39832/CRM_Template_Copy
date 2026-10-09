@@ -147,6 +147,9 @@ async function fetchFinanceSummary(year) {
       totalReceived: data && data.totalReceived ? data.totalReceived : 0,
       totalRemaining: data && data.totalRemaining ? data.totalRemaining : 0,
       totalClients: data && data.totalClients ? data.totalClients : 0,
+      // Whether an admin has a persistent override saved for the year (the
+      // Year Totals table then shows the saved figures, not the calculated ones).
+      hasOverride: data && data.hasOverride === true,
       totalPaymentSum: data && data.totalPaymentSum ? data.totalPaymentSum : 0,
       avgMarginPct: data && data.avgMarginPct !== null && data.avgMarginPct !== undefined ? data.avgMarginPct : null,
       oneOffRevenue: data && data.oneOffRevenue ? data.oneOffRevenue : 0,
@@ -167,13 +170,10 @@ async function updateFinanceMetrics() {
   try {
     var summary = await fetchFinanceSummary(activeYear);
 
-    // Revenue reconciliation:
-    // If manual overrides exist (totalExpected > 0), use them;
-    // otherwise use the raw payment total from the clients table.
-    var expected = 0;
-    if (summary) {
-      expected = summary.totalExpected > 0 ? summary.totalExpected : summary.totalPaymentSum;
-    }
+    // The summary already applies a persistent manual override when one is
+    // saved (or falls back to the calculated/stored figures otherwise), so show
+    // its value directly. A saved override of exactly 0 is displayed as 0.
+    var expected = summary ? summary.totalExpected : 0;
     var received = summary ? summary.totalReceived : 0;
     var remaining = summary ? summary.totalRemaining : 0;
     var clients = summary ? summary.totalClients : 0;
@@ -196,14 +196,17 @@ async function updateFinanceMetrics() {
       '</tr>',
       '<tr class="metrics-actions-row">',
       '<td colspan="6" class="metrics-actions-cell" style="text-align:right;">',
+      (summary && summary.hasOverride ? '<span style="float:left; line-height:34px; color:var(--warning-text); font-weight:600; font-size:13px;"><span class="fo-badge">Manual override</span> saved — the cards show your figures; the records may differ.</span>' : ''),
       '<button id="saveFinanceBtn" style="background:var(--primary); color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:600;">Save Year Data</button>',
       '<button id="undoFinanceYearBtn" style="margin-left:10px; background:var(--surface); color:var(--text-main); border:1px solid var(--border-strong); padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:600;">Undo</button>',
+      '<button id="clearOverrideBtn" style="margin-left:10px; background:var(--surface); color:var(--text-main); border:1px solid var(--border-strong); padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:600;">Clear override</button>',
       '</td>',
       '</tr>'
     ].join('');
 
     document.getElementById('saveFinanceBtn').addEventListener('click', saveFinanceYear);
     document.getElementById('undoFinanceYearBtn').addEventListener('click', undoFinanceYear);
+    document.getElementById('clearOverrideBtn').addEventListener('click', clearFinanceOverride);
 
     ['input-expected', 'input-received', 'input-remaining'].forEach(function (id) {
       var input = document.getElementById(id);
@@ -223,6 +226,9 @@ async function saveFinanceYear() {
 
   financeUndoStack.push({
     year: activeYear,
+    // Remember whether an override was active, so Undo can restore that state
+    // (including clearing it when the previous state had no override).
+    hadOverride: previousSummary ? previousSummary.hasOverride === true : false,
     totalExpected: previousSummary ? previousSummary.totalExpected : 0,
     totalReceived: previousSummary ? previousSummary.totalReceived : 0,
     totalRemaining: previousSummary ? previousSummary.totalRemaining : 0,
@@ -255,6 +261,28 @@ async function saveFinanceYear() {
   }
 }
 
+// Removes the persistent manual override for the year, so the Year Totals
+// table and the KPI cards return to the figures the records add up to.
+async function clearFinanceOverride() {
+  if (!confirm('Clear the saved override for ' + activeYear + ' and show the calculated figures again?')) return;
+
+  try {
+    var res = await fetch('/api/finance/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ year: activeYear, clear: true })
+    });
+
+    if (!res.ok) throw new Error('Clear failed');
+
+    alert('Override cleared. Showing the calculated figures.');
+    document.dispatchEvent(new Event('financeUpdated'));
+  } catch (err) {
+    console.error('Clear override error:', err);
+    alert('Error clearing the override.');
+  }
+}
+
 async function undoFinanceYear() {
   if (financeUndoStack.length === 0) {
     alert('Nothing to undo.');
@@ -263,11 +291,17 @@ async function undoFinanceYear() {
 
   var lastState = financeUndoStack.pop();
 
+  // Restore the previous state faithfully: re-save the values when an override
+  // was active, or clear it when there was none (so Undo never invents one).
+  var undoBody = lastState.hadOverride
+    ? { year: lastState.year, totalExpected: lastState.totalExpected, totalReceived: lastState.totalReceived, totalRemaining: lastState.totalRemaining, totalClients: lastState.totalClients }
+    : { year: lastState.year, clear: true };
+
   try {
     var res = await fetch('/api/finance/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(lastState),
+      body: JSON.stringify(undoBody),
     });
 
     if (!res.ok) throw new Error('Undo failed');

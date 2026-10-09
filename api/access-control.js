@@ -8,12 +8,15 @@
 // regardless of what the frontend shows or hides.
 
 const FINANCIAL_CLIENT_FIELDS = ['total_due', 'amount_paid', 'balance', 'job_cost'];
-// Jobs are more permissive than clients: a regular user needs enough
-// financial info to tell a customer their balance, so total_due/amount_paid/
-// balance are NOT stripped here. Only job_cost stays hidden — it is the
-// internal cost figure that, combined with total_due, would let someone
-// derive profit/margin, which must stay admin-only.
-const FINANCIAL_JOB_FIELDS = ['job_cost'];
+// A regular user works on jobs without seeing their money: the job total,
+// money received, balance and cost are all stripped before a job leaves the
+// server (the job's Money section is admin-only). The estimate/invoice PDFs a
+// regular user may download still print the customer-facing price — that is
+// what those documents are for — but never cost, profit or margin.
+const FINANCIAL_JOB_FIELDS = ['total_due', 'amount_paid', 'balance', 'job_cost'];
+// Service lines carry prices (and categories such as Labor/Materials), so a
+// regular user gets the description and quantity only.
+const FINANCIAL_LINE_ITEM_FIELDS = ['unit_price', 'amount'];
 
 function isAdmin(req) {
   return Boolean(req.session && req.session.user && req.session.user.role === 'admin');
@@ -76,6 +79,15 @@ function sanitizeJobs(req, jobs) {
   return (jobs || []).map((j) => sanitizeJob(req, j));
 }
 
+function sanitizeLineItems(req, items) {
+  if (isAdmin(req)) return items || [];
+  return (items || []).map((item) => {
+    const copy = { ...item };
+    for (const field of FINANCIAL_LINE_ITEM_FIELDS) delete copy[field];
+    return copy;
+  });
+}
+
 // Filters a list of clients down to what this session is allowed to see.
 function filterClientsForUser(req, clients) {
   if (isAdmin(req)) return clients || [];
@@ -94,5 +106,6 @@ module.exports = {
   sanitizeClients,
   sanitizeJob,
   sanitizeJobs,
+  sanitizeLineItems,
   filterClientsForUser
 };

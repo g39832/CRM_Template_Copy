@@ -18,7 +18,11 @@ const {
   getAverageMarginForYear,
   updateFinanceTotals,
   updateFinanceTotalsSafe,
-  refreshFinanceYearsFor
+  refreshFinanceYearsFor,
+  getManualOverride,
+  setManualOverride,
+  clearManualOverride,
+  listManualOverrideYears
 } = require('./finance-totals');
 const { attachClientExtras, setTechnician, clearTechnicianFallback } = require('./client-extras');
 
@@ -79,6 +83,12 @@ router.get('/search/filtered', asyncHandler(async (req, res) => {
   }
   if (dateTo) {
     query = query.lt('created_at', dateTo + 'T23:59:59.999');
+  }
+  // Revenue filters read client money, so only admins may use them (a regular
+  // user could otherwise work out a hidden total by trying ranges).
+  if (!isAdmin(req)) {
+    revenueMin = null;
+    revenueMax = null;
   }
   if (revenueMin !== null && Number.isFinite(revenueMin)) {
     query = query.gte('total_due', revenueMin);
@@ -311,7 +321,10 @@ router.post('/update-project', asyncHandler(async (req, res) => {
 // ======================================================
 // DELETE CLIENT
 // ======================================================
-router.post('/delete-client', asyncHandler(async (req, res) => {
+// Admin only: deleting a client also removes its jobs, payments, notes and
+// files (database cascades), so regular users cannot do it — not even by
+// calling this endpoint directly.
+router.post('/delete-client', requireAdmin, asyncHandler(async (req, res) => {
   assertObject(req.body);
   const id = parseIntField(req.body.id, 'id', { min: 1 });
 
@@ -517,12 +530,14 @@ router.get('/finance/years', requireAdmin, asyncHandler(async (req, res) => {
     const clientYearsResult = await db.query('SELECT DISTINCT EXTRACT(YEAR FROM created_at)::int AS year FROM clients');
     const paymentYearsResult = await db.query('SELECT DISTINCT EXTRACT(YEAR FROM payment_date)::int AS year FROM payments');
     const overrideYearsResult = await db.query('SELECT year FROM finance_overrides WHERE year IS NOT NULL');
+    // A saved manual override counts as a year even if it has no records yet.
+    const manualYears = await listManualOverrideYears();
 
     const clientYears = clientYearsResult.rows.map((r) => Number(r.year));
     const paymentYears = paymentYearsResult.rows.map((r) => Number(r.year));
     const overrideYears = overrideYearsResult.rows.map((r) => Number(r.year));
 
-    const allYears = [...clientYears, ...paymentYears, ...overrideYears];
+    const allYears = [...clientYears, ...paymentYears, ...overrideYears, ...manualYears];
     const uniqueYears = [...new Set(allYears.filter((y) => Number.isInteger(y) && y > 0))];
 
     const currentYear = new Date().getFullYear();
@@ -537,32 +552,29 @@ router.get('/finance/years', requireAdmin, asyncHandler(async (req, res) => {
 }));
 
 // Save Year Data (Manual Override)
+//
+// The figures an admin types here are stored as a PERSISTENT manual override
+// (settings key `finance_override:<year>`), so a later job/payment change
+// recalculates the recorded figures without discarding what the admin saved.
+// Passing { clear: true } removes the override and the year returns to its
+// calculated figures.
 router.post('/finance/save', requireAdmin, asyncHandler(async (req, res) => {
   assertObject(req.body);
   const year = parseYear(req.body.year, 'year');
+
+  await db.schemaReady;
+  if (req.body.clear === true || req.body.clear === 'true') {
+    await clearManualOverride(year);
+    return res.json({ success: true, cleared: true, year });
+  }
+
   const totalExpected = parseNumberField(req.body.totalExpected ?? 0, 'totalExpected', { required: false, defaultValue: 0 });
   const totalReceived = parseNumberField(req.body.totalReceived ?? 0, 'totalReceived', { required: false, defaultValue: 0 });
   const totalRemaining = parseNumberField(req.body.totalRemaining ?? 0, 'totalRemaining', { required: false, defaultValue: 0 });
   const totalClients = parseIntField(req.body.totalClients ?? 0, 'totalClients', { required: false, min: 0 });
 
-  try {
-    await db.schemaReady;
-    await db.query(`
-      INSERT INTO finance_overrides (year, total_expected, total_received, total_remaining, total_clients)
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT(year) DO UPDATE SET
-        total_expected = EXCLUDED.total_expected,
-        total_received = EXCLUDED.total_received,
-        total_remaining = EXCLUDED.total_remaining,
-        total_clients = EXCLUDED.total_clients,
-        updated_at = CURRENT_TIMESTAMP
-    `, [year, totalExpected, totalReceived, totalRemaining, totalClients]);
-
-    return res.json({ success: true });
-  } catch (err) {
-    console.error('Finance save error:', err);
-    return res.status(500).json({ error: 'Failed to save finance data' });
-  }
+  const override = await setManualOverride(year, { totalExpected, totalReceived, totalRemaining, totalClients });
+  return res.json({ success: true, year, override });
 }));
 
 // ======================================================
@@ -577,14 +589,22 @@ router.get('/finance/summary', requireAdmin, asyncHandler(async (req, res) => {
 
     const overrideResult = await db.query('SELECT * FROM finance_overrides WHERE year = $1', [year]);
 
-    const override = overrideResult.rows[0];
+    // A persistent manual override (settings) wins over the stored calculated
+    // snapshot (finance_overrides), which in turn wins over the live figures.
+    const manual = await getManualOverride(year);
+    const storedRow = overrideResult.rows[0];
 
-    const finalSummary = override || {
+    const finalSummary = manual || (storedRow ? {
+      total_clients: storedRow.total_clients,
+      total_expected: storedRow.total_expected,
+      total_received: storedRow.total_received,
+      total_remaining: storedRow.total_remaining
+    } : {
       total_clients: yearSummary.total_clients,
       total_expected: yearSummary.total_expected,
       total_received: yearSummary.total_received,
       total_remaining: yearSummary.total_remaining
-    };
+    });
 
     // Average margin % for the year's priced work (client-level records and
     // jobs): margin = (total_due - job_cost) / total_due * 100, only where
@@ -596,14 +616,37 @@ router.get('/finance/summary', requireAdmin, asyncHandler(async (req, res) => {
       avgMarginPct = null;
     }
 
+    const totalClients = Number(finalSummary.total_clients || finalSummary.totalClients || 0);
+    const totalExpected = Number(finalSummary.total_expected || finalSummary.totalExpected || 0);
+    const totalReceived = Number(finalSummary.total_received || finalSummary.totalReceived || 0);
+    const totalRemaining = Number(finalSummary.total_remaining || finalSummary.totalRemaining || 0);
+    // What the records add up to right now under the Finance rules
+    // (finance-rules.js). It differs from the figures above only when the
+    // stored year row was typed in by hand or saved under older rules.
+    const calculated = {
+      totalClients: yearSummary.total_clients,
+      totalExpected: yearSummary.total_expected,
+      totalReceived: yearSummary.total_received,
+      totalRemaining: yearSummary.total_remaining
+    };
+    const differs = (a, b) => Math.abs(Number(a) - Number(b)) > 0.005;
     return res.json({
       mode: 'project',
       year,
-      totalClients: Number(finalSummary.total_clients || finalSummary.totalClients || 0),
-      totalExpected: Number(finalSummary.total_expected || finalSummary.totalExpected || 0),
-      totalReceived: Number(finalSummary.total_received || finalSummary.totalReceived || 0),
-      totalRemaining: Number(finalSummary.total_remaining || finalSummary.totalRemaining || 0),
-      avgMarginPct: avgMarginPct !== null ? Math.round(avgMarginPct * 10) / 10 : null
+      totalClients,
+      totalExpected,
+      totalReceived,
+      totalRemaining,
+      avgMarginPct: avgMarginPct !== null ? Math.round(avgMarginPct * 10) / 10 : null,
+      calculated,
+      // hasOverride is true only when an admin has saved a manual override;
+      // `override` carries those saved figures so the page can show them next
+      // to the calculated value. `matchesRecords` is whether the figures being
+      // displayed equal what the records add up to right now.
+      hasOverride: Boolean(manual),
+      override: manual || null,
+      matchesRecords: !differs(totalClients, calculated.totalClients) && !differs(totalExpected, calculated.totalExpected) &&
+        !differs(totalReceived, calculated.totalReceived) && !differs(totalRemaining, calculated.totalRemaining)
     });
   } catch (err) {
     console.error('Finance summary error:', err);
@@ -719,16 +762,29 @@ router.get('/finance/margin/dashboard', requireAdmin, asyncHandler(async (req, r
 
     let override = null;
     try {
-      const overrideResult = await db.query('SELECT * FROM finance_overrides WHERE year = $1', [year]);
-      if (overrideResult.rows.length > 0) {
-        const row = overrideResult.rows[0];
+      // Prefer a saved manual override so this view agrees with Finance
+      // summary/breakdown; fall back to the stored calculated snapshot.
+      const manual = await getManualOverride(year);
+      if (manual) {
         override = {
-          year: Number(row.year),
-          totalExpected: Number(row.total_expected || 0),
-          totalReceived: Number(row.total_received || 0),
-          totalRemaining: Number(row.total_remaining || 0),
-          totalClients: Number(row.total_clients || 0)
+          year,
+          totalExpected: manual.totalExpected,
+          totalReceived: manual.totalReceived,
+          totalRemaining: manual.totalRemaining,
+          totalClients: manual.totalClients
         };
+      } else {
+        const overrideResult = await db.query('SELECT * FROM finance_overrides WHERE year = $1', [year]);
+        if (overrideResult.rows.length > 0) {
+          const row = overrideResult.rows[0];
+          override = {
+            year: Number(row.year),
+            totalExpected: Number(row.total_expected || 0),
+            totalReceived: Number(row.total_received || 0),
+            totalRemaining: Number(row.total_remaining || 0),
+            totalClients: Number(row.total_clients || 0)
+          };
+        }
       }
     } catch (e) {
       // finance_overrides table may not exist — silently skip
@@ -883,7 +939,7 @@ router.put('/clients/:id/notes/:noteId', asyncHandler(async (req, res) => {
   return res.json({ success: true });
 }));
 
-router.delete('/clients/:id/notes/:noteId', asyncHandler(async (req, res) => {
+router.delete('/clients/:id/notes/:noteId', requireAdmin, asyncHandler(async (req, res) => {
   const id = parseIntField(req.params.id, 'id', { min: 1 });
   const noteId = parseIntField(req.params.noteId, 'noteId', { min: 1 });
 

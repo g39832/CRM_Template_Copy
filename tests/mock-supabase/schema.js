@@ -137,6 +137,17 @@ const TABLES = {
       amount: ['num', 0], expense_date: ['ts', now], created_by: ['uuid', null], created_at: ['ts', now], updated_at: ['ts', now]
     }
   },
+  // v11 table — only reachable once the mock is "migrated".
+  calendar_activities: {
+    pk: ['id'],
+    optionalTable: true,
+    check: { status: ['pending', 'completed'] },
+    columns: {
+      id: ['id'], client_id: ['int'], job_id: ['int', null], title: ['text'], notes: ['text', ''],
+      activity_date: ['text'], start_time: ['text', null], end_time: ['text', null], status: ['text', 'pending'],
+      completed_at: ['ts', null], created_by: ['uuid', null], created_at: ['ts', now], updated_at: ['ts', now]
+    }
+  },
   email_templates: {
     pk: ['id'],
     columns: {
@@ -164,7 +175,16 @@ const FOREIGN_KEYS = [
   ['job_expenses', 'job_id', 'jobs', 'cascade'],
   ['job_expenses', 'client_id', 'clients', 'cascade'],
   ['job_expenses', 'category_id', 'expense_categories', 'restrict'],
-  ['job_expenses', 'created_by', 'users', 'set null']
+  ['job_expenses', 'created_by', 'users', 'set null'],
+  ['calendar_activities', 'client_id', 'clients', 'cascade'],
+  ['calendar_activities', 'job_id', 'jobs', 'set null'],
+  ['calendar_activities', 'created_by', 'users', 'set null']
 ];
 
-module.exports = { TABLES, FOREIGN_KEYS };
+// Composite foreign keys the real schema enforces:
+// [childTable, [childCols], parentTable, [parentCols]]
+const COMPOSITE_KEYS = [
+  ['calendar_activities', ['job_id', 'client_id'], 'jobs', ['id', 'client_id']]
+];
+
+module.exports = { TABLES, FOREIGN_KEYS, COMPOSITE_KEYS };

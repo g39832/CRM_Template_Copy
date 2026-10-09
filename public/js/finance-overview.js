@@ -58,8 +58,13 @@
   }
 
   // ---------- KPI tiles ----------
-  function kpi(tone, icon, label, value, meta, extra) {
-    return '<div class="fo-kpi fo-kpi--' + tone + '">' +
+  // `metric` (when given) makes the tile open the drill-down that lists the
+  // records behind the figure (/api/finance/breakdown).
+  function kpi(tone, icon, label, value, meta, extra, metric) {
+    var attrs = metric
+      ? ' data-metric="' + metric + '" role="button" tabindex="0" aria-label="' + esc(label) + ' — view the records behind it"'
+      : '';
+    return '<div class="fo-kpi fo-kpi--' + tone + (metric ? ' is-clickable' : '') + '"' + attrs + '>' +
       '<div class="fo-kpi-top"><span class="fo-kpi-icon"><i data-lucide="' + icon + '"></i></span>' +
       '<span class="fo-kpi-label">' + esc(label) + '</span></div>' +
       '<div class="fo-kpi-value">' + value + '</div>' +
@@ -80,13 +85,18 @@
     var collected = expected > 0 ? Math.max(0, Math.min(100, (received / expected) * 100)) : 0;
     var m = summary.avgMarginPct;
     var status = marginStatus(m);
+    // A manual override the admin saved is shown as the figure, with the value
+    // the records add up to disclosed next to it, so the difference is clear.
+    var calc = summary.calculated || {};
+    var hasOverride = summary.hasOverride === true || !!summary.override;
+    var ov = function (text) { return hasOverride ? ' · <span class="fo-badge">Manual override</span> records show ' + text : ''; };
     el.innerHTML =
-      kpi('blue', 'briefcase', 'Expected Earnings', money(expected), 'Year total for ' + esc(summary.year)) +
+      kpi('blue', 'briefcase', 'Expected Earnings', money(expected), 'Year total for ' + esc(summary.year) + ' · click for records' + ov(money(calc.totalExpected)), '', 'expected') +
       kpi('green', 'wallet', 'Received', money(received),
-        expected > 0 ? pct(collected, 0) + ' of expected collected' : 'Payments recorded this year',
-        '<div class="fo-progress" role="img" aria-label="' + pct(collected, 0) + ' collected"><span style="width:' + collected.toFixed(1) + '%"></span></div>') +
-      kpi(remaining > 0.005 ? 'amber' : 'slate', 'hourglass', 'Remaining', money(remaining), remaining > 0.005 ? 'Still to be collected' : 'Nothing outstanding') +
-      kpi('slate', 'users', 'Clients', esc(Number(summary.totalClients) || 0), 'Clients added in ' + esc(summary.year)) +
+        (expected > 0 ? pct(collected, 0) + ' of expected collected · click for records' : 'Payments recorded this year · click for records') + ov(money(calc.totalReceived)),
+        '<div class="fo-progress" role="img" aria-label="' + pct(collected, 0) + ' collected"><span style="width:' + collected.toFixed(1) + '%"></span></div>', 'received') +
+      kpi(remaining > 0.005 ? 'amber' : 'slate', 'hourglass', 'Remaining', money(remaining), (remaining > 0.005 ? 'Still to be collected' : 'Nothing outstanding') + ' · click for records' + ov(money(calc.totalRemaining)), '', 'remaining') +
+      kpi('slate', 'users', 'Clients', esc(Number(summary.totalClients) || 0), 'Clients added in ' + esc(summary.year) + ' · click for records' + ov(esc(Number(calc.totalClients) || 0)), '', 'clients') +
       kpi(status ? status.tone : 'slate', 'percent', 'Avg Margin', m === null || m === undefined ? '—' : pct(m),
         status ? '<span class="fo-status" style="color:' + status.color + ';"><i data-lucide="' + status.icon + '"></i>' + status.label + '</span>' : 'Needs a price and a cost on the work');
   }
@@ -243,6 +253,112 @@
   root.addEventListener('focusout', hideTip);
   window.addEventListener('scroll', hideTip, { passive: true });
 
+  // ---------- Drill-down: the records behind a KPI ----------
+  var METRIC_LABEL = { expected: 'Expected Earnings', received: 'Money Received', remaining: 'Remaining to Be Collected', clients: 'Clients' };
+
+  function fmtDate(value) {
+    var d = new Date(value);
+    return Number.isFinite(d.getTime()) ? d.toLocaleDateString() : '';
+  }
+  function onDrillKey(e) { if (e.key === 'Escape') { e.stopPropagation(); closeDrill(); } }
+  function closeDrill() {
+    var el = document.getElementById('foDrill');
+    if (el) el.remove();
+    document.removeEventListener('keydown', onDrillKey, true);
+  }
+
+  function drillRowsHtml(metric, data) {
+    var rows = data.rows || [];
+    var isCount = metric === 'clients';
+    var headline = isCount
+      ? esc(data.total) + ' client' + (Number(data.total) === 1 ? '' : 's')
+      : money(data.total);
+    var head = '<div class="fo-drill-summary"><span class="fo-drill-count">' + esc(rows.length) + (isCount ? ' added this year' : (' record' + (rows.length === 1 ? '' : 's'))) +
+      '</span><span class="fo-drill-total">' + headline + '</span></div>';
+    if (!rows.length) return head + '<div class="fo-empty">No records make up this figure for ' + esc(data.year) + '.</div>';
+
+    var body;
+    if (metric === 'received') {
+      body = rows.map(function (p) {
+        return '<div class="fo-drill-row">' +
+          '<span class="fo-drill-main"><span class="fo-drill-title">' + esc(p.client_name || 'Unknown client') + '</span>' +
+          '<span class="fo-drill-sub">' + esc(p.job_title || 'Client account') + (p.date ? ' · ' + esc(fmtDate(p.date)) : '') +
+          (p.job_counts === false ? ' · <span class="fo-drill-flag">job no longer counted in Finance</span>' : '') + '</span></span>' +
+          '<span class="fo-drill-amount">' + money(p.amount) + '</span></div>';
+      }).join('');
+    } else if (metric === 'clients') {
+      body = rows.map(function (c) {
+        return '<div class="fo-drill-row"><span class="fo-drill-main">' +
+          '<span class="fo-drill-title">' + esc(c.client_name) + '</span>' +
+          '<span class="fo-drill-sub">' + esc(c.stage || '') + (c.date ? ' · added ' + esc(fmtDate(c.date)) : '') + '</span></span></div>';
+      }).join('');
+    } else {
+      body = rows.map(function (r) {
+        var amount = metric === 'remaining' ? r.balance : r.total;
+        var context = r.kind === 'client_account' ? 'Client account' : 'Job: ' + (r.job_title || 'Untitled job');
+        return '<div class="fo-drill-row">' +
+          '<span class="fo-drill-main"><span class="fo-drill-title">' + esc(r.client_name) + '</span>' +
+          '<span class="fo-drill-sub">' + esc(context) + (r.status_label ? ' · ' + esc(r.status_label) : '') + '</span></span>' +
+          '<span class="fo-drill-amount' + (amount < 0 ? ' is-negative' : '') + '">' + money(amount) + '</span></div>';
+      }).join('');
+      if ((metric === 'expected' || metric === 'remaining') && data.notCounted && data.notCounted.length) {
+        body += '<div class="fo-drill-note"><strong>Not counted in Finance (' + data.notCounted.length + '):</strong> ' +
+          data.notCounted.map(function (r) { return esc(r.client_name + ' — ' + (r.job_title || 'Untitled job') + ' (' + (r.status_label || r.status) + ')'); }).join('; ') +
+          '. A job counts from the moment it reaches Approved, and stops if it is moved back to Prospect or Cancelled.';
+      }
+    }
+    return head + body;
+  }
+
+  function openDrill(metric) {
+    var year = currentYear();
+    closeDrill();
+    var overlay = document.createElement('div');
+    overlay.id = 'foDrill';
+    overlay.className = 'fo-drill-overlay';
+    overlay.innerHTML = '<div class="fo-drill-card" role="dialog" aria-modal="true" aria-labelledby="foDrillHeading">' +
+      '<button type="button" class="fo-drill-close" aria-label="Close">&times;</button>' +
+      '<h3 class="fo-drill-heading" id="foDrillHeading">' + esc(METRIC_LABEL[metric] || 'Records') + ' · ' + esc(year) + '</h3>' +
+      '<div class="fo-drill-body"><div class="fo-empty">Loading the records…</div></div>' +
+    '</div>';
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay || e.target.closest('.fo-drill-close')) closeDrill();
+    });
+    document.addEventListener('keydown', onDrillKey, true);
+    fetchJson('/api/finance/breakdown?year=' + year + '&metric=' + metric)
+      .then(function (data) {
+        var body = overlay.querySelector('.fo-drill-body');
+        if (!body) return;
+        // The Clients metric is a count, so an override note must never format
+        // it as money (the cards list client counts, not amounts).
+        var isCount = metric === 'clients';
+        var storedDiffers = !isCount && data.stored !== null && data.stored !== undefined &&
+          Math.abs(Number(data.stored) - Number(data.total)) > 0.005;
+        var storedNote = storedDiffers
+          ? '<div class="fo-drill-note">This year has a saved override of ' + money(data.stored) + ' for this figure; the records add up to ' + money(data.total) + '.</div>' : '';
+        body.innerHTML = drillRowsHtml(metric, data) + storedNote;
+        icons();
+      })
+      .catch(function () {
+        var body = overlay.querySelector('.fo-drill-body');
+        if (body) body.innerHTML = '<div class="fo-empty">Could not load the records. Try reloading the page.</div>';
+      });
+  }
+
+  var kpisEl = document.getElementById('foKpis');
+  if (kpisEl) {
+    kpisEl.addEventListener('click', function (e) {
+      var tile = e.target.closest('[data-metric]');
+      if (tile) openDrill(tile.getAttribute('data-metric'));
+    });
+    kpisEl.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      var tile = e.target.closest('[data-metric]');
+      if (tile) { e.preventDefault(); openDrill(tile.getAttribute('data-metric')); }
+    });
+  }
+
   // ---------- Load ----------
   function fetchJson(url) {
     return fetch(url, { credentials: 'same-origin' }).then(function (res) {
@@ -252,6 +368,7 @@
   }
 
   function load() {
+    closeDrill();
     var year = currentYear();
     var id = ++requestId;
     Promise.allSettled([

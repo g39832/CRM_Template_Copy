@@ -2034,18 +2034,41 @@ let activeClientServices = [];  // client-level services (the older scope list)
 
 const JOB_STATUS_COLORS = {
   Prospect: '#6d28d9', Approved: '#155e75', Completed: '#92400e',
-  Invoice: '#1d4ed8', Closed: '#166534'
+  Invoice: '#1d4ed8', Closed: '#166534', Cancelled: '#4b5563'
 };
 // Same brightening as getStatusColor() — dark mode needs the 300/400
 // shades, not the light-mode 600/700 ones, to stay readable.
 const JOB_STATUS_COLORS_DARK = {
   Prospect: '#c4b5fd', Approved: '#67e8f9', Completed: '#fbbf24',
-  Invoice: '#93c5fd', Closed: '#4ade80'
+  Invoice: '#93c5fd', Closed: '#4ade80', Cancelled: '#cbd5e1'
 };
 function getJobStatusColor(status) {
   const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const map = isDark ? JOB_STATUS_COLORS_DARK : JOB_STATUS_COLORS;
   return map[status] || (isDark ? '#60a5fa' : '#2563eb');
+}
+
+// Job statuses are stored by a fixed id; what they are called comes from
+// Settings → Job Statuses (public/js/job-statuses.js).
+function jobStatusLabel(status) {
+  return window.crmJobStatuses ? window.crmJobStatuses.label(status) : String(status || '');
+}
+function jobStatusOptions(selected) {
+  const ids = window.crmJobStatuses ? window.crmJobStatuses.ids() : JOB_STATUSES;
+  // A job whose stored status is not in the list keeps it as an option.
+  const all = selected && !ids.includes(selected) ? ids.concat([selected]) : ids;
+  return all.map(s => `<option value="${escapeHtml(s)}" ${selected === s ? 'selected' : ''}>${escapeHtml(jobStatusLabel(s))}</option>`).join('');
+}
+// Does this job's money count in Finance? The server says so on every job
+// (counts_in_finance, from the approval rule in api/finance-rules.js).
+function jobCountsInFinance(job) {
+  if (job && typeof job.counts_in_finance === 'boolean') return job.counts_in_finance;
+  return window.crmJobStatuses ? window.crmJobStatuses.countsInFinance(job && job.status) : true;
+}
+function jobTagsHtml(tags, extraClass = '') {
+  const list = Array.isArray(tags) ? tags.filter(Boolean) : [];
+  if (!list.length) return '';
+  return `<span class="job-row-tags ${extraClass}">${list.map(t => `<span class="job-tag-chip is-static">${escapeHtml(t)}</span>`).join('')}</span>`;
 }
 
 function formatShortDate(value) {
@@ -2114,12 +2137,17 @@ function hasClientAccountData(client) {
   return hasClientLevelMoney(client) || activeClientFiles.length > 0 || activeClientServices.length > 0;
 }
 
-// Client totals = the client's jobs + anything recorded on the client record
-// itself. Regular users never receive client-level money or job costs from
-// the API (api/access-control.js), so for them this sums the job amounts
-// they can already see on each job.
+// Client totals = the client's jobs that count in Finance (approved and
+// later — a Prospect or Cancelled job's estimate is not money owed) +
+// anything recorded on the client record itself. Expected/Remaining/Cost use
+// the same rule as the Finance page (api/finance-rules.js). "Received" here
+// stays tied to the same counted work so Balance = Due − Received is
+// consistent; the Finance page's year KPI also folds in standalone payment
+// ledger entries (including ones on a job later moved back to Prospect).
+// Admin only: regular users never receive money.
 function computeClientTotals(client, jobs) {
-  const sum = (key) => (jobs || []).reduce((s, j) => s + Number(j[key] || 0), 0);
+  const counted = (jobs || []).filter(jobCountsInFinance);
+  const sum = (key) => counted.reduce((s, j) => s + Number(j[key] || 0), 0);
   const totalDue = sum('total_due') + Number((client && client.total_due) || 0);
   const received = sum('amount_paid') + Number((client && client.amount_paid) || 0);
   const cost = sum('job_cost') + Number((client && client.job_cost) || 0);
@@ -2135,8 +2163,19 @@ function computeClientTotals(client, jobs) {
 function renderClientTotals(client, jobs) {
   const el = document.getElementById('clientTotals');
   if (!el) return;
-  const t = computeClientTotals(client, jobs);
   const admin = isAdminUser();
+  if (!admin) {
+    el.hidden = true;
+    return;
+  }
+  const t = computeClientTotals(client, jobs);
+  const notCounted = (jobs || []).filter(j => !jobCountsInFinance(j)).length;
+  const note = document.getElementById('clientTotalsNote');
+  if (note) {
+    note.textContent = 'Totals add up this client\'s approved jobs (and any client-level amounts). ' +
+      (notCounted ? `${notCounted} job${notCounted === 1 ? ' is' : 's are'} not approved yet or cancelled, so ${notCounted === 1 ? 'it is' : 'they are'} not counted. ` : '') +
+      'Open a job to change them.';
+  }
   const tile = (id, label, value, sub = '', extra = '') => `
     <div class="total-tile ${extra}" id="${id}">
       <span class="total-tile-label">${label}</span>
@@ -2181,18 +2220,21 @@ function renderClientJobs(client) {
     const margin = admin && Number(job.total_due) > 0
       ? Math.round(((Number(job.total_due) - Number(job.job_cost || 0)) / Number(job.total_due)) * 100)
       : null;
+    const counted = jobCountsInFinance(job);
     return `
       <button type="button" class="job-row" data-job-id="${job.id}" style="border-left-color:${color};">
         <span class="job-row-main">
           <span class="job-row-title">${escapeHtml(job.title || 'Untitled job')}</span>
-          <span class="job-row-sub">${formatShortDate(job.created_at)}${margin !== null ? ` · Margin ${margin}%` : ''}</span>
+          <span class="job-row-sub">${formatShortDate(job.created_at)}${margin !== null && counted ? ` · Margin ${margin}%` : ''}${admin && !counted ? ' · <span class="job-row-not-counted" title="Only approved jobs count toward Finance and the totals above">Not counted in Finance</span>' : ''}</span>
+          ${jobTagsHtml(job.tags)}
         </span>
-        <span class="job-row-status" style="color:${color}; background:${color}1f; border-color:${color}66;">${escapeHtml(job.status || '')}</span>
-        <span class="job-row-money">
+        <span class="job-row-status" style="color:${color}; background:${color}1f; border-color:${color}66;">${escapeHtml(jobStatusLabel(job.status))}</span>
+        ${admin ? `
+        <span class="job-row-money${counted ? '' : ' is-not-counted'}">
           <span><span class="job-row-money-label">Due</span> $${formatMoney(job.total_due)}</span>
           <span><span class="job-row-money-label">Received</span> $${formatMoney(job.amount_paid)}</span>
-          <span class="${Number(job.balance) > 0.005 ? 'is-due' : ''}"><span class="job-row-money-label">Balance</span> $${formatMoney(job.balance)}</span>
-        </span>
+          <span class="${counted && Number(job.balance) > 0.005 ? 'is-due' : ''}"><span class="job-row-money-label">Balance</span> $${formatMoney(job.balance)}</span>
+        </span>` : '<span class="job-row-money"></span>'}
       </button>`;
   });
   if (client && hasClientAccountData(client)) rows.push(clientAccountRowHtml(client));
@@ -2284,7 +2326,7 @@ async function openClient(id) {
         <div id="clientTotals" class="client-totals" aria-live="polite">
           <div class="total-tile"><span class="total-tile-label">Totals</span><strong class="total-tile-value">…</strong></div>
         </div>
-        <p class="client-totals-note">Totals add up this client's jobs${admin ? ' (and any client-level amounts)' : ''}. Open a job to change them.</p>
+        ${admin ? '<p class="client-totals-note" id="clientTotalsNote">Totals add up this client\'s approved jobs (and any client-level amounts). Open a job to change them.</p>' : ''}
 
         <div class="details-grid panel-grid">
           <label for="p-name">Name</label>
@@ -2333,6 +2375,15 @@ async function openClient(id) {
             </div>
           </section>
 
+          <!-- ===== ACTIVITIES — appointments and reminders (not scheduled work) ===== -->
+          <section class="panel-section panel-full-span" id="client-activities-section">
+            <div class="panel-section-header">
+              <h3>Activities</h3>
+              <span class="panel-section-note">Appointments and reminders — quotes, follow-ups, meetings. They show on the Calendar; they don't schedule work.</span>
+            </div>
+            <div id="client-activities"></div>
+          </section>
+
           <details id="client-notes-details" class="panel-collapse panel-full-span">
             <summary>Client Notes <span id="clientNotesCount" class="summary-count"></span></summary>
             <div id="notes-section" class="notes-section">
@@ -2349,7 +2400,7 @@ async function openClient(id) {
             <button id="saveBtn" class="btn-primary" style="flex:2;">Save Changes</button>
             <button id="reviewBtn" class="btn-primary btn-quiet" style="flex:2;">Send Google Review</button>
             <button id="printBtn" class="btn-primary btn-quiet" style="flex:1;">Print</button>
-            <button id="delBtn" class="btn-primary btn-danger-soft" style="flex:1;">Delete</button>
+            ${admin ? '<button id="delBtn" class="btn-primary btn-danger-soft" style="flex:1;">Delete</button>' : ''}
           </div>
         </div>
       </div>
@@ -2380,6 +2431,10 @@ async function openClient(id) {
     }
 
     setupNotesSection(id);
+    const activitiesEl = document.getElementById('client-activities');
+    if (activitiesEl && window.CrmActivities) {
+      window.CrmActivities.mountSection(activitiesEl, { clientId: id, clientName: client.name || '', emptyText: 'No activities for this client yet.' });
+    }
     setupAssignedUserField(id, client.assigned_user_id);
     setupTechnicianField(client);
     setupDirtyTracking();
@@ -2847,7 +2902,8 @@ async function setupNotesSection(clientId) {
 
         noteDiv.appendChild(body);
         noteDiv.appendChild(editBtn);
-        noteDiv.appendChild(deleteBtn);
+        // Deleting notes is admin-only (the server refuses it for others).
+        if (isAdminUser()) noteDiv.appendChild(deleteBtn);
         notesList.appendChild(noteDiv);
       });
     } catch (err) {
@@ -2985,7 +3041,7 @@ async function openNewJobModal(clientId) {
         <div class="job-modal-field">
           <label for="new-job-status">Status</label>
           <select id="new-job-status">
-            ${JOB_STATUSES.map((s) => `<option value="${s}" ${s === 'Prospect' ? 'selected' : ''}>${s}</option>`).join('')}
+            ${jobStatusOptions('Prospect')}
           </select>
         </div>
         <div class="job-modal-field">
@@ -2994,6 +3050,14 @@ async function openNewJobModal(clientId) {
         </div>
       </div>
       <div id="new-job-source-summary" class="field-hint"></div>
+      <p class="field-hint" id="new-job-status-hint"></p>
+
+      <div class="job-modal-field job-tags-field new-job-tags-field">
+        <label for="new-job-tag-input">Tags</label>
+        <div id="new-job-tags-list" class="job-tags-list"></div>
+        <input id="new-job-tag-input" type="text" placeholder="e.g. Pickup: Oct 20 — press Enter to add" maxlength="40">
+        <span class="field-hint">Quick labels shown on the job. A date in a tag is just text — add an Activity for a reminder on the Calendar.</span>
+      </div>
 
       <div class="job-modal-field">
         <label for="new-job-scope">Scope of Work</label>
@@ -3019,6 +3083,42 @@ async function openNewJobModal(clientId) {
   const sourceEl = modal.querySelector('#new-job-copy-from');
   const summaryEl = modal.querySelector('#new-job-source-summary');
   const notesEl = modal.querySelector('#new-job-notes');
+  const statusSelect = modal.querySelector('#new-job-status');
+  const statusHint = modal.querySelector('#new-job-status-hint');
+  function renderNewJobStatusHint() {
+    if (!statusHint) return;
+    statusHint.textContent = jobCountsInFinance({ status: statusSelect.value })
+      ? 'This job counts in Finance from the moment it is created.'
+      : 'Not counted in Finance until the job is moved to ' + jobStatusLabel('Approved') + '.';
+  }
+  statusSelect.addEventListener('change', renderNewJobStatusHint);
+  renderNewJobStatusHint();
+
+  // Tags typed here are saved with the new job. Copying a job brings its
+  // tags along (they can be removed before creating).
+  const newTagsList = modal.querySelector('#new-job-tags-list');
+  const newTagInput = modal.querySelector('#new-job-tag-input');
+  let newJobTags = [];
+  function renderNewJobTags() {
+    newTagsList.innerHTML = newJobTags.map((t) =>
+      `<span class="job-tag-chip">${escapeHtml(t)}<button type="button" class="job-tag-remove" data-tag="${escapeHtml(t)}" aria-label="Remove tag ${escapeHtml(t)}">&times;</button></span>`
+    ).join('');
+    newTagsList.querySelectorAll('.job-tag-remove').forEach((btn) => {
+      btn.onclick = () => { newJobTags = newJobTags.filter((t) => t !== btn.dataset.tag); renderNewJobTags(); };
+    });
+  }
+  function addNewJobTag(value) {
+    const tag = String(value || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    if (!tag || newJobTags.some((t) => t.toLowerCase() === tag.toLowerCase()) || newJobTags.length >= 20) return;
+    newJobTags.push(tag);
+    renderNewJobTags();
+  }
+  newTagInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ',') return;
+    e.preventDefault();
+    addNewJobTag(newTagInput.value);
+    newTagInput.value = '';
+  });
   let suggestedTitle = '';
   let sourceItems = [];      // line items the new job will start with
   let sourceExpenses = [];   // itemized costs copied from a previous job (admin)
@@ -3039,6 +3139,9 @@ async function openNewJobModal(clientId) {
     } else if (value.startsWith('job-')) {
       sourceJob = existingJobs.find(j => `job-${j.id}` === value) || null;
       scopeEl.value = sourceJob ? (sourceJob.scope_of_work || '') : '';
+      if (sourceJob && Array.isArray(sourceJob.tags)) {
+        sourceJob.tags.forEach(addNewJobTag);
+      }
       if (sourceJob) {
         try {
           const data = await window.api.listJobLineItems(sourceJob.id);
@@ -3088,12 +3191,17 @@ async function openNewJobModal(clientId) {
       createBtn.disabled = true;
       createBtn.textContent = 'Creating...';
 
+      if (newTagInput.value.trim()) {
+        addNewJobTag(newTagInput.value);
+        newTagInput.value = '';
+      }
       const payload = {
         client_id: clientId,
         title: titleEl.value.trim() || 'New Job',
-        status: modal.querySelector('#new-job-status').value,
+        status: statusSelect.value,
         scope_of_work: scopeEl.value
       };
+      if (newJobTags.length) payload.tags = newJobTags.slice();
       if (admin) {
         if (sourceItems.length) payload.line_items = sourceItems;
         if (sourceExpenses.length) payload.expenses = sourceExpenses;
@@ -3228,6 +3336,7 @@ async function setupScopeServices(clientId, { onChange } = {}) {
         }
 
         var removeBtn = document.createElement('button');
+        removeBtn.hidden = !isAdminUser();
         removeBtn.innerHTML = '&times;';
         removeBtn.type = 'button';
         removeBtn.style.cssText =
@@ -3634,7 +3743,7 @@ function openManageServicesModal(onSave, { onClose } = {}) {
 // line item, an open note edit). If a save fails the workspace stays open,
 // so nothing typed is ever lost.
 // ======================================================
-const JOB_STATUSES = ['Prospect', 'Approved', 'Completed', 'Invoice', 'Closed'];
+const JOB_STATUSES = ['Prospect', 'Approved', 'Completed', 'Invoice', 'Closed', 'Cancelled'];
 
 // Job schedule dates are calendar dates ("YYYY-MM-DD") with no time zone.
 function scheduleDate(value) {
@@ -3671,9 +3780,10 @@ function renderClientFileRows(container, clientId, files, onChanged) {
     row.innerHTML = `
       <a href="${escapeHtml(viewUrl)}" target="_blank" rel="noopener" class="job-file-name"><i data-lucide="file-text"></i> ${escapeHtml(clientFileDisplayName(file.name))}</a>
       <a href="${escapeHtml(downloadUrl)}" class="job-file-action" download>Download</a>
-      <button type="button" class="job-file-delete-btn" title="Delete file" aria-label="Delete ${escapeHtml(clientFileDisplayName(file.name))}">&times;</button>
+      ${isAdminUser() ? `<button type="button" class="job-file-delete-btn" title="Delete file" aria-label="Delete ${escapeHtml(clientFileDisplayName(file.name))}">&times;</button>` : ''}
     `;
-    row.querySelector('.job-file-delete-btn').addEventListener('click', async () => {
+    const clientFileDeleteBtn = row.querySelector('.job-file-delete-btn');
+    if (clientFileDeleteBtn) clientFileDeleteBtn.addEventListener('click', async () => {
       if (!confirm(`Delete "${clientFileDisplayName(file.name)}" permanently?`)) return;
       try {
         await window.api.deletePDF(clientId, file.name);
@@ -3816,7 +3926,7 @@ function openJobPanel(job, clientId, onSave) {
         <div class="job-modal-field">
           <label for="job-status">Status</label>
           <select id="job-status">
-            ${JOB_STATUSES.map(s => `<option value="${s}" ${job.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+            ${jobStatusOptions(job.status)}
           </select>
         </div>
         ${scheduleSupported ? `
@@ -3838,11 +3948,13 @@ function openJobPanel(job, clientId, onSave) {
         <div class="job-modal-field job-tags-field">
           <label for="job-tag-input">Tags</label>
           <div id="job-tags-list" class="job-tags-list"></div>
-          <input id="job-tag-input" type="text" placeholder="Add a tag, press Enter" maxlength="40">
+          <input id="job-tag-input" type="text" placeholder="Add a tag (e.g. Pickup: Oct 20), press Enter" maxlength="40">
         </div>
       </div>
+      <p class="field-hint job-finance-hint" id="job-finance-hint"></p>
       ${scheduleSupported ? '<p class="field-hint job-schedule-hint" id="job-schedule-hint" role="status"></p>' : ''}
 
+      ${admin ? `
       <section class="job-section" aria-labelledby="jobMoneyHeading">
         <h4 class="job-section-title" id="jobMoneyHeading">Money</h4>
         <div class="job-money-tiles">
@@ -3874,8 +3986,8 @@ function openJobPanel(job, clientId, onSave) {
             <button type="button" id="job-undo-payment-btn" class="btn-primary btn-quiet">Undo last payment</button>
           </div>
           <div id="job-payments-list" class="job-payments-list"></div>
-        </div>` : '<p class="field-hint">Only admins can change the total or record payments.</p>'}
-      </section>
+        </div>` : ''}
+      </section>` : ''}
 
       ${admin ? `
       <section class="job-section" id="job-costs-section" aria-labelledby="jobCostsHeading">
@@ -3948,6 +4060,12 @@ function openJobPanel(job, clientId, onSave) {
         </div>
       </section>
 
+      <section class="job-section" aria-labelledby="jobActivitiesHeading">
+        <h4 class="job-section-title" id="jobActivitiesHeading">Activities</h4>
+        <p class="field-hint">Appointments and reminders for this job — they show on the Calendar but never schedule the work or change its status.</p>
+        <div id="job-activities"></div>
+      </section>
+
       <section class="job-section job-notes-field" aria-labelledby="jobNotesHeading">
         <h4 class="job-section-title" id="jobNotesHeading">Notes</h4>
         <div id="job-notes-list" class="notes-list"></div>
@@ -3962,7 +4080,7 @@ function openJobPanel(job, clientId, onSave) {
         <button type="button" id="job-estimate-btn" class="btn-primary btn-quiet">Download Estimate</button>
         <button type="button" id="job-invoice-btn" class="btn-primary btn-quiet">Download Invoice</button>
         <button type="button" id="job-duplicate-btn" class="btn-primary btn-quiet" title="Copy this job's services, scope and cost into a new job — e.g. next month's maintenance">Duplicate</button>
-        <button type="button" id="job-delete-btn" class="btn-primary btn-danger-soft">Delete</button>
+        ${admin ? '<button type="button" id="job-delete-btn" class="btn-primary btn-danger-soft">Delete</button>' : ''}
       </div>
     </div>
   `;
@@ -4327,10 +4445,8 @@ function openJobPanel(job, clientId, onSave) {
           ${lineItems.map(i => `
           <div class="job-service-row">
             <span class="li-desc">${escapeHtml(i.description || '(no description)')}</span>
-            <span class="li-qty">${Number(i.quantity)} × $${formatMoney(i.unit_price)}</span>
-            <span class="li-amount">$${formatMoney(Number(i.quantity) * Number(i.unit_price))}</span>
+            <span class="li-qty">Qty ${Number(i.quantity)}</span>
           </div>`).join('')}
-          <div class="job-services-total">Services total <strong>$${formatMoney(lineItemsTotal())}</strong></div>
         </div>`;
     }
   }
@@ -4986,7 +5102,8 @@ function openJobPanel(job, clientId, onSave) {
     }
   };
 
-  $('#job-delete-btn').onclick = async () => {
+  const deleteJobBtn = $('#job-delete-btn');
+  if (deleteJobBtn) deleteJobBtn.onclick = async () => {
     const paid = Number(current.amount_paid || 0);
     const message = 'Permanently delete this job, including its services, files and notes?' +
       (paid > 0 ? `\n\nThe $${formatMoney(paid)} received on it stays in the Finance payment history.` : '');
@@ -5004,9 +5121,24 @@ function openJobPanel(job, clientId, onSave) {
     }
   };
 
+  function renderFinanceHint() {
+    const hint = $('#job-finance-hint');
+    if (!hint) return;
+    if (!admin) { hint.hidden = true; return; }
+    hint.textContent = jobCountsInFinance({ status: statusEl.value })
+      ? 'This job counts in Finance (expected earnings and remaining balance).'
+      : 'Not counted in Finance until it is moved to ' + jobStatusLabel('Approved') + '. Payments already recorded stay in the payment history.';
+  }
+
   // ---------- load ----------
   renderSchedule();
+  renderFinanceHint();
   statusEl.addEventListener('change', renderSchedule);
+  statusEl.addEventListener('change', renderFinanceHint);
+  const jobActivitiesEl = $('#job-activities');
+  if (jobActivitiesEl && window.CrmActivities) {
+    window.CrmActivities.mountSection(jobActivitiesEl, { clientId, clientName, jobId: current.id, emptyText: 'No activities for this job yet.' });
+  }
   [startEl, durationEl].forEach((el) => { if (el) el.addEventListener('input', renderSchedule); });
   renderMoney();
   setupJobNotesSection(panel, current.id).then(api => { notesApi = api; });
@@ -5061,6 +5193,8 @@ async function setupJobNotesSection(overlay, jobId) {
         deleteBtn.type = 'button';
         deleteBtn.className = 'job-note-action-btn job-note-delete-btn btn-danger btn-sm';
         deleteBtn.innerText = 'Delete';
+        // Deleting notes is admin-only (the server refuses it for others).
+        if (!isAdminUser()) deleteBtn.hidden = true;
 
         editBtn.onclick = () => {
           const textarea = document.createElement('textarea');
@@ -5115,7 +5249,8 @@ async function setupJobNotesSection(overlay, jobId) {
 
         noteDiv.appendChild(body);
         noteDiv.appendChild(editBtn);
-        noteDiv.appendChild(deleteBtn);
+        // Deleting notes is admin-only (the server refuses it for others).
+        if (isAdminUser()) noteDiv.appendChild(deleteBtn);
         notesList.appendChild(noteDiv);
       });
     } catch (err) {
@@ -5199,17 +5334,25 @@ async function setupJobFilesSection(overlay, jobId, category) {
           row.rel = 'noopener';
           row.innerHTML = `
             <img src="${url}" alt="${escapeHtml(file.file_name)}" loading="lazy">
-            <button type="button" class="job-file-delete-btn" title="Delete photo">&times;</button>
+            <button type="button" class="job-file-download-btn" title="Download photo" aria-label="Download ${escapeHtml(file.file_name)}"><i data-lucide="download"></i></button>
+            ${isAdminUser() ? '<button type="button" class="job-file-delete-btn" title="Delete photo">&times;</button>' : ''}
           `;
+          row.querySelector('.job-file-download-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            window.location.href = url + '?download=1';
+          });
         } else {
           row.innerHTML = `
             <a href="${url}" target="_blank" rel="noopener" class="job-file-name"><i data-lucide="file-text"></i> ${escapeHtml(file.file_name)}</a>
             <span class="job-file-meta">${formatFileSize(file.size_bytes)}</span>
-            <button type="button" class="job-file-delete-btn" title="Delete document">&times;</button>
+            <a href="${url}?download=1" class="job-file-action" download>Download</a>
+            ${isAdminUser() ? '<button type="button" class="job-file-delete-btn" title="Delete document">&times;</button>' : ''}
           `;
         }
 
-        row.querySelector('.job-file-delete-btn').addEventListener('click', async (e) => {
+        const fileDeleteBtn = row.querySelector('.job-file-delete-btn');
+        if (fileDeleteBtn) fileDeleteBtn.addEventListener('click', async (e) => {
           e.preventDefault();
           e.stopPropagation();
           if (!confirm(`Delete this ${isPhoto ? 'photo' : 'document'}?`)) return;
@@ -6160,6 +6303,16 @@ async function openJobById(jobId) {
     showToast(err.message || 'That job could not be opened', 'error');
   }
 }
+
+(function openClientFromQueryParam() {
+  var params = new URLSearchParams(window.location.search);
+  var clientId = Number(params.get('client'));
+  if (!Number.isInteger(clientId) || clientId <= 0 || params.get('job')) return;
+  openClient(clientId);
+  params.delete('client');
+  var query = params.toString();
+  window.history.replaceState({}, document.title, window.location.pathname + (query ? '?' + query : ''));
+})();
 
 (function openJobFromQueryParam() {
   var params = new URLSearchParams(window.location.search);

@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('./db');
 const { getClient } = require('./db-v2');
 const { asyncHandler, assertObject, parseIntField, parseStringField, AppError } = require('./request-utils');
-const { canAccessClient } = require('./access-control');
+const { canAccessClient, requireAdmin } = require('./access-control');
 
 const router = express.Router();
 
@@ -78,7 +78,7 @@ router.post('/add/:clientId', asyncHandler(async (req, res) => {
 // ======================================================
 // DELETE NOTE
 // ======================================================
-router.delete('/delete/:clientId/:noteId', asyncHandler(async (req, res) => {
+router.delete('/delete/:clientId/:noteId', requireAdmin, asyncHandler(async (req, res) => {
   const clientId = parseIntField(req.params.clientId, 'clientId', { min: 1 });
   const noteId = parseIntField(req.params.noteId, 'noteId', { min: 1 });
 
@@ -181,7 +181,8 @@ router.put('/job/:jobId/:noteId', asyncHandler(async (req, res) => {
   res.json({ note: data || null });
 }));
 
-router.delete('/job/:jobId/:noteId', asyncHandler(async (req, res) => {
+// Deleting notes is admin only (regular users add and edit them).
+router.delete('/job/:jobId/:noteId', requireAdmin, asyncHandler(async (req, res) => {
   const jobId = parseIntField(req.params.jobId, 'jobId', { min: 1 });
   const noteId = parseIntField(req.params.noteId, 'noteId', { min: 1 });
 

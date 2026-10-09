@@ -1,6 +1,7 @@
 // Logs in once for the whole run and saves the session cookie, so the
-// authenticated tests reuse it instead of hitting the login rate limiter
-// (it allows only a handful of attempts per 15 minutes).
+// authenticated tests can reuse it. The test-only test-login helper is not
+// rate limited under NODE_ENV=test; the 429 branch is kept as a guard in case
+// this runs against a server where the limiter is still attached.
 const fs = require('fs');
 const path = require('path');
 const { request } = require('@playwright/test');

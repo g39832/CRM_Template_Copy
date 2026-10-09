@@ -52,8 +52,10 @@ async function startApp() {
   return child;
 }
 
-// The sign-in endpoints are rate limited per app process (20 / 15 min), so
-// tests that sign in a lot restart the app first.
+// The REAL sign-in endpoint (google-session) is rate limited per app process
+// (20 / 15 min), so tests that sign in a lot restart the app first. The
+// test-only /api/v2/auth/test-login helper is not limited under NODE_ENV=test
+// (it is a 404 everywhere else), so it never needs a restart.
 async function restartApp() {
   if (app) {
     app.kill();
@@ -420,4 +422,41 @@ test('Sign Out without a request body really signs out', async () => {
   const out = await fetch(`${APP}/api/v2/auth/logout`, { method: 'POST', headers: { cookie } });
   assert.equal(out.status, 200);
   assert.equal((await sam('GET', '/api/search?q=')).status, 401);
+});
+
+// ---------------------------------------------------------------------------
+// 8. Rate limiting: real sign-in stays enforced; the test-only helper does not
+//    exhaust the shared limiter (the browser suites authenticate repeatedly).
+// ---------------------------------------------------------------------------
+test('the real sign-in path stays rate limited, while the test-only helper can sign in repeatedly', async () => {
+  await restartApp();
+
+  // The automated suites create sessions through the test-only helper many
+  // times in one run. It must not run into the shared limiter.
+  const emails = ['sam@example.com', 'riley@example.com'];
+  for (let i = 0; i < 25; i++) {
+    const r = await fetch(`${APP}/api/v2/auth/test-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emails[i % emails.length], role: 'user' })
+    });
+    assert.equal(r.status, 200, `test-login call #${i + 1} must not be rate limited`);
+  }
+
+  // Real sign-in keeps the production limit (20 / 15 min): the first attempt
+  // works, and by the 25th the window is exhausted with a 429.
+  const statuses = [];
+  for (let i = 0; i < 25; i++) {
+    const r = await fetch(`${APP}/api/v2/auth/google-session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: 'google:owner@example.com' })
+    });
+    statuses.push(r.status);
+  }
+  assert.equal(statuses[0], 200, 'the first real sign-in still works');
+  assert.ok(statuses.includes(429), 'google-session is still rate limited');
+
+  // Leave a fresh limiter behind for anything that runs afterwards.
+  await restartApp();
 });

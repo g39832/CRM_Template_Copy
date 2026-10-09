@@ -101,6 +101,15 @@ Permissions (email + role, no password).
   node scripts/verify-security.js --public-only --app-url https://your-app.onrender.com
   ```
 
+  The script is read-only and never prints secrets. It detects the **local mock backend**
+  (a loopback `SUPABASE_URL`, or `--mock` / `CRM_MOCK_BACKEND=1`) and reports the Supabase
+  RLS/policy and private-bucket checks as **SKIPPED — mock backend does not enforce
+  production RLS**. Those checks need a real (non-production) Supabase project —
+  `SUPABASE_DATABASE_URL` for the RLS catalog and `SUPABASE_SERVICE_ROLE_KEY` for the
+  bucket. Skipped mock checks are never counted as passing, so a green run against the
+  mock proves only the application-level checks (section 4); a real authorization failure
+  still exits `1`.
+
 ## Supabase Setup
 
 Create a Supabase project, then create these tables (also captured in full in
@@ -149,12 +158,18 @@ separate concept from `jobs.status` (a job's own workflow state) and `jobs.tags`
   stripped server-side before the response ever reaches a regular user — see
   `api/access-control.js`. This is enforced on every relevant endpoint, not just hidden
   in the UI, so it can't be bypassed via direct API calls.
-- On a job, a regular user sees the job total, money received and balance (never the job
-  cost, profit or margin) and the job's services list — the same prices already printed
-  on the estimate/invoice PDFs they can download. Adding, editing or removing priced
-  services, recording payments and setting cost stay admin-only; a regular user's
-  "+ Service" adds the service to the job's scope of work instead. They can edit the
-  client's info (including Technician), job text, notes, files, photos and tags as before.
+- On a job, a regular user sees the job's title, status, schedule, tags, scope, notes,
+  files and the **names** of its services — but **no money at all**: the job total, money
+  received, balance and cost are all stripped server-side (`api/access-control.js`), as are
+  service prices (`unit_price`/`amount`). Adding, editing or removing priced services,
+  recording payments and setting cost stay admin-only; a regular user's "+ Service" adds
+  the service name to the job's scope of work instead. The estimate/invoice PDFs they can
+  download still show the customer-facing price (that is what those documents are for) but
+  never a cost breakdown, profit or margin. **Deleting** is admin-only everywhere: jobs,
+  clients, notes, client/job files, client-level PDFs and client service assignments all
+  return 403 to a regular user, enforced on the server, not by hiding the button. They can
+  still add and edit the client's info (including Technician), job text, notes, files,
+  photos and tags.
 
 ### Client page and jobs
 
@@ -271,6 +286,99 @@ download again; nothing has to be recreated. Duplicated jobs keep the choice.
 This needs the **v10 database update** (the "TEMPLATE UPGRADE v10" section at the end of
 `supabase-schema.sql`): one column that defaults to `false`, so every existing job keeps
 the one-total format. Until it is run the option is hidden and PDFs show one total.
+
+### Job status names and Finance eligibility (v11 rules)
+
+A job's money counts in Finance **only while its status counts**: `Approved`,
+`Completed`, `Invoice` or `Closed`. A `Prospect` (lead, estimate or waiting on the
+customer) or a `Cancelled` job counts for nothing, however big its total — an estimate is
+not earnings. Moving a job back to `Prospect` or `Cancelled` drops it out again; nothing
+is deleted, its own figures (total, received, balance) are kept, and approving it again
+brings it straight back. Payments already recorded stay in the payment history either way.
+The same rule drives everything — the dashboard stats, the Finance year totals, the
+Financial Overview cards and their drill-down lists — because `api/finance-rules.js` is
+the single place the rule lives.
+
+Internal status ids never change. What a status is **called** can be renamed by an admin
+in **Settings → Job Statuses** (stored in the `settings` table under `job_status_labels`,
+no database change needed). Renaming `Approved` to `Accepted` changes only the text: the
+job keeps `status = 'Approved'`, so Finance, the Calendar and every workflow transition
+behave exactly the same. Names are validated (1–30 characters, no two statuses sharing a
+name) and the six statuses cannot be added, removed or reordered.
+
+### Finance overrides (persistent)
+
+The Year Totals & Overrides table lets an admin save figures for a year (**Save Year
+Data**). Those figures are a **persistent manual override**: they are kept in the
+`settings` table (key `finance_override:<year>`, so no database change is needed) and are
+**never overwritten** by recalculation. A later job, payment or status change therefore
+updates the figures the records add up to *without* discarding what the admin saved. The
+Financial Overview cards then show the saved figure with a **Manual override** badge next
+to the value the records add up to, and the Expected/Remaining/Received/Clients drill-down
+discloses the same difference. **Clear override** removes the saved figures so the year
+returns to the calculated ones (Undo restores the previous state, clearing it if there was
+no override before). Only admins can set or clear an override — regular users get `403`.
+The calculated snapshot in the `finance_overrides` table is a separate value that always
+tracks the records, so the two are never confused.
+
+### Calendar activities (v11)
+
+The Calendar shows **approved jobs** as work bars and, separately, **activities** —
+appointments and reminders in the customer process ("Send quote", "Meet insurance
+adjuster 9:30 AM", "Contract signing 6:45 PM"). An activity belongs to one client and
+optionally to one of that client's jobs; it appears on the Calendar, on the client page
+and inside a job. **Creating an activity never approves, schedules or prices a job** — it
+changes no job status, no Calendar work entry and no money. Anyone who can open the client
+can add, edit and complete its activities; only admins delete one (a regular user marks it
+Completed instead). Dates (`YYYY-MM-DD`) and times (`HH:MM`, 24-hour) are wall-clock
+values with no time zone, so they show exactly as typed for everyone.
+
+```bash
+node scripts/migrate-v11-calendar-activities.js          # dry run: prints the project and stops
+node scripts/migrate-v11-calendar-activities.js --yes    # apply (adds calendar_activities)
+```
+
+The migration is additive and safe to re-run: it adds the `calendar_activities` table,
+three indexes on it and the `jobs(id, client_id)` unique index the activity→job link uses
+so an activity can never point at another client's job. Deleting a client deletes its
+activities; deleting a job keeps them and clears the link. Roll back with
+`scripts/rollback-v11-calendar-activities.sql` (drops the table, every activity in it and
+the `jobs_id_client_id_key` index — export first if it matters). Until it is run, the
+Calendar shows scheduled jobs only and the Activities sections say the update is needed;
+nothing else is affected.
+
+### Database migrations and rollback
+
+Every upgrade is additive and safe to re-run. If a script cannot reach your database (no
+`SUPABASE_DATABASE_URL` or `SUPABASE_ACCESS_TOKEN`), run the matching "TEMPLATE UPGRADE
+vNN" section at the end of `supabase-schema.sql` in the Supabase SQL editor instead —
+running the whole file is idempotent (the Row Level Security block is last and re-enabling
+RLS on every public table is a no-op where it is already on).
+
+| Upgrade | Apply | Rollback |
+|---|---|---|
+| v6 client overview | `node scripts/migrate-v6-client-overview.js` | drop `clients.technician`, `payments.job_id` |
+| v7 expense categories | `node scripts/migrate-v7-expense-categories.js` | drop `job_expenses`, `expense_categories` |
+| v11 calendar activities | `node scripts/migrate-v11-calendar-activities.js --yes` | `scripts/rollback-v11-calendar-activities.sql` |
+
+Job status names need no migration (`settings.job_status_labels`); to restore the default
+names, save the defaults again or press **Reset to Defaults** in Settings. **Before
+applying any migration to a database that holds real data, take a backup** (Supabase
+Dashboard → Database → Backups, or `pg_dump`).
+
+Status renames and activity create/edit/complete/delete are all written to `activity_log`
+(the System Audit tab), so who changed what stays traceable.
+
+### Remaining limitations
+
+- Activities are reminders, not scheduled work — they never create a job or a Calendar
+  work bar, and there is no email or push reminder yet (the "Email reminders" preference
+  is stored only).
+- The template is provided as-is and makes **no guarantee of legal compliance**. Before
+  accepting real paying customers, have counsel review your Terms, Privacy Policy, data
+  retention/deletion and incident-response practices, and confirm your obligations for the
+  personal data you store (client names, contacts, notes, files) and any third-party
+  providers you enable (Supabase, Google, any email/SMS services).
 
 **Optional migration (v6)** — `node scripts/migrate-v6-client-overview.js`, or run the
 "TEMPLATE UPGRADE v6" section at the end of `supabase-schema.sql` in the SQL editor.
@@ -431,6 +539,21 @@ end-to-end without reading or writing the project in `.env`:
 npm run test:local:api   # API tests: permissions, totals, payments ledger, migration states
 npm run test:local       # browser tests on 7 device sizes (incl. light/dark contrast checks)
 ```
+
+`test:local:api` currently runs 72 tests and covers the job status names (renaming is
+finance-invariant, admins only, name validation), calendar activities (create, read,
+edit, complete, admin-only delete, access control, date/time/status validation, the
+same-client job link, and that they never change a job or money), the admin-only deletion
+endpoints (regular users get 403; the same deletes succeed for an admin), the Finance
+approval rule (approving, cancelling, paying off, refunds, year boundaries, client/job
+overlap and drill-down reconciliation), client and job **download authorization** (an
+assigned user can read a client's PDFs and a permitted job's files; another user gets
+`403`; a guessed id or a job/file mismatch never grants access; unauthenticated reads are
+`401`), and **persistent Finance overrides** (a saved override survives job and payment
+changes while the calculated figures keep updating; recalculation never replaces it; only
+admins may set or clear it; clearing returns the year to the calculated figures). The
+`scripts/verify-security.js` reporting and exit-status behavior is covered by
+`tests/api/security-verify.test.js`.
 
 Both override every database/storage variable (see `tests/local-env.js`) and refuse to run
 if `SUPABASE_URL` isn't local. `tests/redesign.spec.js` creates and deletes records, so the

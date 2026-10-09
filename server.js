@@ -126,6 +126,8 @@ app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // ===== RATE LIMITING =====
+// The in-memory limiter protects real sign-in attempts: 20 per 15 minutes.
+// It is never relaxed for real authentication.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20,                   // 20 attempts per window
@@ -134,8 +136,20 @@ const loginLimiter = rateLimit({
   message: { success: false, error: 'Too many login attempts. Try again in 15 minutes.' }
 });
 app.use('/api/v2/auth/google-session', loginLimiter);
-app.use('/api/v2/auth/test-login', loginLimiter);
-app.use('/api/v2/auth/preview-login', loginLimiter);
+
+// test-login and preview-login exist ONLY under NODE_ENV=test — outside it
+// every request is a plain 404 (see api/auth-system.js), so they are never
+// reachable in the demo or production app. Their only caller is the
+// automated suite, which signs in many times per run; sharing the real
+// sign-in limiter here throttles those calls and fails unrelated tests.
+// Skipping the limiter is therefore a test-gated decision: NODE_ENV is set by
+// the server, never by a request, header, or query string. Outside test the
+// two routes 404 before any limiter could apply, so these branches only ever
+// change behaviour for the automated suites.
+if (process.env.NODE_ENV !== 'test') {
+  app.use('/api/v2/auth/test-login', loginLimiter);
+  app.use('/api/v2/auth/preview-login', loginLimiter);
+}
 
 // ===== SESSION =====
 const sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
@@ -407,6 +421,13 @@ app.use('/api', expensesRoutes.router);
 
 // Read-only breakdowns for the Finance page's visual overview.
 app.use('/api', require('./api/finance-overview'));
+
+// Job status names (GET for everyone, PUT admin-only) — /api/job-statuses.
+app.use('/api', require('./api/job-statuses').router);
+
+// Calendar activities (pre-approval appointments and reminders) —
+// /api/activities, /api/clients/:id/activities, /api/jobs/:id/activities.
+app.use('/api', require('./api/activities'));
 
 // ===== V2 API ROUTES =====
 const authSystemRoutes = require('./api/auth-system');
