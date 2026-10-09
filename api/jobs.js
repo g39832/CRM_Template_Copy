@@ -9,7 +9,7 @@ const {
   sanitizeJob: stripJobMoney,
   sanitizeLineItems
 } = require('./access-control');
-const { STATUS_IDS, SCHEDULED_STATUS, countsInFinance } = require('./job-statuses');
+const { STATUS_IDS, SCHEDULED_STATUS, countsInFinance, refreshFinanceCounts } = require('./job-statuses');
 const { refreshFinanceYearsFor } = require('./finance-totals');
 const { hasPaymentJobId, hasExpenseTables, hasJobSchedule, hasJobPricingDisplay, markColumnAbsent, isMissingColumnError } = require('./schema-features');
 const { itemizedJobCost, copyExpensesToJob } = require('./expenses');
@@ -34,6 +34,8 @@ async function loadClientOrThrow(clientId) {
 // parent client (admins always can; regular users only for their own
 // assigned clients). Throws 404/403 as appropriate.
 async function loadJobWithAccessCheck(req, jobId) {
+  // Make sure counts_in_finance reflects the saved Finance toggles.
+  await refreshFinanceCounts();
   const { rows } = await db.query('SELECT * FROM jobs WHERE id = $1', [jobId]);
   const job = rows[0];
   if (!job) throw new AppError(404, 'Job not found');
@@ -88,6 +90,7 @@ router.get('/client/:clientId', asyncHandler(async (req, res) => {
   const client = await loadClientOrThrow(clientId);
   if (!canAccessClient(req, client)) throw new AppError(403, 'You do not have access to this client');
 
+  await refreshFinanceCounts();
   const { rows } = await db.query(
     'SELECT * FROM jobs WHERE client_id = $1 ORDER BY created_at DESC',
     [clientId]
@@ -307,6 +310,7 @@ router.post('/', asyncHandler(async (req, res) => {
   const clientId = parseIntField(req.body.client_id, 'client_id', { min: 1 });
 
   await db.schemaReady;
+  await refreshFinanceCounts();
   const client = await loadClientOrThrow(clientId);
   if (!canAccessClient(req, client)) throw new AppError(403, 'You do not have access to this client');
 

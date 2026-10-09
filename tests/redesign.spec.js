@@ -1055,6 +1055,64 @@ test.describe('second round: costs, services, inputs, uploads, settings, clients
     expect(errors).toEqual([]);
   });
 
+  test('Settings → Job Statuses: a status can be switched out of Finance and it survives a reload', async ({ page }) => {
+    onlyOn([DESKTOP]);
+    const errors = trackErrors(page);
+    await resetDb({ migrated: true });
+    await loginAs(page, 'owner@example.com', 'admin');
+    await page.goto('/settings?tab=jobstatuses', { waitUntil: 'networkidle' });
+
+    const row = () => page.locator('#jobStatusesBody tr', { hasText: 'Completed' }).first();
+    await expect(row().locator('.job-status-finance')).toBeChecked(); // Completed counts by default
+
+    // Switch it off and save.
+    await row().locator('.job-status-finance').uncheck();
+    await expect(row().locator('.finance-toggle-text')).toHaveText('Off');
+    await page.locator('#saveJobStatusesBtn').click();
+    await expect(page.locator('#formFeedback')).toContainText(/saved/i);
+
+    // Persisted after a reload.
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(row().locator('.job-status-finance')).not.toBeChecked();
+    await expect(row().locator('.finance-toggle-text')).toHaveText('Off');
+
+    // Switch it back on (the default) and it stays on.
+    await row().locator('.job-status-finance').check();
+    await page.locator('#saveJobStatusesBtn').click();
+    await expect(page.locator('#formFeedback')).toContainText(/saved/i);
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(row().locator('.job-status-finance')).toBeChecked();
+
+    // The switch also drives the client's "Total Amount Due".
+    const created = await page.request.post('/api/jobs', {
+      data: { client_id: 2, title: 'Completed toggle job', total_due: 1000, status: 'Completed' }
+    });
+    expect(created.ok()).toBeTruthy();
+    const jobId = (await created.json()).job.id;
+    await page.goto('/main', { waitUntil: 'networkidle' });
+    await openClient(page, 'Bob Both');
+    // Approved job 2000 + client account 1200 + the new Completed job 1000.
+    await expect(tileValue(page, 'totalDueTile')).toHaveText('$4,200.00');
+
+    // Switch Completed off again: the client total drops that job.
+    await page.goto('/settings?tab=jobstatuses', { waitUntil: 'networkidle' });
+    await row().locator('.job-status-finance').uncheck();
+    await page.locator('#saveJobStatusesBtn').click();
+    await expect(page.locator('#formFeedback')).toContainText(/saved/i);
+    await page.goto('/main', { waitUntil: 'networkidle' });
+    await openClient(page, 'Bob Both');
+    await expect(tileValue(page, 'totalDueTile')).toHaveText('$3,200.00');
+
+    // Leave the shared test database as it was found.
+    expect((await page.request.delete(`/api/jobs/${jobId}`)).ok()).toBeTruthy();
+    await page.goto('/settings?tab=jobstatuses', { waitUntil: 'networkidle' });
+    await row().locator('.job-status-finance').check();
+    await page.locator('#saveJobStatusesBtn').click();
+    await expect(page.locator('#formFeedback')).toContainText(/saved/i);
+
+    expect(errors).toEqual([]);
+  });
+
   test('Settings switches slide, change the setting and survive a reload (light and dark)', async ({ page }) => {
     onlyOn([DESKTOP, 'phone-390']);
     const errors = trackErrors(page);

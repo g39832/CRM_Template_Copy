@@ -166,6 +166,20 @@ async function refreshFinanceYearsFor(createdAt, context) {
   for (const y of years) await updateFinanceTotalsSafe(y, context);
 }
 
+// Recalculates every year that holds records (plus any year with a manual
+// override). Used by a change with no single "created" date — e.g. switching a
+// job status in or out of Finance, which reclassifies jobs across all years.
+async function refreshAllFinanceYears(context = 'finance settings') {
+  const data = await loadFinanceData();
+  const years = new Set([new Date().getFullYear()]);
+  const add = (v) => { const y = yearOf(v); if (y) years.add(y); };
+  for (const c of data.clients) add(c.created_at);
+  for (const j of data.jobs) add(j.created_at);
+  for (const p of data.payments) add(p.payment_date);
+  for (const y of await listManualOverrideYears()) years.add(y);
+  for (const y of years) await updateFinanceTotalsSafe(y, context);
+}
+
 module.exports = {
   getValidYear,
   getFinanceTotalsForYear,
@@ -173,6 +187,7 @@ module.exports = {
   updateFinanceTotals,
   updateFinanceTotalsSafe,
   refreshFinanceYearsFor,
+  refreshAllFinanceYears,
   getManualOverride,
   setManualOverride,
   clearManualOverride,

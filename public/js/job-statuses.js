@@ -1,12 +1,14 @@
 // Job status names for every page (window.crmJobStatuses).
 //
 // Jobs store a fixed status id (Prospect, Approved, Completed, Invoice,
-// Closed, Cancelled); admins can rename what each one is CALLED in
-// Settings → Job Statuses. Pages show label(id) wherever a status is shown
-// and always send the id back, so renaming never changes how a job behaves
-// (Finance still counts Approved/Completed/Invoice/Closed, the Calendar still
-// schedules Approved). The defaults below are used until /api/job-statuses
-// answers, so nothing waits on it.
+// Closed, Cancelled); admins can rename what each one is CALLED and choose
+// whether it counts in Finance in Settings → Job Statuses. Pages show
+// label(id) wherever a status is shown and always send the id back, so neither
+// renaming nor re-ordering ever changes how a job behaves. countsInFinance(id)
+// mirrors the server's saved "Track in Finance" switch (api/job-statuses.js),
+// so the browser never hardcodes the eligible statuses. The defaults below are
+// the v11 mapping (Approved/Completed/Invoice/Closed) used until
+// /api/job-statuses answers, so nothing waits on it.
 (function () {
   var DEFAULTS = [
     { id: 'Prospect', label: 'Prospect', countsInFinance: false },

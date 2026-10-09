@@ -219,6 +219,16 @@
     .expense-cat-status { font-weight: 700; font-size: 0.8rem; white-space: nowrap; }
     .expense-cat-status.active { color: var(--success-text); }
     .expense-cat-status.inactive { color: var(--text-muted); }
+    /* Per-status Finance switch (Settings -> Job Statuses) */
+    .finance-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+    .finance-toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .finance-toggle-track { position: relative; flex: 0 0 auto; width: 38px; height: 22px; border-radius: 999px; background: var(--border-strong, #cbd5e1); transition: background 0.15s; }
+    .finance-toggle-track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: transform 0.15s; }
+    .finance-toggle input:checked + .finance-toggle-track { background: var(--success, #16a34a); }
+    .finance-toggle input:checked + .finance-toggle-track::after { transform: translateX(16px); }
+    .finance-toggle input:focus-visible + .finance-toggle-track { outline: 2px solid var(--primary, #2563eb); outline-offset: 2px; }
+    .finance-toggle-text { min-width: 22px; color: var(--text-muted); }
+    .finance-toggle input:checked ~ .finance-toggle-text { color: var(--success-text, #15803d); }
     .expense-cat-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
     .expense-cat-actions-head { text-align: right !important; }
     .expense-cat-empty { padding: 20px; text-align: center; color: var(--text-muted); }
@@ -755,23 +765,23 @@
     <!-- ===== Job Statuses (admin): renaming labels only ===== -->
     <div class="settings-card" id="tabJobStatuses" role="tabpanel" data-admin-only="true">
       <h2>Job Statuses</h2>
-      <p class="subtitle">Rename what each job status is called. The names are only labels &mdash; a job keeps its real status underneath, so Finance, the Calendar and every rule keep working exactly the same. There are six fixed statuses; they cannot be added, removed or reordered.</p>
+      <p class="subtitle">Rename what each job status is called, and choose whether jobs with that status count toward Finance. A job keeps its real status underneath, so renaming it never changes how it behaves. There are six fixed statuses; they cannot be added, removed or reordered.</p>
       <div id="jobStatusesNotice" class="expense-notice" hidden></div>
       <div class="expense-cat-table-wrap">
         <table class="expense-cat-table">
           <thead>
-            <tr><th>Status</th><th>Shown as</th><th>Meaning</th></tr>
+            <tr><th>Status</th><th>Shown as</th><th>Track in Finance</th><th>Meaning</th></tr>
           </thead>
           <tbody id="jobStatusesBody">
-            <tr><td colspan="3" class="expense-cat-empty">Loading statuses...</td></tr>
+            <tr><td colspan="4" class="expense-cat-empty">Loading statuses...</td></tr>
           </tbody>
         </table>
       </div>
       <div class="form-actions">
-        <button type="button" class="btn-primary" id="saveJobStatusesBtn">Save Names</button>
+        <button type="button" class="btn-primary" id="saveJobStatusesBtn">Save Changes</button>
         <button type="button" class="btn-secondary" id="resetJobStatusesBtn">Reset to Defaults</button>
       </div>
-      <div class="settings-note">Finance counts a job from the moment it reaches <strong id="financeStartsLabel">Approved</strong> and keeps counting it while it is Completed, Invoice or Closed. Prospect (not approved) and Cancelled never count.</div>
+      <div class="settings-note">A job's money counts toward Finance while its status has <strong>Track in Finance</strong> switched on. Switch a status off and its jobs drop out of every Finance total, the drill-down lists and &ldquo;Total Amount Due&rdquo; immediately; switch it back on and they count again. Money already received stays in the payment history either way.</div>
     </div>
 
     <div id="formFeedback" role="alert"></div>

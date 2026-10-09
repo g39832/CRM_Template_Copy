@@ -1116,6 +1116,72 @@ test('job status names: readable by everyone, editable by admins only, and renam
 });
 
 // ---------------------------------------------------------------------------
+// Configurable Finance tracking: a per-status switch an admin owns, stored
+// separately from the names, that every Finance figure obeys.
+// ---------------------------------------------------------------------------
+test('job statuses: the Finance tracking switch is per status, admin-only, persistent and drives every total', async () => {
+  await resetDb({ migrated: true });
+  const admin = await login('owner@example.com', 'admin');
+  const sam = await login('sam@example.com', 'user');
+
+  // Every status exposes its current setting and its default.
+  const listed = (await admin('GET', '/api/job-statuses')).data;
+  for (const s of listed.statuses) {
+    assert.equal(typeof s.countsInFinance, 'boolean', `${s.id} has a tracking setting`);
+    assert.equal(typeof s.defaultCountsInFinance, 'boolean');
+  }
+  assert.deepEqual(listed.financeStatuses, ['Approved', 'Completed', 'Invoice', 'Closed'], 'the v11 defaults are the starting point');
+
+  // Only admins may change a switch, and a refused change has no effect.
+  assert.equal((await sam('PUT', '/api/job-statuses', { finance: { Completed: false } })).status, 403);
+  assert.equal((await admin('GET', '/api/job-statuses')).data.statuses.find((s) => s.id === 'Completed').countsInFinance, true);
+
+  // Completed is unused in the seed, so a Completed job isolates the effect.
+  const created = await admin('POST', '/api/jobs', { client_id: 2, title: 'Completed toggle job', total_due: 1000, status: 'Completed' });
+  assert.equal(created.status, 200);
+  const jobId = created.data.job.id;
+  assert.equal(created.data.job.counts_in_finance, true, 'a Completed job counts by default');
+
+  const financeOf = async () => (await admin('GET', `/api/finance/summary?year=${YEAR}`)).data.calculated;
+  const before = await financeOf();
+  let bd = (await admin('GET', `/api/finance/breakdown?year=${YEAR}&metric=expected`)).data;
+  assert.ok(bd.rows.some((r) => r.job_id === jobId), 'it is in the Expected drill-down');
+
+  // Switch Completed OFF: it drops out of every figure, immediately.
+  const off = await admin('PUT', '/api/job-statuses', { finance: { Completed: false } });
+  assert.equal(off.status, 200);
+  assert.equal(off.data.statuses.find((s) => s.id === 'Completed').countsInFinance, false);
+  assert.equal((await admin('GET', `/api/jobs/${jobId}`)).data.job.counts_in_finance, false, 'the job now reports it is not counted');
+  const after = await financeOf();
+  assert.equal(after.totalExpected, before.totalExpected - 1000, 'its total leaves Expected Earnings');
+  assert.equal(after.totalRemaining, before.totalRemaining - 1000, 'and Remaining to Be Collected');
+  bd = (await admin('GET', `/api/finance/breakdown?year=${YEAR}&metric=expected`)).data;
+  assert.equal(bd.rows.filter((r) => r.job_id === jobId).length, 0, 'and the drill-down');
+  assert.equal((await admin('GET', `/api/finance/summary?year=${YEAR}`)).data.matchesRecords, true, 'the stored year row follows the switch');
+
+  // Stored under its own key, and a rename keeps the setting.
+  assert.deepEqual(JSON.parse((await dump()).tables.settings.find((s) => s.key === 'job_status_finance').value), { Completed: false });
+  await admin('PUT', '/api/job-statuses', { labels: { Completed: 'Done' } });
+  const renamed = (await admin('GET', '/api/job-statuses')).data.statuses.find((s) => s.id === 'Completed');
+  assert.deepEqual([renamed.label, renamed.countsInFinance], ['Done', false], 'renaming keeps the Finance setting');
+
+  // Switch it back ON: it counts again, and the stored entry clears.
+  await admin('PUT', '/api/job-statuses', { finance: { Completed: true } });
+  assert.equal((await admin('GET', `/api/jobs/${jobId}`)).data.job.counts_in_finance, true);
+  assert.equal((await financeOf()).totalExpected, before.totalExpected);
+  assert.deepEqual(JSON.parse((await dump()).tables.settings.find((s) => s.key === 'job_status_finance').value), {});
+  assert.equal((await admin('GET', `/api/finance/summary?year=${YEAR}`)).data.matchesRecords, true, 'and again when it counts');
+
+  // Invalid input is refused.
+  assert.equal((await admin('PUT', '/api/job-statuses', { finance: { Nope: true } })).status, 400);
+  assert.equal((await admin('PUT', '/api/job-statuses', { finance: { Approved: 'yes' } })).status, 400);
+
+  // Leave the shared test database as it was found.
+  await admin('DELETE', `/api/jobs/${jobId}`);
+  await admin('PUT', '/api/job-statuses', { labels: { Completed: 'Completed' } });
+});
+
+// ---------------------------------------------------------------------------
 // Calendar activities (v11): appointments/reminders that are NOT jobs.
 // ---------------------------------------------------------------------------
 test('calendar activities before the v11 migration: reported as unavailable, never an error', async () => {

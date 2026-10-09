@@ -1008,18 +1008,22 @@
     if (!body) return;
     if (notice) notice.hidden = true;
     body.innerHTML = jobStatuses.map(function (s) {
-      var finance = s.countsInFinance
-        ? '<span class="expense-cat-status active">Counts in Finance</span>'
-        : '<span class="expense-cat-status inactive">Not counted</span>';
-      return '<tr data-id="' + escapeHtml(s.id) + '">' +
-        '<td><strong>' + escapeHtml(s.id) + '</strong><div class="expense-cat-usage">' + finance + '</div></td>' +
-        '<td><input type="text" class="job-status-label" value="' + escapeHtml(s.label) + '" data-original="' + escapeHtml(s.label) + '" maxlength="30" aria-label="Name shown for ' + escapeHtml(s.id) + '"></td>' +
+      var id = escapeHtml(s.id);
+      var label = escapeHtml(s.label);
+      var on = !!s.countsInFinance;
+      return '<tr data-id="' + id + '">' +
+        '<td><strong>' + id + '</strong></td>' +
+        '<td><input type="text" class="job-status-label" value="' + label + '" data-original="' + label + '" maxlength="30" aria-label="Name shown for ' + id + '"></td>' +
+        '<td>' +
+          '<label class="finance-toggle">' +
+            '<input type="checkbox" class="job-status-finance" ' + (on ? 'checked' : '') + ' aria-label="Track jobs with the ' + id + ' status in Finance">' +
+            '<span class="finance-toggle-track" aria-hidden="true"></span>' +
+            '<span class="finance-toggle-text">' + (on ? 'On' : 'Off') + '</span>' +
+          '</label>' +
+        '</td>' +
         '<td class="expense-cat-usage">' + escapeHtml(s.meaning || '') + '</td>' +
       '</tr>';
     }).join('');
-    var approved = jobStatuses.filter(function (s) { return s.id === 'Approved'; })[0];
-    var startEl = document.getElementById('financeStartsLabel');
-    if (startEl) startEl.textContent = approved ? approved.label : 'Approved';
   }
 
   function loadJobStatuses() {
@@ -1028,17 +1032,17 @@
       .catch(function (err) { showError(err.message || 'Failed to load job statuses'); });
   }
 
-  function saveJobStatuses(labels) {
+  function saveJobStatuses(payload) {
     showLoading(true);
     hideFeedback();
-    jobStatusRequest('PUT', { labels: labels })
+    jobStatusRequest('PUT', payload)
       .then(function (data) {
         showLoading(false);
         jobStatuses = data.statuses || jobStatuses;
         renderJobStatuses();
-        showSuccess('Status names saved. Jobs keep their real status, so Finance and the Calendar are unchanged.');
+        showSuccess('Job status settings saved. Finance and the Calendar now use the saved switches.');
       })
-      .catch(function (err) { showLoading(false); showError(err.message || 'Failed to save status names'); });
+      .catch(function (err) { showLoading(false); showError(err.message || 'Failed to save job status settings'); });
   }
 
   (function wireJobStatuses() {
@@ -1054,24 +1058,45 @@
         var body = document.getElementById('jobStatusesBody');
         if (!body) return;
         var labels = {};
+        var finance = {};
         var empty = false;
-        body.querySelectorAll('.job-status-label').forEach(function (input) {
-          var id = input.closest('tr').getAttribute('data-id');
-          labels[id] = input.value;
-          if (!input.value.trim()) empty = true;
+        body.querySelectorAll('tr[data-id]').forEach(function (tr) {
+          var id = tr.getAttribute('data-id');
+          var input = tr.querySelector('.job-status-label');
+          var toggle = tr.querySelector('.job-status-finance');
+          if (input) {
+            labels[id] = input.value;
+            if (!input.value.trim()) empty = true;
+          }
+          if (toggle) finance[id] = toggle.checked;
         });
         if (empty) { showError('Status names cannot be empty.'); return; }
-        saveJobStatuses(labels);
+        saveJobStatuses({ labels: labels, finance: finance });
+      });
+    }
+
+    // Keep the On/Off text beside each switch in step as it is toggled.
+    var statusesBody = document.getElementById('jobStatusesBody');
+    if (statusesBody) {
+      statusesBody.addEventListener('change', function (e) {
+        var toggle = e.target.closest('.job-status-finance');
+        if (!toggle) return;
+        var text = toggle.closest('.finance-toggle').querySelector('.finance-toggle-text');
+        if (text) text.textContent = toggle.checked ? 'On' : 'Off';
       });
     }
 
     var resetBtn = document.getElementById('resetJobStatusesBtn');
     if (resetBtn) {
       resetBtn.addEventListener('click', function () {
-        if (!confirm('Reset every status name to its default?')) return;
+        if (!confirm('Reset every status name and Finance switch to its default?')) return;
         var labels = {};
-        jobStatuses.forEach(function (s) { labels[s.id] = s.defaultLabel || s.id; });
-        saveJobStatuses(labels);
+        var finance = {};
+        jobStatuses.forEach(function (s) {
+          labels[s.id] = s.defaultLabel || s.id;
+          finance[s.id] = s.defaultCountsInFinance === true;
+        });
+        saveJobStatuses({ labels: labels, finance: finance });
       });
     }
 
