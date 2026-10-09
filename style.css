@@ -907,6 +907,41 @@ body.dashboard-body {
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
+/* Note creation time (client notes and job notes). Compact, muted, and wraps
+   on narrow screens instead of pushing the Edit/Delete buttons. */
+.note-body,
+.job-note-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The client note row is laid out with inline styles and no gap, so the text
+   column keeps the space the old content div had before the buttons. (The
+   job-note row already spaces its children with gap.) */
+.note-body {
+  margin-right: 6px;
+}
+
+.note-timestamp-wrap {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.note-timestamp {
+  color: var(--text-muted);
+}
+
+.note-relative {
+  white-space: nowrap;
+}
+
+.note-relative::before {
+  content: ' · ';
+}
+
 .notes-actions .add-note-btn {
   align-self: flex-end;
   width: 120px;

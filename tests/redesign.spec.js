@@ -207,6 +207,45 @@ test.describe('client overview', () => {
     await expect(panel.locator('#notes-list')).toContainText('Call before arriving');
     await expect(details.locator('summary')).toContainText('(2)');
   });
+
+  test('notes show when they were created; editing keeps the original time', async ({ page }) => {
+    onlyOn([DESKTOP]);
+    await loginAs(page, 'owner@example.com', 'admin');
+    const panel = await openClient(page, 'Bob Both');
+    await panel.locator('#client-notes-details summary').click();
+
+    // The seeded note shows an exact, machine-readable creation time.
+    const seeded = panel.locator('#notes-list .note-timestamp').first();
+    await expect(seeded).toBeVisible();
+    await expect(seeded).toHaveAttribute('datetime', /^\d{4}-\d{2}-\d{2}T/);
+    await expect(seeded).toContainText(/\d{4}/);
+
+    // A new note is timestamped automatically by the server.
+    await panel.locator('#new-note-input').fill('Timestamped note');
+    await panel.locator('#add-note-btn').click();
+    const row = panel.locator('#notes-list > div', { hasText: 'Timestamped note' });
+    const stamp = row.locator('.note-timestamp');
+    await expect(stamp).toBeVisible();
+    // A note created just now also gets the relative hint.
+    await expect(row.locator('.note-relative')).toBeVisible();
+    const iso = await stamp.getAttribute('datetime');
+    expect(Number.isFinite(new Date(iso).getTime())).toBeTruthy();
+
+    // Editing never resets the creation time. (Once editing starts the text
+    // lives in a textarea, so target the editor directly instead of hasText.)
+    await row.locator('button', { hasText: 'Edit' }).click();
+    const editor = panel.locator('#notes-list textarea');
+    await editor.fill('Timestamped note edited');
+    await panel.locator('#notes-list button', { hasText: 'Save' }).click();
+    const edited = panel.locator('#notes-list > div', { hasText: 'Timestamped note edited' });
+    await expect(edited.locator('.note-timestamp')).toHaveAttribute('datetime', iso);
+
+    // A note with no usable timestamp renders safely (never "Invalid Date").
+    const blank = await page.evaluate(() => (typeof formatNoteTimestamp === 'function'
+      ? [formatNoteTimestamp(''), formatNoteTimestamp(null), formatNoteTimestamp('not-a-date')]
+      : 'MISSING'));
+    expect(blank).toEqual(['', '', '']);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -455,6 +494,8 @@ test.describe('+ Job workspace', () => {
     await job.locator('#job-new-note-input').fill('Crew of four');
     await job.locator('#job-add-note-btn').click();
     await expect(job.locator('#job-notes-list')).toContainText('Crew of four');
+    // Job notes carry their creation time too.
+    await expect(job.locator('.job-note-row', { hasText: 'Crew of four' }).locator('.note-timestamp')).toBeVisible();
 
     const row = job.locator('.job-note-row', { hasText: 'Dumpster arrives Monday' });
     await row.locator('button', { hasText: 'Edit' }).click();

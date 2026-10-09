@@ -195,6 +195,52 @@ test('client notes list excludes job notes; job notes stay on their job', async 
   assert.deepEqual(job.data.notes.map((n) => n.content), ['Dumpster arrives Monday']);
 });
 
+test('notes get a server-side creation time that editing and reloading keep', async () => {
+  const admin = await login('owner@example.com', 'admin');
+
+  // A new client note is timestamped by the server, not by the browser.
+  const created = await admin('POST', '/api/notes/add/2', { note: 'Follow up Friday' });
+  assert.equal(created.status, 200);
+  const note = created.data.note;
+  assert.ok(note.created_at, 'the new note has a created_at');
+  const t1 = new Date(note.created_at).getTime();
+  assert.ok(Number.isFinite(t1), 'created_at is a real timestamp');
+  assert.ok(Math.abs(Date.now() - t1) < 60_000, 'created_at is server-now, not an invented date');
+
+  // A client cannot backdate a note by sending its own created_at.
+  const forged = await admin('POST', '/api/notes/add/2', { note: 'Backdated', created_at: '2001-01-01T00:00:00.000Z' });
+  assert.ok(new Date(forged.data.note.created_at).getTime() > Date.now() - 60_000, 'a supplied created_at is ignored');
+
+  // Editing the note must not reset its original creation time.
+  const edited = await admin('PUT', `/api/notes/update/2/${note.id}`, { note: 'Follow up Monday' });
+  assert.equal(edited.data.note.content, 'Follow up Monday');
+  assert.equal(edited.data.note.created_at, note.created_at, 'an edit keeps the original creation time');
+
+  // Re-reading the list returns the same, stable timestamp.
+  const list = await admin('GET', '/api/notes/list/2');
+  const again = list.data.notes.find((n) => n.id === note.id);
+  assert.ok(again, 'the note is still listed');
+  assert.equal(again.created_at, note.created_at, 'a reload returns the same creation time');
+
+  // Job notes behave the same way.
+  const jobNote = await admin('POST', '/api/notes/job/1', { note: 'Job note with a time' });
+  assert.ok(jobNote.data.note.created_at, 'the new job note has a created_at');
+  const jobEdit = await admin('PUT', `/api/notes/job/1/${jobNote.data.note.id}`, { note: 'Job note edited' });
+  assert.equal(jobEdit.data.note.created_at, jobNote.data.note.created_at, 'a job-note edit keeps its creation time');
+
+  // The existing access rules still apply: a user assigned to the client can
+  // add and read notes (and never sees a timestamp they can set), while a
+  // user with no access is refused everywhere.
+  const sam = await login('sam@example.com', 'user');
+  assert.equal((await sam('POST', '/api/notes/add/2', { note: 'Sam note' })).status, 200);
+  assert.equal((await sam('GET', '/api/notes/list/2')).status, 200);
+
+  const riley = await login('riley@example.com', 'user');
+  assert.equal((await riley('GET', '/api/notes/list/2')).status, 403, 'no access to list another client\'s notes');
+  assert.equal((await riley('POST', '/api/notes/add/2', { note: 'Nope' })).status, 403, 'no access to add to another client');
+  assert.equal((await riley('POST', '/api/notes/job/1', { note: 'Nope' })).status, 403, 'no access to another client\'s job notes');
+});
+
 test('a job payment updates the job, lands in the payments ledger, and reaches Finance', async () => {
   const admin = await login('owner@example.com', 'admin');
   const before = await admin('GET', `/api/finance/summary?year=${YEAR}`);

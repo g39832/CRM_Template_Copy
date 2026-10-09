@@ -2053,6 +2053,59 @@ function formatShortDate(value) {
   return Number.isFinite(d.getTime()) ? d.toLocaleDateString() : '';
 }
 
+// A note's creation time, shown as "October 9, 2026 at 1:42 PM". The value is
+// the server timestamp (stored in UTC when the note is created);
+// toLocaleString renders it in the reader's own time zone. Returns '' for a
+// missing or unparseable value so an older note without a timestamp still
+// renders — just without a date.
+function formatNoteTimestamp(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) +
+    ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+// A short "2 hours ago" hint for recent notes, or '' once a note is a week old
+// (display only — the exact time always stays in the <time> element, so it is
+// never lost on mobile or to a screen reader).
+function formatNoteRelative(value) {
+  const d = new Date(value);
+  if (!Number.isFinite(d.getTime())) return '';
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + (mins === 1 ? ' minute ago' : ' minutes ago');
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return hours + (hours === 1 ? ' hour ago' : ' hours ago');
+  const days = Math.floor(hours / 24);
+  return days < 7 ? days + (days === 1 ? ' day ago' : ' days ago') : '';
+}
+
+// The "created" line drawn under a note: the exact time (with the
+// machine-readable ISO value for assistive tech) plus an optional relative
+// hint. Returns null when the note has no usable timestamp, so an older note
+// simply shows no date instead of "Invalid Date".
+function noteTimestampEl(value) {
+  const exact = formatNoteTimestamp(value);
+  if (!exact) return null;
+  const wrap = document.createElement('div');
+  wrap.className = 'note-timestamp-wrap';
+  const time = document.createElement('time');
+  time.className = 'note-timestamp';
+  // datetime carries the machine-readable instant; the text is the human form.
+  time.dateTime = new Date(value).toISOString();
+  time.textContent = exact;
+  wrap.appendChild(time);
+  const rel = formatNoteRelative(value);
+  if (rel) {
+    const span = document.createElement('span');
+    span.className = 'note-relative';
+    span.textContent = rel;
+    wrap.appendChild(span);
+  }
+  return wrap;
+}
+
 function hasClientLevelMoney(client) {
   return ['total_due', 'amount_paid', 'balance', 'job_cost'].some(k => Math.abs(Number((client && client[k]) || 0)) > 0.005);
 }
@@ -2710,13 +2763,20 @@ async function setupNotesSection(clientId) {
         noteDiv.style.padding = "6px 10px";
         noteDiv.style.borderRadius = "6px";
 
+        // Text and its creation time stack in one column so the action
+        // buttons stay pinned to the right of the row.
+        const body = document.createElement("div");
+        body.className = "note-body";
+
         const contentDiv = document.createElement("div");
         contentDiv.innerText = note.content || "";
-        contentDiv.style.flex = "1";
-        contentDiv.style.marginRight = "6px";
         contentDiv.style.color = "var(--text-main)";
         contentDiv.style.whiteSpace = "pre-wrap";
         contentDiv.style.wordBreak = "break-word";
+        body.appendChild(contentDiv);
+
+        const stamp = noteTimestampEl(note.created_at);
+        if (stamp) body.appendChild(stamp);
 
         const editBtn = document.createElement("button");
         editBtn.innerText = "Edit";
@@ -2752,7 +2812,7 @@ async function setupNotesSection(clientId) {
           cancelBtn.className = "btn-secondary btn-sm";
           cancelBtn.style.marginLeft = "6px";
 
-          noteDiv.replaceChild(textarea, contentDiv);
+          body.replaceChild(textarea, contentDiv);
           noteDiv.insertBefore(saveBtn, editBtn);
           noteDiv.insertBefore(cancelBtn, editBtn);
           editBtn.style.display = "none";
@@ -2785,7 +2845,7 @@ async function setupNotesSection(clientId) {
           }
         };
 
-        noteDiv.appendChild(contentDiv);
+        noteDiv.appendChild(body);
         noteDiv.appendChild(editBtn);
         noteDiv.appendChild(deleteBtn);
         notesList.appendChild(noteDiv);
@@ -4981,9 +5041,16 @@ async function setupJobNotesSection(overlay, jobId) {
         const noteDiv = document.createElement('div');
         noteDiv.className = 'job-note-row';
 
+        const body = document.createElement('div');
+        body.className = 'job-note-body';
+
         const contentDiv = document.createElement('div');
         contentDiv.className = 'job-note-content';
         contentDiv.innerText = note.content || '';
+        body.appendChild(contentDiv);
+
+        const stamp = noteTimestampEl(note.created_at);
+        if (stamp) body.appendChild(stamp);
 
         const editBtn = document.createElement('button');
         editBtn.type = 'button';
@@ -5015,7 +5082,7 @@ async function setupJobNotesSection(overlay, jobId) {
           cancelBtn.className = 'job-note-action-btn btn-secondary btn-sm';
           cancelBtn.innerText = 'Cancel';
 
-          noteDiv.replaceChild(textarea, contentDiv);
+          body.replaceChild(textarea, contentDiv);
           noteDiv.insertBefore(saveBtn, editBtn);
           noteDiv.insertBefore(cancelBtn, editBtn);
           editBtn.style.display = 'none';
@@ -5046,7 +5113,7 @@ async function setupJobNotesSection(overlay, jobId) {
           }
         };
 
-        noteDiv.appendChild(contentDiv);
+        noteDiv.appendChild(body);
         noteDiv.appendChild(editBtn);
         noteDiv.appendChild(deleteBtn);
         notesList.appendChild(noteDiv);
